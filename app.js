@@ -520,27 +520,50 @@ function showWeeklySummary() {
         let thisWeekAvgWeight = 0;
         let lastWeekAvgWeight = 0;
         let weightCount = { thisWeek: 0, lastWeek: 0 };
+        let recordsCount = 0;  // Count exercises with new records
+        let weakerCount = 0;   // Count exercises that got weaker
+        let totalExercises = 0; // Total exercises in category
         
         categoryExercises.forEach(ex => {
             const history = ex.users[currentUser].history || [];
+            
+            // Find this week's and last week's sessions for this exercise
+            const thisWeekSessions = [];
+            const lastWeekSessions = [];
             
             history.forEach(session => {
                 const sessionDate = new Date(session.date).getTime();
                 const volume = session.sets.reduce((sum, set) => sum + (set.reps * set.weight), 0);
                 const avgWeight = session.sets.reduce((sum, set) => sum + set.weight, 0) / session.sets.length;
+                const maxWeight = Math.max(...session.sets.map(s => s.weight));
                 
                 if (sessionDate >= oneWeekAgo) {
                     thisWeekVolume += volume;
                     thisWeekWorkouts++;
                     thisWeekAvgWeight += avgWeight;
                     weightCount.thisWeek++;
+                    thisWeekSessions.push({ avgWeight, maxWeight, volume });
                 } else if (sessionDate >= twoWeeksAgo) {
                     lastWeekVolume += volume;
                     lastWeekWorkouts++;
                     lastWeekAvgWeight += avgWeight;
                     weightCount.lastWeek++;
+                    lastWeekSessions.push({ avgWeight, maxWeight, volume });
                 }
             });
+            
+            // Compare performance: did this exercise improve or get worse?
+            if (thisWeekSessions.length > 0 && lastWeekSessions.length > 0) {
+                totalExercises++;
+                const thisWeekBest = Math.max(...thisWeekSessions.map(s => s.maxWeight));
+                const lastWeekBest = Math.max(...lastWeekSessions.map(s => s.maxWeight));
+                
+                if (thisWeekBest > lastWeekBest) {
+                    recordsCount++; // New record!
+                } else if (thisWeekBest < lastWeekBest) {
+                    weakerCount++;  // Weaker performance
+                }
+            }
         });
         
         thisWeekAvgWeight = weightCount.thisWeek > 0 ? thisWeekAvgWeight / weightCount.thisWeek : 0;
@@ -559,6 +582,14 @@ function showWeeklySummary() {
             ? ((thisWeekWorkouts - lastWeekWorkouts) / lastWeekWorkouts * 100)
             : 0;
         
+        // Calculate performance percentage: >0 = progress, 0 = same, <0 = weaker
+        let performancePercent = 0;
+        if (totalExercises > 0) {
+            // Score: +1 for each record, -1 for each weaker, 0 for unchanged
+            const performanceScore = recordsCount - weakerCount;
+            performancePercent = Math.round((performanceScore / totalExercises) * 100);
+        }
+        
         return {
             category,
             thisWeekVolume: Math.round(thisWeekVolume),
@@ -569,7 +600,11 @@ function showWeeklySummary() {
             workoutImprovement: Math.round(workoutImprovement * 10) / 10,
             thisWeekAvgWeight: Math.round(thisWeekAvgWeight * 10) / 10,
             lastWeekAvgWeight: Math.round(lastWeekAvgWeight * 10) / 10,
-            weightImprovement: Math.round(weightImprovement * 10) / 10
+            weightImprovement: Math.round(weightImprovement * 10) / 10,
+            performancePercent,
+            recordsCount,
+            weakerCount,
+            totalExercises
         };
     });
     
@@ -587,13 +622,28 @@ function showWeeklySummary() {
         ? Math.round(((totalVolumeThisWeek - totalVolumeLastWeek) / totalVolumeLastWeek * 100) * 10) / 10
         : 0;
     
+    // Calculate overall performance percentage
+    const totalRecords = categorySummary.reduce((sum, cat) => sum + cat.recordsCount, 0);
+    const totalWeaker = categorySummary.reduce((sum, cat) => sum + cat.weakerCount, 0);
+    const totalExercisesCompared = categorySummary.reduce((sum, cat) => sum + cat.totalExercises, 0);
+    
+    let overallPerformancePercent = 0;
+    if (totalExercisesCompared > 0) {
+        const performanceScore = totalRecords - totalWeaker;
+        overallPerformancePercent = Math.round((performanceScore / totalExercisesCompared) * 100);
+    }
+    
     displayWeeklySummaryModal(categorySummary, {
         totalThisWeek,
         totalLastWeek,
         overallImprovement,
         totalVolumeThisWeek,
         totalVolumeLastWeek,
-        volumeOverallImprovement
+        volumeOverallImprovement,
+        overallPerformancePercent,
+        totalRecords,
+        totalWeaker,
+        totalExercisesCompared
     });
 }
 
@@ -638,6 +688,11 @@ function displayWeeklySummaryModal(categorySummary, overall) {
                         ${getImprovementIcon(overall.volumeOverallImprovement)} ${overall.volumeOverallImprovement > 0 ? '+' : ''}${overall.volumeOverallImprovement}%
                     </div>
                 </div>
+                <div class="summary-stat">
+                    <div class="summary-label">Performance Score</div>
+                    <div class="summary-value" style="font-size: 2em; font-weight: bold; color: ${getImprovementColor(overall.overallPerformancePercent)}">${overall.overallPerformancePercent > 0 ? '+' : ''}${overall.overallPerformancePercent}%</div>
+                    <div style="font-size: 0.9em; color: #666; margin-top: 5px;">🏆 ${overall.totalRecords} records | 📉 ${overall.totalWeaker} weaker | ➡️ ${overall.totalExercisesCompared - overall.totalRecords - overall.totalWeaker} same</div>
+                </div>
             </div>
             
             <h3 style="margin-top: 30px; margin-bottom: 15px;">Progress by Category</h3>
@@ -646,6 +701,12 @@ function displayWeeklySummaryModal(categorySummary, overall) {
                 ${categorySummary.map(cat => `
                     <div class="category-summary-card">
                         <h4>${cat.category}</h4>
+                        
+                        <div class="summary-metric" style="grid-column: 1 / -1; background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(59, 130, 246, 0.1)); padding: 15px; border-radius: 8px; margin-bottom: 10px;">
+                            <div class="metric-label" style="font-size: 0.9em;">Performance Score</div>
+                            <div class="metric-value" style="font-size: 1.8em; font-weight: bold; color: ${getImprovementColor(cat.performancePercent)}">${cat.performancePercent > 0 ? '+' : ''}${cat.performancePercent}%</div>
+                            <div style="font-size: 0.85em; color: #666; margin-top: 5px;">🏆 ${cat.recordsCount} new records | 📉 ${cat.weakerCount} weaker | ➡️ ${cat.totalExercises - cat.recordsCount - cat.weakerCount} same</div>
+                        </div>
                         
                         <div class="summary-metric">
                             <div class="metric-label">Workouts</div>
@@ -675,11 +736,12 @@ function displayWeeklySummaryModal(categorySummary, overall) {
             </div>
             
             <div class="summary-footer">
-                <p><strong>💡 Tips:</strong></p>
+                <p><strong>💡 Understanding Your Performance Score:</strong></p>
                 <ul>
-                    <li>🟢 Green: Great improvement! Keep up the good work</li>
-                    <li>🟡 Yellow: Slight decline - consider rest or deload week</li>
-                    <li>🔴 Red: Significant decline - check recovery, nutrition, and sleep</li>
+                    <li><strong>Performance %:</strong> Compares your max weights this week vs last week for each exercise</li>
+                    <li><strong>>0%:</strong> 🟢 Making progress! More new records than weaker sessions</li>
+                    <li><strong>0%:</strong> ➡️ Maintaining - equal new records and weaker sessions (or all same)</li>
+                    <li><strong><0%:</strong> 🔴 Declining - more weaker sessions than records. Consider rest, nutrition, or deload</li>
                     <li>📊 Volume = Sets × Reps × Weight (total work done)</li>
                 </ul>
             </div>
@@ -993,7 +1055,7 @@ function showExerciseDetails(id) {
             <h2>${exercise.name} - ${currentUser}'s Progress</h2>
             
             <div class="exercise-actions" style="margin-bottom: 20px;">
-                <button class="btn-edit-details" onclick="this.parentElement.parentElement.parentElement.remove(); editExerciseDetails(${exercise.id})">✏️ Edit Exercise</button>
+                <button class="btn-edit-details" onclick="editExerciseDetails(${exercise.id})">✏️ Edit Exercise</button>
                 <button class="btn-delete" onclick="if(confirm('Delete this exercise?')) { this.parentElement.parentElement.parentElement.remove(); deleteExercise(${exercise.id}); }">🗑️ Delete Exercise</button>
             </div>
             
@@ -1224,7 +1286,7 @@ function setupFirebaseListeners() {
     const exercisesRef = database.ref('exercises');
     
     // FORCE RELOAD: Set to true to reset database with new exercises
-    const FORCE_RESET = true;  // Temporarily true to force refresh
+    const FORCE_RESET = false;  // Normal operation
     
     if (FORCE_RESET) {
         // Force reset - load new exercises immediately

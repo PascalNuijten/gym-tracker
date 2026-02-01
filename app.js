@@ -297,10 +297,11 @@ function saveExercise() {
     const notes = document.getElementById('exerciseNotes').value;
     
     // Check if this is just editing exercise details (no sets section visible)
-    const isSetsVisible = document.getElementById('setsContainer').parentElement.style.display !== 'none';
+    const setsParent = document.getElementById('setsContainer').parentElement;
+    const isSetsHidden = setsParent.style.display === 'none';
     
-    if (!isSetsVisible) {
-        // Just updating exercise details
+    if (isSetsHidden) {
+        // Just updating exercise details (sets section is hidden)
         const exercise = exercises.find(ex => ex.id === editingExerciseId);
         if (exercise) {
             exercise.name = document.getElementById('exerciseName').value;
@@ -314,10 +315,14 @@ function saveExercise() {
             exerciseForm.reset();
             editingExerciseId = null;
             
-            // Reset visibility
-            document.getElementById('setsContainer').parentElement.style.display = 'block';
+            // Reset visibility for next use
+            const setsParent = document.getElementById('setsContainer').parentElement;
+            if (setsParent) setsParent.style.display = 'block';
             document.getElementById('addSetBtn').style.display = 'block';
-            document.querySelector('label[for="exerciseNotes"]').parentElement.style.display = 'block';
+            const notesParent = document.querySelector('label[for="exerciseNotes"]')?.parentElement;
+            if (notesParent) notesParent.style.display = 'block';
+            const optionToggleParent = document.querySelector('.exercise-option-toggle')?.parentElement;
+            if (optionToggleParent) optionToggleParent.style.display = 'block';
         }
         return;
     }
@@ -413,9 +418,19 @@ function editExercise(id) {
     document.getElementById('exerciseMuscle').disabled = true;
     
     // Hide the option toggle when logging workout
-    document.querySelector('.exercise-option-toggle').parentElement.style.display = 'none';
+    const optionToggleParent = document.querySelector('.exercise-option-toggle')?.parentElement;
+    if (optionToggleParent) optionToggleParent.style.display = 'none';
     document.getElementById('existingExerciseSection').style.display = 'none';
     document.getElementById('newExerciseSection').style.display = 'block';
+    
+    // Show sets section for logging workout
+    const setsContainer = document.getElementById('setsContainer');
+    if (setsContainer && setsContainer.parentElement) {
+        setsContainer.parentElement.style.display = 'block';
+    }
+    document.getElementById('addSetBtn').style.display = 'block';
+    const notesParent = document.querySelector('label[for="exerciseNotes"]')?.parentElement;
+    if (notesParent) notesParent.style.display = 'block';
     
     // Reset sets for new workout
     resetSetsContainer();

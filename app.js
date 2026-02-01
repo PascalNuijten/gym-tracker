@@ -28,20 +28,32 @@ let setCounter = 1;
 let currentChart = null;
 let users = ['Fran', 'Pascal', 'Cicci']; // Track all users
 
-// DOM Elements
-const userButtons = document.querySelectorAll('.user-btn');
-const addExerciseBtn = document.getElementById('addExerciseBtn');
-const modal = document.getElementById('exerciseModal');
-const closeModal = document.querySelector('.close');
-const cancelBtn = document.getElementById('cancelBtn');
-const exerciseForm = document.getElementById('exerciseForm');
-const exerciseList = document.getElementById('exerciseList');
-const categoryFilter = document.getElementById('categoryFilter');
-const muscleFilter = document.getElementById('muscleFilter');
-const searchInput = document.getElementById('searchInput');
+// DOM Elements (will be initialized in init())
+let userButtons;
+let addExerciseBtn;
+let modal;
+let closeModal;
+let cancelBtn;
+let exerciseForm;
+let exerciseList;
+let categoryFilter;
+let muscleFilter;
+let searchInput;
 
 // Initialize App
 function init() {
+    // Initialize DOM elements
+    userButtons = document.querySelectorAll('.user-btn');
+    addExerciseBtn = document.getElementById('addExerciseBtn');
+    modal = document.getElementById('exerciseModal');
+    closeModal = document.querySelector('.close');
+    cancelBtn = document.getElementById('cancelBtn');
+    exerciseForm = document.getElementById('exerciseForm');
+    exerciseList = document.getElementById('exerciseList');
+    categoryFilter = document.getElementById('categoryFilter');
+    muscleFilter = document.getElementById('muscleFilter');
+    searchInput = document.getElementById('searchInput');
+    
     // Set active user button based on localStorage
     userButtons.forEach(btn => {
         btn.classList.remove('active');

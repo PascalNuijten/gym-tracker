@@ -69,7 +69,54 @@ function setupEventListeners() {
         document.getElementById('exerciseCategory').disabled = false;
         document.getElementById('exerciseMuscle').disabled = false;
         
+        // Show new exercise section by default
+        document.getElementById('newExerciseSection').style.display = 'block';
+        document.getElementById('existingExerciseSection').style.display = 'none';
+        document.getElementById('newExerciseBtn').classList.add('active');
+        document.getElementById('existingExerciseBtn').classList.remove('active');
+        
+        // Populate existing exercises dropdown
+        populateExistingExercises();
+        
         modal.style.display = 'block';
+    });
+
+    // Exercise option toggle
+    document.getElementById('existingExerciseBtn').addEventListener('click', () => {
+        document.getElementById('existingExerciseSection').style.display = 'block';
+        document.getElementById('newExerciseSection').style.display = 'none';
+        document.getElementById('existingExerciseBtn').classList.add('active');
+        document.getElementById('newExerciseBtn').classList.remove('active');
+        
+        // Make exercise name not required when selecting existing
+        document.getElementById('exerciseName').required = false;
+        document.getElementById('exerciseCategory').required = false;
+        document.getElementById('exerciseMuscle').required = false;
+    });
+
+    document.getElementById('newExerciseBtn').addEventListener('click', () => {
+        document.getElementById('newExerciseSection').style.display = 'block';
+        document.getElementById('existingExerciseSection').style.display = 'none';
+        document.getElementById('newExerciseBtn').classList.add('active');
+        document.getElementById('existingExerciseBtn').classList.remove('active');
+        
+        // Make exercise name required when creating new
+        document.getElementById('exerciseName').required = true;
+        document.getElementById('exerciseCategory').required = true;
+        document.getElementById('exerciseMuscle').required = true;
+    });
+
+    // When selecting an existing exercise, update the form
+    document.getElementById('existingExerciseSelect').addEventListener('change', (e) => {
+        const exerciseId = parseInt(e.target.value);
+        if (exerciseId) {
+            const exercise = exercises.find(ex => ex.id === exerciseId);
+            if (exercise) {
+                editingExerciseId = exerciseId;
+            }
+        } else {
+            editingExerciseId = null;
+        }
     });
 
     // Close Modal
@@ -182,57 +229,100 @@ function getSetsFromForm() {
     return sets;
 }
 
+// Populate Existing Exercises Dropdown
+function populateExistingExercises() {
+    const select = document.getElementById('existingExerciseSelect');
+    select.innerHTML = '<option value="">Choose an exercise...</option>';
+    
+    // Get all exercises that other users have done but current user hasn't
+    const availableExercises = exercises.filter(ex => {
+        const currentUserHistory = ex.users[currentUser]?.history || [];
+        const otherUsersHaveHistory = Object.keys(ex.users).some(user => {
+            if (user === currentUser) return false;
+            return ex.users[user].history && ex.users[user].history.length > 0;
+        });
+        return currentUserHistory.length === 0 && otherUsersHaveHistory;
+    });
+    
+    availableExercises.forEach(ex => {
+        const option = document.createElement('option');
+        option.value = ex.id;
+        option.textContent = `${ex.name} (${ex.category} - ${ex.muscle})`;
+        select.appendChild(option);
+    });
+}
+
 // Save Exercise
 function saveExercise() {
     const sets = getSetsFromForm();
     const notes = document.getElementById('exerciseNotes').value;
+    
+    // Check if we need any sets
+    if (sets.length === 0) {
+        alert('Please add at least one set with reps and weight.');
+        return;
+    }
 
-    const exercise = {
-        id: editingExerciseId || Date.now(),
-        name: document.getElementById('exerciseName').value,
-        category: document.getElementById('exerciseCategory').value,
-        muscle: document.getElementById('exerciseMuscle').value,
-        image: document.getElementById('exerciseImage').value,
-        machineInfo: document.getElementById('machineInfo').value,
-        users: {
-            Fran: { history: [] },
-            Pascal: { history: [] },
-            Cicci: { history: [] }
+    let exercise;
+    const isExistingExercise = document.getElementById('existingExerciseSection').style.display !== 'none';
+    
+    if (isExistingExercise && editingExerciseId) {
+        // Adding workout to existing exercise
+        exercise = exercises.find(ex => ex.id === editingExerciseId);
+        if (!exercise) {
+            alert('Exercise not found!');
+            return;
         }
-    };
+    } else {
+        // Creating new exercise
+        exercise = {
+            id: editingExerciseId || Date.now(),
+            name: document.getElementById('exerciseName').value,
+            category: document.getElementById('exerciseCategory').value,
+            muscle: document.getElementById('exerciseMuscle').value,
+            image: document.getElementById('exerciseImage').value,
+            machineInfo: document.getElementById('machineInfo').value,
+            users: {
+                Fran: { history: [] },
+                Pascal: { history: [] },
+                Cicci: { history: [] }
+            }
+        };
 
-    // If editing existing exercise, preserve all user data
-    if (editingExerciseId) {
-        const existingExercise = exercises.find(ex => ex.id === editingExerciseId);
-        if (existingExercise) {
-            exercise.users = existingExercise.users;
+        // If editing existing exercise, preserve all user data
+        if (editingExerciseId) {
+            const existingExercise = exercises.find(ex => ex.id === editingExerciseId);
+            if (existingExercise) {
+                exercise.users = existingExercise.users;
+            }
         }
     }
 
     // Add new workout session to current user's history
-    if (sets.length > 0) {
-        const session = {
-            date: new Date().toISOString(),
-            sets: sets,
-            notes: notes
-        };
-        
-        if (!exercise.users[currentUser].history) {
-            exercise.users[currentUser].history = [];
-        }
-        exercise.users[currentUser].history.push(session);
+    const session = {
+        date: new Date().toISOString(),
+        sets: sets,
+        notes: notes
+    };
+    
+    if (!exercise.users[currentUser].history) {
+        exercise.users[currentUser].history = [];
     }
+    exercise.users[currentUser].history.push(session);
 
-    if (editingExerciseId) {
+    if (editingExerciseId && exercises.find(ex => ex.id === editingExerciseId)) {
+        // Update existing exercise
         const index = exercises.findIndex(ex => ex.id === editingExerciseId);
         exercises[index] = exercise;
     } else {
+        // Add new exercise
         exercises.push(exercise);
     }
 
     saveToFirebase();
     modal.style.display = 'none';
     exerciseForm.reset();
+    editingExerciseId = null;
 }
 
 // Edit Exercise (add new session)
@@ -507,7 +597,11 @@ function renderExercises() {
                           exercise.muscle.toLowerCase().includes(searchValue) ||
                           exercise.category.toLowerCase().includes(searchValue);
         
-        return matchCategory && matchMuscle && matchSearch;
+        // Only show exercises that the current user has done (has history)
+        const userData = exercise.users[currentUser];
+        const hasHistory = userData && userData.history && userData.history.length > 0;
+        
+        return matchCategory && matchMuscle && matchSearch && hasHistory;
     });
 
     if (filtered.length === 0) {
@@ -577,7 +671,7 @@ function setupFirebaseListeners() {
     const exercisesRef = database.ref('exercises');
     
     // FORCE RELOAD: Set to true to reset database with new exercises
-    const FORCE_RESET = true;
+    const FORCE_RESET = false;
     
     if (FORCE_RESET) {
         // Force reset - load new exercises immediately

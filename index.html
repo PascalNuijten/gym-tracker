@@ -65,47 +65,66 @@
             
             <form id="exerciseForm">
                 <div class="form-group">
-                    <label for="exerciseName">Exercise Name *</label>
-                    <input type="text" id="exerciseName" required>
+                    <label>Choose Option</label>
+                    <div class="exercise-option-toggle">
+                        <button type="button" id="existingExerciseBtn" class="option-btn">Select Existing Exercise</button>
+                        <button type="button" id="newExerciseBtn" class="option-btn active">Create New Exercise</button>
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="exerciseCategory">Training Category *</label>
-                    <select id="exerciseCategory" required>
-                        <option value="">Select category...</option>
-                        <option value="Legs">Legs</option>
-                        <option value="Functional">Functional</option>
-                        <option value="Chest">Chest</option>
-                        <option value="Back/Shoulder">Back/Shoulder</option>
-                    </select>
+                <div id="existingExerciseSection" style="display: none;">
+                    <div class="form-group">
+                        <label for="existingExerciseSelect">Select Exercise *</label>
+                        <select id="existingExerciseSelect">
+                            <option value="">Choose an exercise...</option>
+                        </select>
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="exerciseMuscle">Muscle Group *</label>
-                    <select id="exerciseMuscle" required>
-                        <option value="">Select muscle group...</option>
-                        <option value="Quadriceps">Quadriceps</option>
-                        <option value="Hamstrings">Hamstrings</option>
-                        <option value="Glutes">Glutes</option>
-                        <option value="Calves">Calves</option>
-                        <option value="Chest">Chest</option>
-                        <option value="Back">Back</option>
-                        <option value="Shoulders">Shoulders</option>
-                        <option value="Biceps">Biceps</option>
-                        <option value="Triceps">Triceps</option>
-                        <option value="Core">Core</option>
-                        <option value="Full Body">Full Body</option>
-                    </select>
-                </div>
+                <div id="newExerciseSection">
+                    <div class="form-group">
+                        <label for="exerciseName">Exercise Name *</label>
+                        <input type="text" id="exerciseName" required>
+                    </div>
 
-                <div class="form-group">
-                    <label for="exerciseImage">Image URL (optional)</label>
-                    <input type="url" id="exerciseImage" placeholder="https://example.com/image.jpg">
-                </div>
+                    <div class="form-group">
+                        <label for="exerciseCategory">Training Category *</label>
+                        <select id="exerciseCategory" required>
+                            <option value="">Select category...</option>
+                            <option value="Legs">Legs</option>
+                            <option value="Functional">Functional</option>
+                            <option value="Chest">Chest</option>
+                            <option value="Back/Shoulder">Back/Shoulder</option>
+                        </select>
+                    </div>
 
-                <div class="form-group">
-                    <label for="machineInfo">Machine/Equipment Info (optional)</label>
-                    <textarea id="machineInfo" rows="2" placeholder="e.g., Smith Machine, Dumbbells, Cable Machine..."></textarea>
+                    <div class="form-group">
+                        <label for="exerciseMuscle">Muscle Group *</label>
+                        <select id="exerciseMuscle" required>
+                            <option value="">Select muscle group...</option>
+                            <option value="Quadriceps">Quadriceps</option>
+                            <option value="Hamstrings">Hamstrings</option>
+                            <option value="Glutes">Glutes</option>
+                            <option value="Calves">Calves</option>
+                            <option value="Chest">Chest</option>
+                            <option value="Back">Back</option>
+                            <option value="Shoulders">Shoulders</option>
+                            <option value="Biceps">Biceps</option>
+                            <option value="Triceps">Triceps</option>
+                            <option value="Core">Core</option>
+                            <option value="Full Body">Full Body</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="exerciseImage">Image URL (optional)</label>
+                        <input type="url" id="exerciseImage" placeholder="https://example.com/image.jpg">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="machineInfo">Machine/Equipment Info (optional)</label>
+                        <textarea id="machineInfo" rows="2" placeholder="e.g., Smith Machine, Dumbbells, Cable Machine..."></textarea>
+                    </div>
                 </div>
 
                 <h3>Today's Workout</h3>

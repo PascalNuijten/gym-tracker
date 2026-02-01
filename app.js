@@ -671,7 +671,7 @@ function setupFirebaseListeners() {
     const exercisesRef = database.ref('exercises');
     
     // FORCE RELOAD: Set to true to reset database with new exercises
-    const FORCE_RESET = false;
+    const FORCE_RESET = true;  // Temporarily true to clear old data
     
     if (FORCE_RESET) {
         // Force reset - load new exercises immediately

@@ -1333,6 +1333,19 @@ function renderExercises() {
     const categoryValue = categoryFilter.value;
     const muscleValue = muscleFilter.value;
     const searchValue = searchInput.value.toLowerCase();
+    
+    console.log('=== RENDER EXERCISES DEBUG ===');
+    console.log('Current user:', currentUser);
+    console.log('Total exercises in DB:', exercises.length);
+    
+    // Log all exercises for current user
+    exercises.forEach(ex => {
+        const userData = ex.users[currentUser];
+        const historyCount = userData?.history?.length || 0;
+        if (userData || ex.name.toLowerCase().includes('leg')) {
+            console.log(`Exercise: ${ex.name}, User ${currentUser} history: ${historyCount}, All users:`, Object.keys(ex.users));
+        }
+    });
 
     let filtered = exercises.filter(exercise => {
         const matchCategory = categoryValue === 'all' || exercise.category === categoryValue;
@@ -1347,6 +1360,9 @@ function renderExercises() {
         
         return matchCategory && matchMuscle && matchSearch && hasHistory;
     });
+    
+    console.log('Filtered exercises shown:', filtered.length);
+    console.log('=== END DEBUG ===');
 
     if (filtered.length === 0) {
         exerciseList.innerHTML = `

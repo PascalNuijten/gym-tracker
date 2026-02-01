@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gym Progress Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>💪 Gym Progress Tracker</h1>
+            
+            <!-- User Toggle -->
+            <div class="user-toggle">
+                <button class="user-btn active" data-user="Fran">Fran</button>
+                <button class="user-btn" data-user="Pascal">Pascal</button>
+            </div>
+        </header>
+
+        <!-- Filters and Search -->
+        <div class="controls">
+            <div class="filter-section">
+                <select id="categoryFilter" class="filter-select">
+                    <option value="all">All Categories</option>
+                    <option value="Legs">Legs</option>
+                    <option value="Functional">Functional</option>
+                    <option value="Chest">Chest</option>
+                    <option value="Back/Shoulder">Back/Shoulder</option>
+                </select>
+
+                <select id="muscleFilter" class="filter-select">
+                    <option value="all">All Muscles</option>
+                    <option value="Quadriceps">Quadriceps</option>
+                    <option value="Hamstrings">Hamstrings</option>
+                    <option value="Glutes">Glutes</option>
+                    <option value="Calves">Calves</option>
+                    <option value="Chest">Chest</option>
+                    <option value="Back">Back</option>
+                    <option value="Shoulders">Shoulders</option>
+                    <option value="Biceps">Biceps</option>
+                    <option value="Triceps">Triceps</option>
+                    <option value="Core">Core</option>
+                    <option value="Full Body">Full Body</option>
+                </select>
+
+                <input type="text" id="searchInput" class="search-input" placeholder="Search exercises...">
+            </div>
+
+            <button id="addExerciseBtn" class="add-btn">+ Add Exercise</button>
+        </div>
+
+        <!-- Exercise List -->
+        <div id="exerciseList" class="exercise-list">
+            <!-- Exercises will be dynamically added here -->
+        </div>
+    </div>
+
+    <!-- Add/Edit Exercise Modal -->
+    <div id="exerciseModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="modalTitle">Add New Exercise</h2>
+            
+            <form id="exerciseForm">
+                <div class="form-group">
+                    <label for="exerciseName">Exercise Name *</label>
+                    <input type="text" id="exerciseName" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="exerciseCategory">Training Category *</label>
+                    <select id="exerciseCategory" required>
+                        <option value="">Select category...</option>
+                        <option value="Legs">Legs</option>
+                        <option value="Functional">Functional</option>
+                        <option value="Chest">Chest</option>
+                        <option value="Back/Shoulder">Back/Shoulder</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="exerciseMuscle">Muscle Group *</label>
+                    <select id="exerciseMuscle" required>
+                        <option value="">Select muscle group...</option>
+                        <option value="Quadriceps">Quadriceps</option>
+                        <option value="Hamstrings">Hamstrings</option>
+                        <option value="Glutes">Glutes</option>
+                        <option value="Calves">Calves</option>
+                        <option value="Chest">Chest</option>
+                        <option value="Back">Back</option>
+                        <option value="Shoulders">Shoulders</option>
+                        <option value="Biceps">Biceps</option>
+                        <option value="Triceps">Triceps</option>
+                        <option value="Core">Core</option>
+                        <option value="Full Body">Full Body</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="exerciseImage">Image URL (optional)</label>
+                    <input type="url" id="exerciseImage" placeholder="https://example.com/image.jpg">
+                </div>
+
+                <div class="form-group">
+                    <label for="machineInfo">Machine/Equipment Info (optional)</label>
+                    <textarea id="machineInfo" rows="2" placeholder="e.g., Smith Machine, Dumbbells, Cable Machine..."></textarea>
+                </div>
+
+                <h3>Your Progress</h3>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="exerciseReps">Reps</label>
+                        <input type="number" id="exerciseReps" min="0" placeholder="12">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="exerciseWeight">Weight (kg)</label>
+                        <input type="number" id="exerciseWeight" min="0" step="0.5" placeholder="50">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="exerciseNotes">Additional Notes (optional)</label>
+                    <textarea id="exerciseNotes" rows="2" placeholder="How did it feel? Any observations?"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancelBtn">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Exercise</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

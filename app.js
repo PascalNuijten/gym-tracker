@@ -579,14 +579,10 @@ function setupFirebaseListeners() {
     // FORCE RELOAD: Set to true to reset database with new exercises
     const FORCE_RESET = true;
     
-    // Listen for changes in real-time
-    exercisesRef.on('value', (snapshot) => {
-        const data = snapshot.val();
-        if (data && !FORCE_RESET) {
-            exercises = data;
-        } else {
-            // Initialize with real gym exercises
-            const baseTime = Date.now();
+    if (FORCE_RESET) {
+        // Force reset - load new exercises immediately
+        console.log('Force resetting database with new exercises...');
+        const baseTime = Date.now();
             exercises = [
                 // CHEST EXERCISES
                 {
@@ -1114,12 +1110,20 @@ function setupFirebaseListeners() {
                 }
             ];
             saveToFirebase();
-        }
-        renderExercises();
-    }, (error) => {
-        console.error('Firebase read error:', error);
-        alert('Error loading data. Check your internet connection.');
-    });
+            renderExercises();
+    } else {
+        // Normal mode - listen for changes
+        exercisesRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                exercises = data;
+            }
+            renderExercises();
+        }, (error) => {
+            console.error('Firebase read error:', error);
+            alert('Error loading data. Check your internet connection.');
+        });
+    }
 }
 
 function saveToFirebase() {

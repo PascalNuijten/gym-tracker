@@ -273,20 +273,27 @@ function populateExistingExercises() {
     const select = document.getElementById('existingExerciseSelect');
     select.innerHTML = '<option value="">Choose an exercise...</option>';
     
-    // Get all exercises that other users have done but current user hasn't
+    // Get all exercises that current user hasn't done yet
+    // This includes exercises done by other users OR exercises with no history at all
     const availableExercises = exercises.filter(ex => {
         const currentUserHistory = ex.users[currentUser]?.history || [];
-        const otherUsersHaveHistory = Object.keys(ex.users).some(user => {
-            if (user === currentUser) return false;
-            return ex.users[user].history && ex.users[user].history.length > 0;
-        });
-        return currentUserHistory.length === 0 && otherUsersHaveHistory;
+        return currentUserHistory.length === 0;
     });
+    
+    // Sort by name for easier selection
+    availableExercises.sort((a, b) => a.name.localeCompare(b.name));
     
     availableExercises.forEach(ex => {
         const option = document.createElement('option');
         option.value = ex.id;
-        option.textContent = `${ex.name} (${ex.category} - ${ex.muscle})`;
+        
+        // Show who has done this exercise
+        const usersWithHistory = Object.keys(ex.users).filter(user => 
+            ex.users[user].history && ex.users[user].history.length > 0
+        );
+        const userInfo = usersWithHistory.length > 0 ? ` [${usersWithHistory.join(', ')}]` : ' [New]';
+        
+        option.textContent = `${ex.name} (${ex.category} - ${ex.muscle})${userInfo}`;
         select.appendChild(option);
     });
 }

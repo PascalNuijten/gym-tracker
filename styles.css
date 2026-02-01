@@ -230,6 +230,7 @@ h1 {
 }
 
 .btn-edit,
+.btn-view,
 .btn-delete {
     flex: 1;
     padding: 10px;
@@ -249,9 +250,19 @@ h1 {
     background: #5568d3;
 }
 
+.btn-view {
+    background: #4caf50;
+    color: white;
+}
+
+.btn-view:hover {
+    background: #45a049;
+}
+
 .btn-delete {
     background: #f44336;
     color: white;
+    flex: 0.5;
 }
 
 .btn-delete:hover {
@@ -458,3 +469,172 @@ textarea {
         padding: 15px;
     }
 }
+
+/* New Styles for Advanced Features */
+
+.stat-sublabel {
+    font-size: 0.75rem;
+    color: #999;
+    margin-top: 2px;
+}
+
+.workout-count {
+    font-size: 0.85rem;
+    color: #666;
+    text-align: center;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #f0f0f0;
+}
+
+.set-entry {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    position: relative;
+}
+
+.set-entry h4 {
+    color: #667eea;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.btn-remove-set {
+    background: #f44336;
+    color: white;
+    border: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+}
+
+.btn-remove-set:hover {
+    background: #d32f2f;
+    transform: scale(1.1);
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.stat-card .stat-label {
+    font-size: 0.85rem;
+    opacity: 0.9;
+    margin-bottom: 8px;
+}
+
+.stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: white;
+}
+
+.suggestion-box {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+}
+
+.suggestion-box h3 {
+    margin-bottom: 10px;
+    font-size: 1.2rem;
+}
+
+.suggestion-box p {
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+.chart-container {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.history-section {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 12px;
+}
+
+.history-section h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.history-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.history-item {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    border-left: 4px solid #667eea;
+}
+
+.history-date {
+    font-weight: 600;
+    color: #667eea;
+    margin-bottom: 8px;
+    font-size: 0.95rem;
+}
+
+.history-sets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.set-badge {
+    background: #e3f2fd;
+    color: #1976d2;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.history-notes {
+    font-size: 0.9rem;
+    color: #555;
+    padding: 8px;
+    background: #fffacd;
+    border-radius: 6px;
+    margin-top: 8px;
+}
+
+#addSetBtn {
+    margin-top: 10px;
+}
+

@@ -1412,11 +1412,24 @@ function renderExercises() {
         
         // Only show exercises that the current user has done (has history)
         const userData = exercise.users[currentUser];
-        const hasHistory = userData && userData.history && userData.history.length > 0;
+        
+        // DEBUG: Log the actual structure
+        if (userData) {
+            console.log(`DEBUG ${exercise.name}:`, {
+                userDataExists: !!userData,
+                historyExists: !!userData.history,
+                historyType: typeof userData.history,
+                historyIsArray: Array.isArray(userData.history),
+                historyLength: userData.history?.length,
+                actualHistory: userData.history
+            });
+        }
+        
+        const hasHistory = userData && userData.history && Array.isArray(userData.history) && userData.history.length > 0;
         
         // Extra debugging for exercises not showing
         if (userData && userData.history) {
-            console.log(`${exercise.name}: userData exists, history array exists, length=${userData.history.length}, hasHistory=${hasHistory}`);
+            console.log(`${exercise.name}: hasHistory=${hasHistory}, will show=${matchCategory && matchMuscle && matchSearch && hasHistory}`);
         }
         
         return matchCategory && matchMuscle && matchSearch && hasHistory;

@@ -199,6 +199,7 @@ function showDebugModal() {
     
     let debugHTML = '<h3>All Exercises in Database</h3>';
     debugHTML += `<p>Total exercises: ${exercises.length}</p>`;
+    debugHTML += `<p>Current user: <strong>${currentUser}</strong></p>`;
     debugHTML += '<div style="max-height: 500px; overflow-y: auto;">';
     
     exercises.forEach((ex, idx) => {
@@ -207,9 +208,12 @@ function showDebugModal() {
             ex.users[user].history && ex.users[user].history.length > 0
         );
         
+        const currentUserHistory = ex.users[currentUser]?.history?.length || 0;
+        const isCurrentUserExercise = currentUserHistory > 0;
+        
         debugHTML += `
-            <div style="border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;">
-                <strong>${idx + 1}. ${ex.name}</strong><br>
+            <div style="border: 1px solid ${isCurrentUserExercise ? '#4CAF50' : '#ddd'}; padding: 10px; margin: 10px 0; border-radius: 5px; background: ${isCurrentUserExercise ? '#f0f8f0' : 'white'};">
+                <strong>${idx + 1}. ${ex.name}</strong> ${isCurrentUserExercise ? '✅ <span style="color: green;">YOUR EXERCISE</span>' : ''}<br>
                 <small>Category: ${ex.category} | Muscle: ${ex.muscle}</small><br>
                 <small>ID: ${ex.id}</small><br>
                 <small>All users in object: ${allUsers.join(', ')}</small><br>
@@ -219,13 +223,15 @@ function showDebugModal() {
         // Show detailed history for each user
         allUsers.forEach(user => {
             const historyCount = ex.users[user]?.history?.length || 0;
-            debugHTML += `<small>- ${user}: ${historyCount} workout(s)</small><br>`;
+            const isCurrent = user === currentUser;
+            debugHTML += `<small style="font-weight: ${isCurrent ? 'bold' : 'normal'}; color: ${isCurrent ? '#4CAF50' : 'inherit'};">- ${user}: ${historyCount} workout(s)${isCurrent && historyCount > 0 ? ' 👈 YOU' : ''}</small><br>`;
         });
         
         debugHTML += '</div>';
     });
     
     debugHTML += '</div>';
+    debugHTML += '<p style="margin-top: 15px; color: #666;"><strong>💡 Tip:</strong> Exercises highlighted in green should be visible in your main list. Open browser console (F12) to see detailed logs.</p>';
     
     debugModal.innerHTML = `
         <div class="modal-content" style="max-width: 800px;">
@@ -595,53 +601,6 @@ function deleteExercise(id) {
             saveToFirebase();
         }
     }
-}
-
-// Show Debug Modal - View All Database Exercises
-function showDebugModal() {
-    const debugModal = document.createElement('div');
-    debugModal.className = 'modal';
-    debugModal.style.display = 'block';
-    
-    let debugHTML = '<h3>All Exercises in Database</h3>';
-    debugHTML += `<p>Total exercises: ${exercises.length}</p>`;
-    debugHTML += '<div style="max-height: 500px; overflow-y: auto;">';
-    
-    exercises.forEach((ex, idx) => {
-        const allUsers = Object.keys(ex.users);
-        const usersWithHistory = allUsers.filter(user => 
-            ex.users[user].history && ex.users[user].history.length > 0
-        );
-        
-        debugHTML += `
-            <div style="border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;">
-                <strong>${idx + 1}. ${ex.name}</strong><br>
-                <small>Category: ${ex.category} | Muscle: ${ex.muscle}</small><br>
-                <small>ID: ${ex.id}</small><br>
-                <small>All users in object: ${allUsers.join(', ')}</small><br>
-                <small style="color: ${usersWithHistory.length > 0 ? 'green' : 'red'};">Users with history: ${usersWithHistory.length > 0 ? usersWithHistory.join(', ') : 'NONE'}</small><br>
-        `;
-        
-        // Show detailed history for each user
-        allUsers.forEach(user => {
-            const historyCount = ex.users[user]?.history?.length || 0;
-            debugHTML += `<small>- ${user}: ${historyCount} workout(s)</small><br>`;
-        });
-        
-        debugHTML += '</div>';
-    });
-    
-    debugHTML += '</div>';
-    
-    debugModal.innerHTML = `
-        <div class="modal-content" style="max-width: 800px;">
-            <span class="close" onclick="this.parentElement.parentElement.remove()">&times;</span>
-            <h2>🔍 Database Debug Info</h2>
-            ${debugHTML}
-        </div>
-    `;
-    
-    document.body.appendChild(debugModal);
 }
 
 // Add User Modal
@@ -1454,6 +1413,11 @@ function renderExercises() {
         // Only show exercises that the current user has done (has history)
         const userData = exercise.users[currentUser];
         const hasHistory = userData && userData.history && userData.history.length > 0;
+        
+        // Extra debugging for exercises not showing
+        if (userData && userData.history) {
+            console.log(`${exercise.name}: userData exists, history array exists, length=${userData.history.length}, hasHistory=${hasHistory}`);
+        }
         
         return matchCategory && matchMuscle && matchSearch && hasHistory;
     });

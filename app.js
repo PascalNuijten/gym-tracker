@@ -917,6 +917,8 @@ function generateWeeklyRoutine() {
         scoredExercises.sort((a, b) => b.score - a.score);
         const selectedExercises = scoredExercises.slice(0, Math.min(5, scoredExercises.length));
         
+        console.log(`${categoryName}: Found ${categoryExercises.length} exercises with history, selected ${selectedExercises.length}`);
+        
         // Generate recommendations with progressive overload
         dayExercises = selectedExercises.map(({ exercise, lastSession, daysSinceLastTrained, progressScore }) => {
             const lastSets = lastSession.sets;
@@ -952,6 +954,7 @@ function generateWeeklyRoutine() {
                 name: exercise.name,
                 category: exercise.category,
                 muscle: exercise.muscle,
+                image: exercise.image,
                 sets: recommendedSets,
                 reps: recommendedReps,
                 weight: recommendedWeight,
@@ -996,6 +999,7 @@ function displayRoutineModal(routines) {
                     <div class="routine-exercise">
                         <div class="routine-ex-header">
                             <span class="routine-ex-number">${idx + 1}</span>
+                            ${ex.image ? `<img src="${ex.image}" alt="${ex.name}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 8px; margin-right: 12px;">` : ''}
                             <div>
                                 <div class="routine-ex-name">${ex.name}</div>
                                 <div class="routine-ex-muscle">${ex.category} - ${ex.muscle}</div>

@@ -343,8 +343,8 @@ function saveExercise() {
         if (!exercise.users[currentUser]) {
             exercise.users[currentUser] = { history: [] };
         }
-    } else if (editingExerciseId) {
-        // Editing existing exercise (logging new workout)
+    } else if (editingExerciseId && !isExistingExercise) {
+        // Logging new workout to existing exercise (from "Log Workout" button)
         exercise = exercises.find(ex => ex.id === editingExerciseId);
         if (!exercise) {
             alert('Exercise not found!');
@@ -378,15 +378,13 @@ function saveExercise() {
         notes: notes
     };
     
+    if (!exercise.users[currentUser]) {
+        exercise.users[currentUser] = { history: [] };
+    }
     if (!exercise.users[currentUser].history) {
         exercise.users[currentUser].history = [];
     }
     exercise.users[currentUser].history.push(session);
-
-    // Only add to exercises array if it's a brand new exercise
-    if (!editingExerciseId && !exercises.find(ex => ex.id === exercise.id)) {
-        exercises.push(exercise);
-    }
 
     saveToFirebase();
     modal.style.display = 'none';

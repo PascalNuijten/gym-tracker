@@ -75,6 +75,14 @@ function setupEventListeners() {
         document.getElementById('newExerciseBtn').classList.add('active');
         document.getElementById('existingExerciseBtn').classList.remove('active');
         
+        // Show option toggle
+        document.querySelector('.exercise-option-toggle').parentElement.style.display = 'block';
+        
+        // Show sets section
+        document.getElementById('setsContainer').parentElement.style.display = 'block';
+        document.getElementById('addSetBtn').style.display = 'block';
+        document.querySelector('label[for="exerciseNotes"]').parentElement.style.display = 'block';
+        
         // Populate existing exercises dropdown
         populateExistingExercises();
         
@@ -257,7 +265,33 @@ function saveExercise() {
     const sets = getSetsFromForm();
     const notes = document.getElementById('exerciseNotes').value;
     
-    // Check if we need any sets
+    // Check if this is just editing exercise details (no sets section visible)
+    const isSetsVisible = document.getElementById('setsContainer').parentElement.style.display !== 'none';
+    
+    if (!isSetsVisible) {
+        // Just updating exercise details
+        const exercise = exercises.find(ex => ex.id === editingExerciseId);
+        if (exercise) {
+            exercise.name = document.getElementById('exerciseName').value;
+            exercise.category = document.getElementById('exerciseCategory').value;
+            exercise.muscle = document.getElementById('exerciseMuscle').value;
+            exercise.image = document.getElementById('exerciseImage').value;
+            exercise.machineInfo = document.getElementById('machineInfo').value;
+            
+            saveToFirebase();
+            modal.style.display = 'none';
+            exerciseForm.reset();
+            editingExerciseId = null;
+            
+            // Reset visibility
+            document.getElementById('setsContainer').parentElement.style.display = 'block';
+            document.getElementById('addSetBtn').style.display = 'block';
+            document.querySelector('label[for="exerciseNotes"]').parentElement.style.display = 'block';
+        }
+        return;
+    }
+    
+    // Check if we need any sets for workout logging
     if (sets.length === 0) {
         alert('Please add at least one set with reps and weight.');
         return;
@@ -340,15 +374,51 @@ function editExercise(id) {
     document.getElementById('exerciseImage').value = exercise.image || '';
     document.getElementById('machineInfo').value = exercise.machineInfo || '';
     
-    // Make basic fields read-only when editing
+    // Make basic fields read-only when logging workout
     document.getElementById('exerciseName').readOnly = true;
     document.getElementById('exerciseCategory').disabled = true;
     document.getElementById('exerciseMuscle').disabled = true;
+    
+    // Hide the option toggle when logging workout
+    document.querySelector('.exercise-option-toggle').parentElement.style.display = 'none';
+    document.getElementById('existingExerciseSection').style.display = 'none';
+    document.getElementById('newExerciseSection').style.display = 'block';
     
     // Reset sets for new workout
     resetSetsContainer();
     document.getElementById('exerciseNotes').value = '';
 
+    modal.style.display = 'block';
+}
+
+// Edit Exercise Details (name, category, etc.)
+function editExerciseDetails(id) {
+    const exercise = exercises.find(ex => ex.id === id);
+    if (!exercise) return;
+
+    editingExerciseId = id;
+    document.getElementById('modalTitle').textContent = 'Edit Exercise Details - ' + exercise.name;
+    
+    // Fill form with exercise data (editable)
+    document.getElementById('exerciseName').value = exercise.name;
+    document.getElementById('exerciseCategory').value = exercise.category;
+    document.getElementById('exerciseMuscle').value = exercise.muscle;
+    document.getElementById('exerciseImage').value = exercise.image || '';
+    document.getElementById('machineInfo').value = exercise.machineInfo || '';
+    
+    // Make fields editable
+    document.getElementById('exerciseName').readOnly = false;
+    document.getElementById('exerciseCategory').disabled = false;
+    document.getElementById('exerciseMuscle').disabled = false;
+    
+    // Hide option toggle and sets section
+    document.querySelector('.exercise-option-toggle').parentElement.style.display = 'none';
+    document.getElementById('existingExerciseSection').style.display = 'none';
+    document.getElementById('newExerciseSection').style.display = 'block';
+    document.getElementById('setsContainer').parentElement.style.display = 'none';
+    document.getElementById('addSetBtn').style.display = 'none';
+    document.querySelector('label[for="exerciseNotes"]').parentElement.style.display = 'none';
+    
     modal.style.display = 'block';
 }
 
@@ -428,6 +498,25 @@ function generateSuggestion(history) {
     }
 }
 
+// Delete History Entry
+function deleteHistory(exerciseId, historyIndex) {
+    if (!confirm('Are you sure you want to delete this workout session?')) return;
+    
+    const exercise = exercises.find(ex => ex.id === exerciseId);
+    if (exercise && exercise.users[currentUser]) {
+        exercise.users[currentUser].history.splice(historyIndex, 1);
+        saveToFirebase();
+        
+        // Close and reopen details modal to refresh
+        document.querySelectorAll('.modal').forEach(m => {
+            if (m.style.display === 'block' && m.querySelector('.history-section')) {
+                m.remove();
+            }
+        });
+        showExerciseDetails(exerciseId);
+    }
+}
+
 // Show Exercise Details Modal
 function showExerciseDetails(id) {
     const exercise = exercises.find(ex => ex.id === id);
@@ -479,7 +568,10 @@ function showExerciseDetails(id) {
                 <div class="history-list">
                     ${history.length > 0 ? history.map((session, idx) => `
                         <div class="history-item">
-                            <div class="history-date">${new Date(session.date).toLocaleDateString()} ${new Date(session.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                            <div class="history-header">
+                                <div class="history-date">${new Date(session.date).toLocaleDateString()} ${new Date(session.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                                <button class="btn-delete-history" onclick="deleteHistory(${exercise.id}, ${history.length - 1 - idx})" title="Delete this workout">🗑️</button>
+                            </div>
                             <div class="history-sets">
                                 ${session.sets.map((set, i) => `
                                     <span class="set-badge">Set ${i+1}: ${set.reps} reps @ ${set.weight}kg</span>
@@ -656,6 +748,7 @@ function renderExercises() {
                     <div class="exercise-actions">
                         <button class="btn-edit" onclick="editExercise(${exercise.id})">📝 Log Workout</button>
                         <button class="btn-view" onclick="showExerciseDetails(${exercise.id})">📊 Details</button>
+                        <button class="btn-edit-details" onclick="editExerciseDetails(${exercise.id})">✏️ Edit</button>
                         <button class="btn-delete" onclick="deleteExercise(${exercise.id})">🗑️</button>
                     </div>
                 </div>
@@ -671,7 +764,7 @@ function setupFirebaseListeners() {
     const exercisesRef = database.ref('exercises');
     
     // FORCE RELOAD: Set to true to reset database with new exercises
-    const FORCE_RESET = true;  // Temporarily true to clear old data
+    const FORCE_RESET = false;  // Normal operation
     
     if (FORCE_RESET) {
         // Force reset - load new exercises immediately

@@ -227,18 +227,22 @@ h1 {
     display: flex;
     gap: 10px;
     margin-top: 15px;
+    flex-wrap: wrap;
 }
 
 .btn-edit,
 .btn-view,
+.btn-edit-details,
 .btn-delete {
     flex: 1;
+    min-width: 80px;
     padding: 10px;
     border: none;
     border-radius: 6px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.3s ease;
+    font-size: 0.9rem;
 }
 
 .btn-edit {
@@ -257,6 +261,15 @@ h1 {
 
 .btn-view:hover {
     background: #45a049;
+}
+
+.btn-edit-details {
+    background: #ff9800;
+    color: white;
+}
+
+.btn-edit-details:hover {
+    background: #e68900;
 }
 
 .btn-delete {
@@ -602,11 +615,33 @@ textarea {
     border-left: 4px solid #667eea;
 }
 
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
 .history-date {
     font-weight: 600;
     color: #667eea;
-    margin-bottom: 8px;
     font-size: 0.95rem;
+}
+
+.btn-delete-history {
+    background: #f44336;
+    color: white;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.3s ease;
+}
+
+.btn-delete-history:hover {
+    background: #d32f2f;
+    transform: scale(1.05);
 }
 
 .history-sets {

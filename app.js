@@ -26,6 +26,7 @@ let exercises = [];
 let editingExerciseId = null;
 let setCounter = 1;
 let currentChart = null;
+let users = ['Fran', 'Pascal', 'Cicci']; // Track all users
 
 // DOM Elements
 const userButtons = document.querySelectorAll('.user-btn');
@@ -158,6 +159,12 @@ function setupEventListeners() {
     
     // Generate Routine Button
     document.getElementById('generateRoutineBtn').addEventListener('click', generateWeeklyRoutine);
+    
+    // Add User Button
+    document.getElementById('addUserBtn').addEventListener('click', showAddUserModal);
+    
+    // Weekly Summary Button
+    document.getElementById('weeklySummaryBtn').addEventListener('click', showWeeklySummary);
 }
 
 // Reset Sets Container
@@ -319,12 +326,13 @@ function saveExercise() {
             muscle: document.getElementById('exerciseMuscle').value,
             image: document.getElementById('exerciseImage').value,
             machineInfo: document.getElementById('machineInfo').value,
-            users: {
-                Fran: { history: [] },
-                Pascal: { history: [] },
-                Cicci: { history: [] }
-            }
+            users: {}
         };
+        
+        // Initialize all users
+        users.forEach(user => {
+            exercise.users[user] = { history: [] };
+        });
 
         // If editing existing exercise, preserve all user data
         if (editingExerciseId) {
@@ -431,6 +439,241 @@ function deleteExercise(id) {
         exercises = exercises.filter(ex => ex.id !== id);
         saveToFirebase();
     }
+}
+
+// Add User Modal
+function showAddUserModal() {
+    const userName = prompt('Enter new user name:');
+    if (!userName) return;
+    
+    if (users.includes(userName)) {
+        alert('User already exists!');
+        return;
+    }
+    
+    // Add user to list
+    users.push(userName);
+    
+    // Add user to all existing exercises
+    exercises.forEach(exercise => {
+        exercise.users[userName] = { history: [] };
+    });
+    
+    // Create user button
+    const userToggle = document.querySelector('.user-toggle');
+    const newBtn = document.createElement('button');
+    newBtn.className = 'user-btn';
+    newBtn.dataset.user = userName;
+    newBtn.textContent = userName;
+    newBtn.addEventListener('click', function() {
+        document.querySelectorAll('.user-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        currentUser = userName;
+        renderExercises();
+    });
+    userToggle.appendChild(newBtn);
+    
+    saveToFirebase();
+    alert(`User "${userName}" added successfully!`);
+}
+
+// Weekly Summary
+function showWeeklySummary() {
+    const now = Date.now();
+    const oneWeekAgo = now - (7 * 24 * 60 * 60 * 1000);
+    const twoWeeksAgo = now - (14 * 24 * 60 * 60 * 1000);
+    
+    const categories = ['Chest', 'Back/Shoulder', 'Legs', 'Functional'];
+    
+    // Get user's exercises with history
+    const userExercises = exercises.filter(ex => {
+        const userData = ex.users[currentUser];
+        return userData && userData.history && userData.history.length > 0;
+    });
+    
+    if (userExercises.length === 0) {
+        alert('No workout data available yet!');
+        return;
+    }
+    
+    // Calculate stats per category
+    const categorySummary = categories.map(category => {
+        const categoryExercises = userExercises.filter(ex => ex.category === category);
+        
+        let thisWeekVolume = 0;
+        let lastWeekVolume = 0;
+        let thisWeekWorkouts = 0;
+        let lastWeekWorkouts = 0;
+        let thisWeekAvgWeight = 0;
+        let lastWeekAvgWeight = 0;
+        let weightCount = { thisWeek: 0, lastWeek: 0 };
+        
+        categoryExercises.forEach(ex => {
+            const history = ex.users[currentUser].history || [];
+            
+            history.forEach(session => {
+                const sessionDate = new Date(session.date).getTime();
+                const volume = session.sets.reduce((sum, set) => sum + (set.reps * set.weight), 0);
+                const avgWeight = session.sets.reduce((sum, set) => sum + set.weight, 0) / session.sets.length;
+                
+                if (sessionDate >= oneWeekAgo) {
+                    thisWeekVolume += volume;
+                    thisWeekWorkouts++;
+                    thisWeekAvgWeight += avgWeight;
+                    weightCount.thisWeek++;
+                } else if (sessionDate >= twoWeeksAgo) {
+                    lastWeekVolume += volume;
+                    lastWeekWorkouts++;
+                    lastWeekAvgWeight += avgWeight;
+                    weightCount.lastWeek++;
+                }
+            });
+        });
+        
+        thisWeekAvgWeight = weightCount.thisWeek > 0 ? thisWeekAvgWeight / weightCount.thisWeek : 0;
+        lastWeekAvgWeight = weightCount.lastWeek > 0 ? lastWeekAvgWeight / weightCount.lastWeek : 0;
+        
+        // Calculate improvement percentages
+        const volumeImprovement = lastWeekVolume > 0 
+            ? ((thisWeekVolume - lastWeekVolume) / lastWeekVolume * 100)
+            : 0;
+        
+        const weightImprovement = lastWeekAvgWeight > 0
+            ? ((thisWeekAvgWeight - lastWeekAvgWeight) / lastWeekAvgWeight * 100)
+            : 0;
+        
+        const workoutImprovement = lastWeekWorkouts > 0
+            ? ((thisWeekWorkouts - lastWeekWorkouts) / lastWeekWorkouts * 100)
+            : 0;
+        
+        return {
+            category,
+            thisWeekVolume: Math.round(thisWeekVolume),
+            lastWeekVolume: Math.round(lastWeekVolume),
+            volumeImprovement: Math.round(volumeImprovement * 10) / 10,
+            thisWeekWorkouts,
+            lastWeekWorkouts,
+            workoutImprovement: Math.round(workoutImprovement * 10) / 10,
+            thisWeekAvgWeight: Math.round(thisWeekAvgWeight * 10) / 10,
+            lastWeekAvgWeight: Math.round(lastWeekAvgWeight * 10) / 10,
+            weightImprovement: Math.round(weightImprovement * 10) / 10
+        };
+    });
+    
+    // Calculate overall stats
+    const totalThisWeek = categorySummary.reduce((sum, cat) => sum + cat.thisWeekWorkouts, 0);
+    const totalLastWeek = categorySummary.reduce((sum, cat) => sum + cat.lastWeekWorkouts, 0);
+    const totalVolumeThisWeek = categorySummary.reduce((sum, cat) => sum + cat.thisWeekVolume, 0);
+    const totalVolumeLastWeek = categorySummary.reduce((sum, cat) => sum + cat.lastWeekVolume, 0);
+    
+    const overallImprovement = totalLastWeek > 0
+        ? Math.round(((totalThisWeek - totalLastWeek) / totalLastWeek * 100) * 10) / 10
+        : 0;
+    
+    const volumeOverallImprovement = totalVolumeLastWeek > 0
+        ? Math.round(((totalVolumeThisWeek - totalVolumeLastWeek) / totalVolumeLastWeek * 100) * 10) / 10
+        : 0;
+    
+    displayWeeklySummaryModal(categorySummary, {
+        totalThisWeek,
+        totalLastWeek,
+        overallImprovement,
+        totalVolumeThisWeek,
+        totalVolumeLastWeek,
+        volumeOverallImprovement
+    });
+}
+
+// Display Weekly Summary Modal
+function displayWeeklySummaryModal(categorySummary, overall) {
+    const summaryModal = document.createElement('div');
+    summaryModal.className = 'modal';
+    summaryModal.style.display = 'block';
+    
+    const getImprovementColor = (value) => {
+        if (value > 5) return '#4caf50';
+        if (value > 0) return '#8bc34a';
+        if (value === 0) return '#999';
+        if (value > -5) return '#ff9800';
+        return '#f44336';
+    };
+    
+    const getImprovementIcon = (value) => {
+        if (value > 0) return '📈';
+        if (value < 0) return '📉';
+        return '➡️';
+    };
+    
+    summaryModal.innerHTML = `
+        <div class="modal-content" style="max-width: 1000px;">
+            <span class="close" onclick="this.parentElement.parentElement.remove()">&times;</span>
+            <h2>📊 Weekly Progress Summary - ${currentUser}</h2>
+            <p style="color: #666; margin-bottom: 20px;">Comparing this week vs. last week's performance</p>
+            
+            <div class="summary-overall">
+                <div class="summary-stat">
+                    <div class="summary-label">Total Workouts</div>
+                    <div class="summary-value">${overall.totalThisWeek} <span style="font-size: 0.8em; color: #999;">(was ${overall.totalLastWeek})</span></div>
+                    <div class="summary-change" style="color: ${getImprovementColor(overall.overallImprovement)}">
+                        ${getImprovementIcon(overall.overallImprovement)} ${overall.overallImprovement > 0 ? '+' : ''}${overall.overallImprovement}%
+                    </div>
+                </div>
+                <div class="summary-stat">
+                    <div class="summary-label">Total Volume (kg)</div>
+                    <div class="summary-value">${overall.totalVolumeThisWeek} <span style="font-size: 0.8em; color: #999;">(was ${overall.totalVolumeLastWeek})</span></div>
+                    <div class="summary-change" style="color: ${getImprovementColor(overall.volumeOverallImprovement)}">
+                        ${getImprovementIcon(overall.volumeOverallImprovement)} ${overall.volumeOverallImprovement > 0 ? '+' : ''}${overall.volumeOverallImprovement}%
+                    </div>
+                </div>
+            </div>
+            
+            <h3 style="margin-top: 30px; margin-bottom: 15px;">Progress by Category</h3>
+            
+            <div class="category-summary-grid">
+                ${categorySummary.map(cat => `
+                    <div class="category-summary-card">
+                        <h4>${cat.category}</h4>
+                        
+                        <div class="summary-metric">
+                            <div class="metric-label">Workouts</div>
+                            <div class="metric-value">${cat.thisWeekWorkouts} <span class="metric-prev">→ ${cat.lastWeekWorkouts}</span></div>
+                            <div class="metric-change" style="color: ${getImprovementColor(cat.workoutImprovement)}">
+                                ${getImprovementIcon(cat.workoutImprovement)} ${cat.workoutImprovement > 0 ? '+' : ''}${cat.workoutImprovement}%
+                            </div>
+                        </div>
+                        
+                        <div class="summary-metric">
+                            <div class="metric-label">Volume</div>
+                            <div class="metric-value">${cat.thisWeekVolume}kg <span class="metric-prev">→ ${cat.lastWeekVolume}kg</span></div>
+                            <div class="metric-change" style="color: ${getImprovementColor(cat.volumeImprovement)}">
+                                ${getImprovementIcon(cat.volumeImprovement)} ${cat.volumeImprovement > 0 ? '+' : ''}${cat.volumeImprovement}%
+                            </div>
+                        </div>
+                        
+                        <div class="summary-metric">
+                            <div class="metric-label">Avg Weight</div>
+                            <div class="metric-value">${cat.thisWeekAvgWeight}kg <span class="metric-prev">→ ${cat.lastWeekAvgWeight}kg</span></div>
+                            <div class="metric-change" style="color: ${getImprovementColor(cat.weightImprovement)}">
+                                ${getImprovementIcon(cat.weightImprovement)} ${cat.weightImprovement > 0 ? '+' : ''}${cat.weightImprovement}%
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            
+            <div class="summary-footer">
+                <p><strong>💡 Tips:</strong></p>
+                <ul>
+                    <li>🟢 Green: Great improvement! Keep up the good work</li>
+                    <li>🟡 Yellow: Slight decline - consider rest or deload week</li>
+                    <li>🔴 Red: Significant decline - check recovery, nutrition, and sleep</li>
+                    <li>📊 Volume = Sets × Reps × Weight (total work done)</li>
+                </ul>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(summaryModal);
 }
 
 // Generate Weekly Training Routine

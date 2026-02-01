@@ -576,10 +576,13 @@ function setupFirebaseListeners() {
     
     const exercisesRef = database.ref('exercises');
     
+    // FORCE RELOAD: Set to true to reset database with new exercises
+    const FORCE_RESET = true;
+    
     // Listen for changes in real-time
     exercisesRef.on('value', (snapshot) => {
         const data = snapshot.val();
-        if (data) {
+        if (data && !FORCE_RESET) {
             exercises = data;
         } else {
             // Initialize with real gym exercises

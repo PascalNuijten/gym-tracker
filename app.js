@@ -296,9 +296,9 @@ function saveExercise() {
     const sets = getSetsFromForm();
     const notes = document.getElementById('exerciseNotes').value;
     
-    // Check if this is just editing exercise details (no sets section visible)
-    const setsParent = document.getElementById('setsContainer').parentElement;
-    const isSetsHidden = setsParent.style.display === 'none';
+    // Check if this is just editing exercise details (sets container is hidden)
+    const setsContainer = document.getElementById('setsContainer');
+    const isSetsHidden = setsContainer.style.display === 'none';
     
     if (isSetsHidden) {
         // Just updating exercise details (sets section is hidden)
@@ -316,8 +316,13 @@ function saveExercise() {
             editingExerciseId = null;
             
             // Reset visibility for next use
-            const setsParent = document.getElementById('setsContainer').parentElement;
-            if (setsParent) setsParent.style.display = 'block';
+            if (setsContainer) {
+                setsContainer.style.display = 'block';
+                const workoutHeading = setsContainer.previousElementSibling;
+                if (workoutHeading && workoutHeading.tagName === 'H3') {
+                    workoutHeading.style.display = 'block';
+                }
+            }
             document.getElementById('addSetBtn').style.display = 'block';
             const notesParent = document.querySelector('label[for="exerciseNotes"]')?.parentElement;
             if (notesParent) notesParent.style.display = 'block';
@@ -425,8 +430,12 @@ function editExercise(id) {
     
     // Show sets section for logging workout
     const setsContainer = document.getElementById('setsContainer');
-    if (setsContainer && setsContainer.parentElement) {
-        setsContainer.parentElement.style.display = 'block';
+    if (setsContainer) {
+        setsContainer.style.display = 'block';
+        const workoutHeading = setsContainer.previousElementSibling;
+        if (workoutHeading && workoutHeading.tagName === 'H3') {
+            workoutHeading.style.display = 'block';
+        }
     }
     document.getElementById('addSetBtn').style.display = 'block';
     const notesParent = document.querySelector('label[for="exerciseNotes"]')?.parentElement;
@@ -476,9 +485,15 @@ function editExerciseDetails(id) {
     document.getElementById('existingExerciseSection').style.display = 'none';
     document.getElementById('newExerciseSection').style.display = 'block';
     
+    // Hide sets container and workout heading
     const setsContainer = document.getElementById('setsContainer');
-    if (setsContainer && setsContainer.parentElement) {
-        setsContainer.parentElement.style.display = 'none';
+    if (setsContainer) {
+        setsContainer.style.display = 'none';
+        // Hide the "Today's Workout" heading (previous sibling)
+        const workoutHeading = setsContainer.previousElementSibling;
+        if (workoutHeading && workoutHeading.tagName === 'H3') {
+            workoutHeading.style.display = 'none';
+        }
     }
     
     const addSetBtn = document.getElementById('addSetBtn');

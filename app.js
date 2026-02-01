@@ -582,38 +582,529 @@ function setupFirebaseListeners() {
         if (data) {
             exercises = data;
         } else {
-            // Initialize with sample data
+            // Initialize with real gym exercises
+            const baseTime = Date.now();
             exercises = [
+                // CHEST EXERCISES
                 {
-                    id: Date.now(),
-                    name: 'Barbell Squat',
+                    id: baseTime + 1,
+                    name: 'Cable Flies Down-Up',
+                    category: 'Chest',
+                    muscle: 'Chest',
+                    image: '',
+                    machineInfo: 'Cable Machine',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 10, weight: 6.25}, {reps: 10, weight: 6.25}, {reps: 10, weight: 6.25}],
+                                notes: ''
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 10, weight: 11.25}, {reps: 10, weight: 11.25}, {reps: 10, weight: 11.25}],
+                                notes: ''
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 2,
+                    name: 'Iso Lateral Horizontal Bench Press',
+                    category: 'Chest',
+                    muscle: 'Chest',
+                    image: '',
+                    machineInfo: 'Iso Lateral Machine - per side',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 10, weight: 35}, {reps: 10, weight: 35}, {reps: 10, weight: 35}],
+                                notes: 'Per side'
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 12, weight: 55}, {reps: 12, weight: 55}, {reps: 12, weight: 55}],
+                                notes: 'Per side'
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 3,
+                    name: 'Chest Cable Up to Down',
+                    category: 'Chest',
+                    muscle: 'Chest',
+                    image: '',
+                    machineInfo: 'Cable Machine - per side',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 10, weight: 16.25}, {reps: 10, weight: 16.25}, {reps: 9, weight: 16.25}],
+                                notes: 'Per side'
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 13, weight: 23.75}, {reps: 13, weight: 23.75}, {reps: 13, weight: 23.75}],
+                                notes: 'Per side'
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 4,
+                    name: 'Iso Lateral Incline Press',
+                    category: 'Chest',
+                    muscle: 'Chest',
+                    image: '',
+                    machineInfo: 'Iso Lateral Machine - per side',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 9, weight: 25}, {reps: 7, weight: 25}, {reps: 6, weight: 25}],
+                                notes: 'Per side'
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 12, weight: 40}, {reps: 12, weight: 40}, {reps: 12, weight: 40}],
+                                notes: 'Per side'
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 5,
+                    name: 'Dips',
+                    category: 'Chest',
+                    muscle: 'Triceps',
+                    image: '',
+                    machineInfo: 'Dip Station',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 15, weight: 0}, {reps: 15, weight: 0}, {reps: 15, weight: 0}],
+                                notes: 'RECORD!'
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 16, weight: 0}, {reps: 16, weight: 0}, {reps: 16, weight: 0}],
+                                notes: 'RECORD!'
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 6,
+                    name: 'Cable Chest Lower to High (One Arm)',
+                    category: 'Chest',
+                    muscle: 'Chest',
+                    image: '',
+                    machineInfo: 'Cable Machine - per side',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 9, weight: 6.25}, {reps: 9, weight: 6.25}, {reps: 9, weight: 6.25}, {reps: 9, weight: 6.25}, {reps: 9, weight: 6.25}, {reps: 9, weight: 6.25}],
+                                notes: '2x3x9 per side'
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 10, weight: 11.25}, {reps: 10, weight: 11.25}, {reps: 10, weight: 11.25}, {reps: 10, weight: 11.25}, {reps: 10, weight: 11.25}, {reps: 10, weight: 11.25}],
+                                notes: '2x3x10 per side'
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 7,
+                    name: 'Pectoral Fly Machine',
+                    category: 'Chest',
+                    muscle: 'Chest',
+                    image: '',
+                    machineInfo: 'Pec Fly Machine',
+                    users: {
+                        Fran: { history: [] },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 8, weight: 100}, {reps: 8, weight: 100}, {reps: 8, weight: 100}],
+                                notes: 'Max weight'
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 8,
+                    name: 'Fly Cable Flat',
+                    category: 'Chest',
+                    muscle: 'Chest',
+                    image: '',
+                    machineInfo: 'Cable Machine',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 10, weight: 8.75}, {reps: 10, weight: 8.75}, {reps: 10, weight: 8.75}],
+                                notes: ''
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 10, weight: 13.75}, {reps: 10, weight: 13.75}, {reps: 10, weight: 13.75}],
+                                notes: ''
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 9,
+                    name: 'Fly Cable Down-Up',
+                    category: 'Chest',
+                    muscle: 'Chest',
+                    image: '',
+                    machineInfo: 'Cable Machine',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 10, weight: 6.25}, {reps: 9, weight: 6.25}, {reps: 9, weight: 6.25}],
+                                notes: ''
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 11, weight: 11.25}, {reps: 11, weight: 11.25}, {reps: 11, weight: 11.25}],
+                                notes: ''
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                // BICEP/TRICEP EXERCISES
+                {
+                    id: baseTime + 10,
+                    name: 'Dumbbell Hammer vs Normal',
+                    category: 'Functional',
+                    muscle: 'Biceps',
+                    image: '',
+                    machineInfo: 'Dumbbells',
+                    users: {
+                        Fran: { history: [] },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 20, weight: 26}, {reps: 20, weight: 26}, {reps: 20, weight: 26}, {reps: 14, weight: 26}],
+                                notes: ''
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 11,
+                    name: 'Tricep Cable Turn',
+                    category: 'Functional',
+                    muscle: 'Triceps',
+                    image: '',
+                    machineInfo: 'Cable Machine',
+                    users: {
+                        Fran: { history: [] },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 11, weight: 26.25}, {reps: 11, weight: 26.25}, {reps: 11, weight: 26.25}, {reps: 11, weight: 26.25}],
+                                notes: ''
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 12,
+                    name: 'Bicep Curl Machine',
+                    category: 'Functional',
+                    muscle: 'Biceps',
+                    image: '',
+                    machineInfo: 'Curl Machine - slow eccentric',
+                    users: {
+                        Fran: { history: [] },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 10, weight: 61.25}, {reps: 10, weight: 61.25}, {reps: 10, weight: 61.25}, {reps: 9, weight: 61.25}],
+                                notes: '57.5kg + 3.75kg, slow down fast up'
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 13,
+                    name: 'Tricep Push Machine',
+                    category: 'Functional',
+                    muscle: 'Triceps',
+                    image: '',
+                    machineInfo: 'Tricep Push Machine',
+                    users: {
+                        Fran: { history: [] },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 15, weight: 125}, {reps: 15, weight: 125}, {reps: 15, weight: 125}, {reps: 15, weight: 125}],
+                                notes: ''
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                // BACK/SHOULDER EXERCISES
+                {
+                    id: baseTime + 14,
+                    name: 'Shoulder Press Machine',
+                    category: 'Back/Shoulder',
+                    muscle: 'Shoulders',
+                    image: '',
+                    machineInfo: 'Shoulder Press Machine',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 15, weight: 35}, {reps: 10, weight: 35}],
+                                notes: ''
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 12, weight: 57.5}, {reps: 11, weight: 57.5}, {reps: 10, weight: 57.5}],
+                                notes: ''
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 15,
+                    name: 'Reverse Fly Machine',
+                    category: 'Back/Shoulder',
+                    muscle: 'Shoulders',
+                    image: '',
+                    machineInfo: 'Reverse Fly Machine',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 11, weight: 61.25}, {reps: 11, weight: 61.25}, {reps: 9, weight: 61.25}, {reps: 10, weight: 61.25}],
+                                notes: '57.5 + 3.75kg'
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 11, weight: 91.25}, {reps: 11, weight: 91.25}],
+                                notes: '87.5 + 3.75kg'
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 16,
+                    name: 'Iso Lateral Row',
+                    category: 'Back/Shoulder',
+                    muscle: 'Back',
+                    image: '',
+                    machineInfo: 'Iso Lateral Machine - per side',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 15, weight: 40}, {reps: 15, weight: 40}, {reps: 15, weight: 40}, {reps: 12, weight: 40}],
+                                notes: 'Per side'
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 15, weight: 55}, {reps: 15, weight: 55}, {reps: 15, weight: 55}],
+                                notes: 'Per side'
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 17,
+                    name: 'Lateral Raises',
+                    category: 'Back/Shoulder',
+                    muscle: 'Shoulders',
+                    image: '',
+                    machineInfo: 'Lateral Raise Machine',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 15, weight: 35}, {reps: 12, weight: 35}, {reps: 14, weight: 35}, {reps: 14, weight: 35}],
+                                notes: ''
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 15, weight: 50}, {reps: 15, weight: 50}, {reps: 15, weight: 50}, {reps: 15, weight: 50}],
+                                notes: ''
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 18,
+                    name: 'Dumbbell Shoulder Press',
+                    category: 'Back/Shoulder',
+                    muscle: 'Shoulders',
+                    image: '',
+                    machineInfo: 'Dumbbells',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 12, weight: 16}, {reps: 10, weight: 16}, {reps: 11, weight: 16}, {reps: 9, weight: 16}],
+                                notes: ''
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 14, weight: 24}, {reps: 14, weight: 24}, {reps: 13, weight: 24}, {reps: 13, weight: 24}],
+                                notes: 'Drop set start weight 82kg'
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                // FUNCTIONAL/ABS EXERCISES
+                {
+                    id: baseTime + 19,
+                    name: 'Pull Ups',
+                    category: 'Functional',
+                    muscle: 'Back',
+                    image: '',
+                    machineInfo: 'Pull Up Bar',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 9, weight: 0}, {reps: 7, weight: 0}, {reps: 8, weight: 0}, {reps: 7, weight: 0}],
+                                notes: ''
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 15, weight: 0}, {reps: 15, weight: 0}, {reps: 14, weight: 0}, {reps: 12, weight: 0}],
+                                notes: ''
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 20,
+                    name: 'Abdominal Crunch Machine',
+                    category: 'Functional',
+                    muscle: 'Core',
+                    image: '',
+                    machineInfo: 'Ab Crunch Machine - explosive',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 12, weight: 65}, {reps: 12, weight: 65}, {reps: 12, weight: 65}, {reps: 12, weight: 65}],
+                                notes: 'Explosive'
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 20, weight: 83.75}, {reps: 20, weight: 83.75}, {reps: 20, weight: 83.75}, {reps: 20, weight: 83.75}],
+                                notes: 'Explosive'
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 21,
+                    name: 'Lower Back Extension',
+                    category: 'Functional',
+                    muscle: 'Back',
+                    image: '',
+                    machineInfo: 'Back Extension Machine',
+                    users: {
+                        Fran: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 12, weight: 20}, {reps: 12, weight: 20}, {reps: 12, weight: 20}, {reps: 12, weight: 20}],
+                                notes: ''
+                            }]
+                        },
+                        Pascal: { 
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 14, weight: 28}, {reps: 14, weight: 28}, {reps: 14, weight: 28}, {reps: 14, weight: 28}],
+                                notes: ''
+                            }]
+                        },
+                        Cicci: { history: [] }
+                    }
+                },
+                {
+                    id: baseTime + 22,
+                    name: 'Iso Lateral Leg Extension',
                     category: 'Legs',
                     muscle: 'Quadriceps',
                     image: '',
-                    machineInfo: 'Squat Rack',
+                    machineInfo: 'Iso Lateral Machine - per side',
                     users: {
                         Fran: { 
-                            history: [
-                                {
-                                    date: new Date(Date.now() - 7*24*60*60*1000).toISOString(),
-                                    sets: [{reps: 10, weight: 80}, {reps: 10, weight: 80}, {reps: 8, weight: 80}],
-                                    notes: 'Felt strong!'
-                                },
-                                {
-                                    date: new Date().toISOString(),
-                                    sets: [{reps: 12, weight: 80}, {reps: 10, weight: 80}, {reps: 10, weight: 80}],
-                                    notes: 'Good form'
-                                }
-                            ]
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 12, weight: 20}, {reps: 12, weight: 20}, {reps: 12, weight: 20}, {reps: 12, weight: 20}],
+                                notes: 'Per side'
+                            }]
                         },
                         Pascal: { 
-                            history: [
-                                {
-                                    date: new Date().toISOString(),
-                                    sets: [{reps: 12, weight: 70}, {reps: 10, weight: 70}, {reps: 9, weight: 70}],
-                                    notes: ''
-                                }
-                            ]
+                            history: [{
+                                date: new Date().toISOString(),
+                                sets: [{reps: 12, weight: 40}, {reps: 10, weight: 40}, {reps: 8, weight: 40}, {reps: 8, weight: 40}],
+                                notes: 'Per side'
+                            }]
                         },
                         Cicci: { history: [] }
                     }

@@ -423,12 +423,25 @@ function editExerciseDetails(id) {
     document.getElementById('exerciseMuscle').disabled = false;
     
     // Hide option toggle and sets section
-    document.querySelector('.exercise-option-toggle').parentElement.style.display = 'none';
+    const optionToggle = document.querySelector('.exercise-option-toggle');
+    if (optionToggle && optionToggle.parentElement) {
+        optionToggle.parentElement.style.display = 'none';
+    }
     document.getElementById('existingExerciseSection').style.display = 'none';
     document.getElementById('newExerciseSection').style.display = 'block';
-    document.getElementById('setsContainer').parentElement.style.display = 'none';
-    document.getElementById('addSetBtn').style.display = 'none';
-    document.querySelector('label[for="exerciseNotes"]').parentElement.style.display = 'none';
+    
+    const setsContainer = document.getElementById('setsContainer');
+    if (setsContainer && setsContainer.parentElement) {
+        setsContainer.parentElement.style.display = 'none';
+    }
+    
+    const addSetBtn = document.getElementById('addSetBtn');
+    if (addSetBtn) addSetBtn.style.display = 'none';
+    
+    const notesLabel = document.querySelector('label[for="exerciseNotes"]');
+    if (notesLabel && notesLabel.parentElement) {
+        notesLabel.parentElement.style.display = 'none';
+    }
     
     modal.style.display = 'block';
 }
@@ -1211,7 +1224,7 @@ function setupFirebaseListeners() {
     const exercisesRef = database.ref('exercises');
     
     // FORCE RELOAD: Set to true to reset database with new exercises
-    const FORCE_RESET = false;  // Normal operation
+    const FORCE_RESET = true;  // Temporarily true to force refresh
     
     if (FORCE_RESET) {
         // Force reset - load new exercises immediately

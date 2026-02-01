@@ -155,6 +155,9 @@ function setupEventListeners() {
     categoryFilter.addEventListener('change', renderExercises);
     muscleFilter.addEventListener('change', renderExercises);
     searchInput.addEventListener('input', renderExercises);
+    
+    // Generate Routine Button
+    document.getElementById('generateRoutineBtn').addEventListener('click', generateWeeklyRoutine);
 }
 
 // Reset Sets Container
@@ -430,6 +433,204 @@ function deleteExercise(id) {
     }
 }
 
+// Generate Weekly Training Routine
+function generateWeeklyRoutine() {
+    const categories = ['Chest', 'Back/Shoulder', 'Legs', 'Functional'];
+    const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    
+    // Get user's exercises with history
+    const userExercises = exercises.filter(ex => {
+        const userData = ex.users[currentUser];
+        return userData && userData.history && userData.history.length > 0;
+    });
+    
+    if (userExercises.length === 0) {
+        alert('You need to complete some exercises first before generating a routine!');
+        return;
+    }
+    
+    const routine = [];
+    
+    // Generate routine for each training day (skip 2 rest days)
+    categories.forEach((category, idx) => {
+        const day = daysOfWeek[idx];
+        
+        // Get exercises for this category
+        const categoryExercises = userExercises.filter(ex => ex.category === category);
+        
+        if (categoryExercises.length === 0) return;
+        
+        // Score exercises based on: last trained date (older = higher priority) and progress
+        const scoredExercises = categoryExercises.map(ex => {
+            const userData = ex.users[currentUser];
+            const history = userData.history || [];
+            const lastSession = history[history.length - 1];
+            const lastDate = new Date(lastSession.date);
+            const daysSinceLastTrained = (Date.now() - lastDate.getTime()) / (1000 * 60 * 60 * 24);
+            
+            // Calculate progress score (lower = less progress = higher priority)
+            let progressScore = 0;
+            if (history.length >= 2) {
+                const recent = history.slice(-3); // Last 3 sessions
+                const avgWeightRecent = recent.reduce((sum, s) => {
+                    const avgW = s.sets.reduce((s2, set) => s2 + set.weight, 0) / s.sets.length;
+                    return sum + avgW;
+                }, 0) / recent.length;
+                
+                const older = history.slice(0, Math.min(3, history.length - 3));
+                if (older.length > 0) {
+                    const avgWeightOlder = older.reduce((sum, s) => {
+                        const avgW = s.sets.reduce((s2, set) => s2 + set.weight, 0) / s.sets.length;
+                        return sum + avgW;
+                    }, 0) / older.length;
+                    
+                    progressScore = ((avgWeightRecent - avgWeightOlder) / avgWeightOlder) * 100;
+                }
+            }
+            
+            // Combined score: days since trained (60%) + lack of progress (40%)
+            const score = (daysSinceLastTrained * 0.6) + ((10 - Math.min(progressScore, 10)) * 0.4);
+            
+            return { exercise: ex, score, lastSession, daysSinceLastTrained };
+        });
+        
+        // Sort by score (highest first)
+        scoredExercises.sort((a, b) => b.score - a.score);
+        
+        // Select top 4-5 exercises for this category
+        const numExercises = category === 'Functional' ? 3 : 4;
+        const selectedExercises = scoredExercises.slice(0, Math.min(numExercises, scoredExercises.length));
+        
+        // Add ab exercises on certain days
+        const shouldAddAbs = ['Monday', 'Wednesday', 'Friday'].includes(day);
+        if (shouldAddAbs) {
+            const abExercises = userExercises.filter(ex => 
+                ex.muscle === 'Core' && !selectedExercises.find(se => se.exercise.id === ex.id)
+            );
+            if (abExercises.length > 0) {
+                const randomAb = abExercises[Math.floor(Math.random() * abExercises.length)];
+                const abHistory = randomAb.users[currentUser].history || [];
+                const lastAbSession = abHistory[abHistory.length - 1];
+                selectedExercises.push({
+                    exercise: randomAb,
+                    score: 0,
+                    lastSession: lastAbSession,
+                    daysSinceLastTrained: 0
+                });
+            }
+        }
+        
+        // Generate recommendations for each exercise with progressive overload
+        const dayPlan = selectedExercises.map(({ exercise, lastSession }) => {
+            const lastSets = lastSession.sets;
+            const avgWeight = lastSets.reduce((sum, set) => sum + set.weight, 0) / lastSets.length;
+            const avgReps = lastSets.reduce((sum, set) => sum + set.reps, 0) / lastSets.length;
+            const numSets = lastSets.length;
+            
+            // Progressive overload logic
+            let recommendedWeight = avgWeight;
+            let recommendedReps = Math.round(avgReps);
+            let recommendedSets = numSets;
+            let note = '';
+            
+            if (avgReps >= 12) {
+                // Increase weight by 2.5-5%, reduce reps slightly
+                const increase = avgWeight <= 20 ? 2.5 : (avgWeight * 0.05);
+                recommendedWeight = Math.round((avgWeight + increase) * 2) / 2;
+                recommendedReps = 8;
+                note = '⬆️ Weight increased (progressive overload)';
+            } else if (avgReps >= 10) {
+                // Add 1-2 reps
+                recommendedReps = Math.min(12, avgReps + 2);
+                note = '➕ Adding reps';
+            } else if (avgReps >= 8) {
+                // Keep same, or add one rep
+                recommendedReps = Math.min(10, avgReps + 1);
+                note = '✅ Maintain current level';
+            } else {
+                // Reduce weight by 5-10%
+                recommendedWeight = Math.round((avgWeight * 0.92) * 2) / 2;
+                recommendedReps = 10;
+                note = '⬇️ Weight reduced for better form';
+            }
+            
+            return {
+                name: exercise.name,
+                muscle: exercise.muscle,
+                sets: recommendedSets,
+                reps: recommendedReps,
+                weight: recommendedWeight,
+                note: note,
+                lastPerformed: `Last: ${lastSets.map((s, i) => `${s.reps}x${s.weight}kg`).join(', ')}`
+            };
+        });
+        
+        routine.push({
+            day: day,
+            category: category,
+            exercises: dayPlan
+        });
+    });
+    
+    // Display routine in modal
+    displayRoutineModal(routine);
+}
+
+// Display Routine Modal
+function displayRoutineModal(routine) {
+    const routineModal = document.createElement('div');
+    routineModal.className = 'modal';
+    routineModal.style.display = 'block';
+    
+    const routineHTML = routine.map(day => `
+        <div class="routine-day">
+            <h3>${day.day} - ${day.category}</h3>
+            <div class="routine-exercises">
+                ${day.exercises.map((ex, idx) => `
+                    <div class="routine-exercise">
+                        <div class="routine-ex-header">
+                            <span class="routine-ex-number">${idx + 1}</span>
+                            <div>
+                                <div class="routine-ex-name">${ex.name}</div>
+                                <div class="routine-ex-muscle">${ex.muscle}</div>
+                            </div>
+                        </div>
+                        <div class="routine-ex-plan">
+                            <span class="routine-sets">${ex.sets} sets × ${ex.reps} reps @ ${ex.weight}kg</span>
+                            <span class="routine-note">${ex.note}</span>
+                        </div>
+                        <div class="routine-last">${ex.lastPerformed}</div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `).join('');
+    
+    routineModal.innerHTML = `
+        <div class="modal-content" style="max-width: 1000px;">
+            <span class="close" onclick="this.parentElement.parentElement.remove()">&times;</span>
+            <h2>🗓️ Your Weekly Training Routine - ${currentUser}</h2>
+            <p style="color: #666; margin-bottom: 20px;">This routine is optimized based on your recent performance and progressive overload principles.</p>
+            
+            <div class="routine-container">
+                ${routineHTML}
+            </div>
+            
+            <div class="routine-footer">
+                <p><strong>Notes:</strong></p>
+                <ul>
+                    <li>Rest 2-3 days per week (suggested: Sunday and one midweek day)</li>
+                    <li>Exercises are prioritized based on: time since last trained and progress rate</li>
+                    <li>Progressive overload: gradually increase weight when hitting 12+ reps consistently</li>
+                    <li>Focus on proper form - reduce weight if needed</li>
+                </ul>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(routineModal);
+}
+
 // Calculate Stats
 function calculateStats(history) {
     if (!history || history.length === 0) {
@@ -534,6 +735,11 @@ function showExerciseDetails(id) {
         <div class="modal-content" style="max-width: 900px;">
             <span class="close" onclick="this.parentElement.parentElement.remove()">&times;</span>
             <h2>${exercise.name} - ${currentUser}'s Progress</h2>
+            
+            <div class="exercise-actions" style="margin-bottom: 20px;">
+                <button class="btn-edit-details" onclick="this.parentElement.parentElement.parentElement.remove(); editExerciseDetails(${exercise.id})">✏️ Edit Exercise</button>
+                <button class="btn-delete" onclick="if(confirm('Delete this exercise?')) { this.parentElement.parentElement.parentElement.remove(); deleteExercise(${exercise.id}); }">🗑️ Delete Exercise</button>
+            </div>
             
             <div class="stats-grid">
                 <div class="stat-card">
@@ -748,8 +954,6 @@ function renderExercises() {
                     <div class="exercise-actions">
                         <button class="btn-edit" onclick="editExercise(${exercise.id})">📝 Log Workout</button>
                         <button class="btn-view" onclick="showExerciseDetails(${exercise.id})">📊 Details</button>
-                        <button class="btn-edit-details" onclick="editExerciseDetails(${exercise.id})">✏️ Edit</button>
-                        <button class="btn-delete" onclick="deleteExercise(${exercise.id})">🗑️</button>
                     </div>
                 </div>
             </div>

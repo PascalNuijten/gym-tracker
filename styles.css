@@ -100,10 +100,29 @@ h1 {
     font-weight: 600;
     cursor: pointer;
     transition: background 0.3s ease;
+    margin-bottom: 10px;
 }
 
 .add-btn:hover {
     background: #5568d3;
+}
+
+.routine-btn {
+    width: 100%;
+    padding: 15px;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.routine-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(245, 87, 108, 0.3);
 }
 
 /* Exercise List */
@@ -671,6 +690,117 @@ textarea {
 
 #addSetBtn {
     margin-top: 10px;
+}
+
+/* Weekly Routine Styles */
+.routine-container {
+    display: grid;
+    gap: 20px;
+}
+
+.routine-day {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 20px;
+    border-radius: 12px;
+    color: white;
+}
+
+.routine-day h3 {
+    margin-bottom: 15px;
+    font-size: 1.3rem;
+    border-bottom: 2px solid rgba(255,255,255,0.3);
+    padding-bottom: 10px;
+}
+
+.routine-exercises {
+    display: grid;
+    gap: 12px;
+}
+
+.routine-exercise {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    color: #333;
+}
+
+.routine-ex-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.routine-ex-number {
+    background: #667eea;
+    color: white;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.routine-ex-name {
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #333;
+}
+
+.routine-ex-muscle {
+    font-size: 0.85rem;
+    color: #666;
+}
+
+.routine-ex-plan {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.routine-sets {
+    font-weight: 600;
+    color: #667eea;
+    font-size: 1rem;
+}
+
+.routine-note {
+    font-size: 0.85rem;
+    color: #f5576c;
+    font-weight: 600;
+}
+
+.routine-last {
+    font-size: 0.85rem;
+    color: #999;
+    font-style: italic;
+}
+
+.routine-footer {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 12px;
+    margin-top: 20px;
+}
+
+.routine-footer ul {
+    margin-left: 20px;
+    margin-top: 10px;
+}
+
+.routine-footer li {
+    margin-bottom: 8px;
+    color: #555;
+    line-height: 1.6;
 }
 
 .exercise-option-toggle {

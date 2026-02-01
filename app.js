@@ -186,6 +186,56 @@ function setupEventListeners() {
     
     // Weekly Summary Button
     document.getElementById('weeklySummaryBtn').addEventListener('click', showWeeklySummary);
+    
+    // Debug Button
+    document.getElementById('debugBtn').addEventListener('click', showDebugModal);
+}
+
+// Show Debug Modal - View All Database Exercises
+function showDebugModal() {
+    const debugModal = document.createElement('div');
+    debugModal.className = 'modal';
+    debugModal.style.display = 'block';
+    
+    let debugHTML = '<h3>All Exercises in Database</h3>';
+    debugHTML += `<p>Total exercises: ${exercises.length}</p>`;
+    debugHTML += '<div style="max-height: 500px; overflow-y: auto;">';
+    
+    exercises.forEach((ex, idx) => {
+        const allUsers = Object.keys(ex.users);
+        const usersWithHistory = allUsers.filter(user => 
+            ex.users[user].history && ex.users[user].history.length > 0
+        );
+        
+        debugHTML += `
+            <div style="border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;">
+                <strong>${idx + 1}. ${ex.name}</strong><br>
+                <small>Category: ${ex.category} | Muscle: ${ex.muscle}</small><br>
+                <small>ID: ${ex.id}</small><br>
+                <small>All users in object: ${allUsers.join(', ')}</small><br>
+                <small style="color: ${usersWithHistory.length > 0 ? 'green' : 'red'};">Users with history: ${usersWithHistory.length > 0 ? usersWithHistory.join(', ') : 'NONE'}</small><br>
+        `;
+        
+        // Show detailed history for each user
+        allUsers.forEach(user => {
+            const historyCount = ex.users[user]?.history?.length || 0;
+            debugHTML += `<small>- ${user}: ${historyCount} workout(s)</small><br>`;
+        });
+        
+        debugHTML += '</div>';
+    });
+    
+    debugHTML += '</div>';
+    
+    debugModal.innerHTML = `
+        <div class="modal-content" style="max-width: 800px;">
+            <span class="close" onclick="this.parentElement.parentElement.remove()">&times;</span>
+            <h2>🔍 Database Debug Info</h2>
+            ${debugHTML}
+        </div>
+    `;
+    
+    document.body.appendChild(debugModal);
 }
 
 // Reset Sets Container
@@ -545,6 +595,53 @@ function deleteExercise(id) {
             saveToFirebase();
         }
     }
+}
+
+// Show Debug Modal - View All Database Exercises
+function showDebugModal() {
+    const debugModal = document.createElement('div');
+    debugModal.className = 'modal';
+    debugModal.style.display = 'block';
+    
+    let debugHTML = '<h3>All Exercises in Database</h3>';
+    debugHTML += `<p>Total exercises: ${exercises.length}</p>`;
+    debugHTML += '<div style="max-height: 500px; overflow-y: auto;">';
+    
+    exercises.forEach((ex, idx) => {
+        const allUsers = Object.keys(ex.users);
+        const usersWithHistory = allUsers.filter(user => 
+            ex.users[user].history && ex.users[user].history.length > 0
+        );
+        
+        debugHTML += `
+            <div style="border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;">
+                <strong>${idx + 1}. ${ex.name}</strong><br>
+                <small>Category: ${ex.category} | Muscle: ${ex.muscle}</small><br>
+                <small>ID: ${ex.id}</small><br>
+                <small>All users in object: ${allUsers.join(', ')}</small><br>
+                <small style="color: ${usersWithHistory.length > 0 ? 'green' : 'red'};">Users with history: ${usersWithHistory.length > 0 ? usersWithHistory.join(', ') : 'NONE'}</small><br>
+        `;
+        
+        // Show detailed history for each user
+        allUsers.forEach(user => {
+            const historyCount = ex.users[user]?.history?.length || 0;
+            debugHTML += `<small>- ${user}: ${historyCount} workout(s)</small><br>`;
+        });
+        
+        debugHTML += '</div>';
+    });
+    
+    debugHTML += '</div>';
+    
+    debugModal.innerHTML = `
+        <div class="modal-content" style="max-width: 800px;">
+            <span class="close" onclick="this.parentElement.parentElement.remove()">&times;</span>
+            <h2>🔍 Database Debug Info</h2>
+            ${debugHTML}
+        </div>
+    `;
+    
+    document.body.appendChild(debugModal);
 }
 
 // Add User Modal

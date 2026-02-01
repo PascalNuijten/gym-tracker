@@ -30,24 +30,58 @@
             <div class="filter-section">
                 <select id="categoryFilter" class="filter-select">
                     <option value="all">All Categories</option>
-                    <option value="Legs">Legs</option>
-                    <option value="Functional">Functional</option>
                     <option value="Chest">Chest</option>
-                    <option value="Back/Shoulder">Back/Shoulder</option>
+                    <option value="Upper Back">Upper Back</option>
+                    <option value="Lower Back">Lower Back</option>
+                    <option value="Laterals">Laterals</option>
+                    <option value="Shoulders">Shoulders</option>
+                    <option value="Biceps">Biceps</option>
+                    <option value="Triceps">Triceps</option>
+                    <option value="Abdominals">Abdominals</option>
+                    <option value="Legs">Legs</option>
                 </select>
 
                 <select id="muscleFilter" class="filter-select">
                     <option value="all">All Muscles</option>
-                    <option value="Quadriceps">Quadriceps</option>
-                    <option value="Hamstrings">Hamstrings</option>
-                    <option value="Glutes">Glutes</option>
-                    <option value="Calves">Calves</option>
-                    <option value="Chest">Chest</option>
-                    <option value="Back">Back</option>
-                    <option value="Shoulders">Shoulders</option>
-                    <option value="Biceps">Biceps</option>
-                    <option value="Triceps">Triceps</option>
-                    <option value="Core">Core</option>
+                    <optgroup label="Chest">
+                        <option value="Upper Chest">Upper Chest</option>
+                        <option value="Middle Chest">Middle Chest</option>
+                        <option value="Lower Chest">Lower Chest</option>
+                    </optgroup>
+                    <optgroup label="Back">
+                        <option value="Upper Back">Upper Back</option>
+                        <option value="Middle Back">Middle Back</option>
+                        <option value="Lower Back">Lower Back</option>
+                        <option value="Lats">Lats</option>
+                        <option value="Traps">Traps</option>
+                    </optgroup>
+                    <optgroup label="Shoulders">
+                        <option value="Front Delts">Front Delts</option>
+                        <option value="Side Delts">Side Delts</option>
+                        <option value="Rear Delts">Rear Delts</option>
+                    </optgroup>
+                    <optgroup label="Arms">
+                        <option value="Biceps Long Head">Biceps Long Head</option>
+                        <option value="Biceps Short Head">Biceps Short Head</option>
+                        <option value="Triceps Long Head">Triceps Long Head</option>
+                        <option value="Triceps Lateral Head">Triceps Lateral Head</option>
+                        <option value="Triceps Medial Head">Triceps Medial Head</option>
+                        <option value="Forearms">Forearms</option>
+                    </optgroup>
+                    <optgroup label="Legs">
+                        <option value="Quadriceps">Quadriceps</option>
+                        <option value="Hamstrings">Hamstrings</option>
+                        <option value="Glutes">Glutes</option>
+                        <option value="Calves">Calves</option>
+                        <option value="Adductors">Adductors</option>
+                        <option value="Abductors">Abductors</option>
+                    </optgroup>
+                    <optgroup label="Core">
+                        <option value="Upper Abs">Upper Abs</option>
+                        <option value="Lower Abs">Lower Abs</option>
+                        <option value="Obliques">Obliques</option>
+                        <option value="Lower Back Core">Lower Back Core</option>
+                    </optgroup>
                     <option value="Full Body">Full Body</option>
                 </select>
 
@@ -55,7 +89,7 @@
             </div>
 
             <button id="addExerciseBtn" class="add-btn">+ Add Exercise</button>
-            <button id="generateRoutineBtn" class="routine-btn">🗓️ Generate Weekly Training Routine</button>
+            <button id="generateRoutineBtn" class="routine-btn">🗓️ Generate Training Routine</button>
         </div>
 
         <!-- Exercise List -->
@@ -95,30 +129,64 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="exerciseCategory">Training Category *</label>
+                        <label for="exerciseCategory">Display Category *</label>
                         <select id="exerciseCategory" required>
                             <option value="">Select category...</option>
-                            <option value="Legs">Legs</option>
-                            <option value="Functional">Functional</option>
                             <option value="Chest">Chest</option>
-                            <option value="Back/Shoulder">Back/Shoulder</option>
+                            <option value="Upper Back">Upper Back</option>
+                            <option value="Lower Back">Lower Back</option>
+                            <option value="Laterals">Laterals</option>
+                            <option value="Shoulders">Shoulders</option>
+                            <option value="Biceps">Biceps</option>
+                            <option value="Triceps">Triceps</option>
+                            <option value="Abdominals">Abdominals</option>
+                            <option value="Legs">Legs</option>
                         </select>
                     </div>
 
                     <div class="form-group">
-                        <label for="exerciseMuscle">Muscle Group *</label>
+                        <label for="exerciseMuscle">Specific Muscle *</label>
                         <select id="exerciseMuscle" required>
-                            <option value="">Select muscle group...</option>
-                            <option value="Quadriceps">Quadriceps</option>
-                            <option value="Hamstrings">Hamstrings</option>
-                            <option value="Glutes">Glutes</option>
-                            <option value="Calves">Calves</option>
-                            <option value="Chest">Chest</option>
-                            <option value="Back">Back</option>
-                            <option value="Shoulders">Shoulders</option>
-                            <option value="Biceps">Biceps</option>
-                            <option value="Triceps">Triceps</option>
-                            <option value="Core">Core</option>
+                            <option value="">Select muscle...</option>
+                            <optgroup label="Chest">
+                                <option value="Upper Chest">Upper Chest</option>
+                                <option value="Middle Chest">Middle Chest</option>
+                                <option value="Lower Chest">Lower Chest</option>
+                            </optgroup>
+                            <optgroup label="Back">
+                                <option value="Upper Back">Upper Back</option>
+                                <option value="Middle Back">Middle Back</option>
+                                <option value="Lower Back">Lower Back</option>
+                                <option value="Lats">Lats</option>
+                                <option value="Traps">Traps</option>
+                            </optgroup>
+                            <optgroup label="Shoulders">
+                                <option value="Front Delts">Front Delts</option>
+                                <option value="Side Delts">Side Delts</option>
+                                <option value="Rear Delts">Rear Delts</option>
+                            </optgroup>
+                            <optgroup label="Arms">
+                                <option value="Biceps Long Head">Biceps Long Head</option>
+                                <option value="Biceps Short Head">Biceps Short Head</option>
+                                <option value="Triceps Long Head">Triceps Long Head</option>
+                                <option value="Triceps Lateral Head">Triceps Lateral Head</option>
+                                <option value="Triceps Medial Head">Triceps Medial Head</option>
+                                <option value="Forearms">Forearms</option>
+                            </optgroup>
+                            <optgroup label="Legs">
+                                <option value="Quadriceps">Quadriceps</option>
+                                <option value="Hamstrings">Hamstrings</option>
+                                <option value="Glutes">Glutes</option>
+                                <option value="Calves">Calves</option>
+                                <option value="Adductors">Adductors</option>
+                                <option value="Abductors">Abductors</option>
+                            </optgroup>
+                            <optgroup label="Core">
+                                <option value="Upper Abs">Upper Abs</option>
+                                <option value="Lower Abs">Lower Abs</option>
+                                <option value="Obliques">Obliques</option>
+                                <option value="Lower Back Core">Lower Back Core</option>
+                            </optgroup>
                             <option value="Full Body">Full Body</option>
                         </select>
                     </div>

@@ -508,9 +508,26 @@ function editExerciseDetails(id) {
 
 // Delete Exercise
 function deleteExercise(id) {
-    if (confirm('Are you sure you want to delete this exercise and all its history?')) {
-        exercises = exercises.filter(ex => ex.id !== id);
-        saveToFirebase();
+    const exercise = exercises.find(ex => ex.id === id);
+    if (!exercise) return;
+    
+    // Check if other users have data for this exercise
+    const otherUsersHaveData = Object.keys(exercise.users).some(user => 
+        user !== currentUser && exercise.users[user].history && exercise.users[user].history.length > 0
+    );
+    
+    if (otherUsersHaveData) {
+        // Only delete current user's data
+        if (confirm(`This exercise has data from other users. Delete only YOUR data for "${exercise.name}"?`)) {
+            delete exercise.users[currentUser];
+            saveToFirebase();
+        }
+    } else {
+        // Delete entire exercise (only current user has data)
+        if (confirm(`Are you sure you want to delete "${exercise.name}" and all its history?`)) {
+            exercises = exercises.filter(ex => ex.id !== id);
+            saveToFirebase();
+        }
     }
 }
 

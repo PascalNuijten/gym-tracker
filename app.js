@@ -273,12 +273,21 @@ function populateExistingExercises() {
     const select = document.getElementById('existingExerciseSelect');
     select.innerHTML = '<option value="">Choose an exercise...</option>';
     
+    console.log('Total exercises in database:', exercises.length);
+    console.log('Current user:', currentUser);
+    
     // Get all exercises that current user hasn't done yet
     // This includes exercises done by other users OR exercises with no history at all
     const availableExercises = exercises.filter(ex => {
         const currentUserHistory = ex.users[currentUser]?.history || [];
-        return currentUserHistory.length === 0;
+        const available = currentUserHistory.length === 0;
+        if (available) {
+            console.log('Available exercise:', ex.name, 'Users:', Object.keys(ex.users));
+        }
+        return available;
     });
+    
+    console.log('Available exercises for', currentUser + ':', availableExercises.length);
     
     // Sort by name for easier selection
     availableExercises.sort((a, b) => a.name.localeCompare(b.name));

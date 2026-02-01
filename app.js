@@ -298,7 +298,10 @@ function saveExercise() {
     
     // Check if this is just editing exercise details (sets container is hidden)
     const setsContainer = document.getElementById('setsContainer');
-    const isSetsHidden = setsContainer.style.display === 'none';
+    const computedDisplay = window.getComputedStyle(setsContainer).display;
+    const isSetsHidden = computedDisplay === 'none';
+    
+    console.log('Save exercise - isSetsHidden:', isSetsHidden, 'style.display:', setsContainer.style.display, 'computed:', computedDisplay);
     
     if (isSetsHidden) {
         // Just updating exercise details (sets section is hidden)
@@ -317,17 +320,17 @@ function saveExercise() {
             
             // Reset visibility for next use
             if (setsContainer) {
-                setsContainer.style.display = 'block';
+                setsContainer.style.display = '';
                 const workoutHeading = setsContainer.previousElementSibling;
                 if (workoutHeading && workoutHeading.tagName === 'H3') {
-                    workoutHeading.style.display = 'block';
+                    workoutHeading.style.display = '';
                 }
             }
-            document.getElementById('addSetBtn').style.display = 'block';
+            document.getElementById('addSetBtn').style.display = '';
             const notesParent = document.querySelector('label[for="exerciseNotes"]')?.parentElement;
-            if (notesParent) notesParent.style.display = 'block';
+            if (notesParent) notesParent.style.display = '';
             const optionToggleParent = document.querySelector('.exercise-option-toggle')?.parentElement;
-            if (optionToggleParent) optionToggleParent.style.display = 'block';
+            if (optionToggleParent) optionToggleParent.style.display = '';
         }
         return;
     }
@@ -814,18 +817,13 @@ function displayWeeklySummaryModal(categorySummary, overall) {
 
 // Generate Weekly Training Routine
 function generateWeeklyRoutine() {
-    // New muscle-based categories
-    const muscleGroups = [
-        'Chest', 'Upper Back', 'Lower Back', 'Laterals', 
-        'Shoulders', 'Biceps', 'Triceps', 'Abdominals', 'Legs'
-    ];
-    
-    // Training day groupings (for weekly summary compatibility)
+    // Training day groupings
     const trainingDays = {
         'Chest Day': ['Chest'],
         'Back/Shoulder Day': ['Upper Back', 'Laterals', 'Shoulders'],
         'Legs Day': ['Legs'],
-        'Functional Day': ['Lower Back', 'Abdominals']
+        'Functional Day': ['Lower Back', 'Abdominals'],
+        'Arms Day': ['Biceps', 'Triceps']
     };
     
     // Get user's exercises with history
@@ -846,40 +844,52 @@ function generateWeeklyRoutine() {
     
     const routine = [];
     
-    // Generate routine for each muscle group
-    muscleGroups.forEach(muscleGroup => {
-        // Get exercises for this muscle group category
-        const muscleExercises = userExercises.filter(ex => ex.category === muscleGroup);
+    // Generate routine for each training day
+    Object.entries(trainingDays).forEach(([dayName, muscleGroups]) => {
+        const dayExercises = [];
         
-        if (muscleExercises.length === 0) return;
-        
-        // Check if muscle group has been trained since last routine generation
-        const lastRoutineExercise = routineMemory[muscleGroup];
-        let needNewRoutine = true;
-        
-        if (lastRoutineExercise) {
-            // Find the exercise in current exercises
-            const ex = exercises.find(e => e.id === lastRoutineExercise.exerciseId);
-            if (ex && ex.users[currentUser]?.history) {
-                const lastWorkoutDate = new Date(lastRoutineExercise.generatedAt);
-                const recentWorkouts = ex.users[currentUser].history.filter(h => 
-                    new Date(h.date) > lastWorkoutDate
-                );
-                
-                // If exercise was trained since routine generation, keep same routine
-                needNewRoutine = recentWorkouts.length === 0;
+        // Check if ANY muscle in this day has been trained since last routine generation
+        let anyMuscleTrained = false;
+        if (routineMemory[dayName]) {
+            const lastGeneratedDate = new Date(routineMemory[dayName].generatedAt);
+            
+            // Check if any exercise from this day's muscle groups was trained
+            for (const muscleGroup of muscleGroups) {
+                const muscleExercises = userExercises.filter(ex => ex.category === muscleGroup);
+                for (const ex of muscleExercises) {
+                    const recentWorkouts = ex.users[currentUser].history.filter(h => 
+                        new Date(h.date) > lastGeneratedDate
+                    );
+                    if (recentWorkouts.length > 0) {
+                        anyMuscleTrained = true;
+                        break;
+                    }
+                }
+                if (anyMuscleTrained) break;
             }
         }
         
-        let selectedExercise;
+        // If any muscle was trained OR no saved routine exists, generate new routine for this day
+        const needNewRoutine = anyMuscleTrained || !routineMemory[dayName];
         
-        if (!needNewRoutine && lastRoutineExercise) {
-            // Use the same exercise from memory
-            selectedExercise = exercises.find(e => e.id === lastRoutineExercise.exerciseId);
+        if (!needNewRoutine && routineMemory[dayName]?.exercises) {
+            // Use saved routine
+            routine.push({
+                day: dayName,
+                exercises: routineMemory[dayName].exercises,
+                status: '🔄 Continuing current routine'
+            });
+            return;
         }
         
-        if (!selectedExercise || needNewRoutine) {
-            // Generate new routine: pick exercise based on priority
+        // Generate new routine for this day
+        // Get all exercises for muscle groups in this day
+        for (const muscleGroup of muscleGroups) {
+            const muscleExercises = userExercises.filter(ex => ex.category === muscleGroup);
+            
+            if (muscleExercises.length === 0) continue;
+            
+            // Score exercises: prioritize oldest + slowest progress
             const scoredExercises = muscleExercises.map(ex => {
                 const userData = ex.users[currentUser];
                 const history = userData.history || [];
@@ -907,127 +917,112 @@ function generateWeeklyRoutine() {
                     }
                 }
                 
-                // Priority: days since trained (70%) + lack of progress (30%)
-                const score = (daysSinceLastTrained * 0.7) + ((10 - Math.min(progressScore, 10)) * 0.3);
+                // Priority: days since trained (60%) + lack of progress (40%)
+                const score = (daysSinceLastTrained * 0.6) + ((10 - Math.min(progressScore, 10)) * 0.4);
                 
-                return { exercise: ex, score, lastSession, daysSinceLastTrained };
+                return { exercise: ex, score, lastSession, daysSinceLastTrained, progressScore };
             });
             
-            // Sort by score and pick top exercise
+            // Sort by score and pick top 1-2 exercises per muscle group
             scoredExercises.sort((a, b) => b.score - a.score);
-            selectedExercise = scoredExercises[0].exercise;
+            const numToSelect = muscleGroup === 'Chest' || muscleGroup === 'Legs' ? 2 : 1;
+            const selectedForMuscle = scoredExercises.slice(0, Math.min(numToSelect, scoredExercises.length));
             
-            // Save to routine memory
-            routineMemory[muscleGroup] = {
-                exerciseId: selectedExercise.id,
+            // Generate recommendations with progressive overload
+            selectedForMuscle.forEach(({ exercise, lastSession, daysSinceLastTrained, progressScore }) => {
+                const lastSets = lastSession.sets;
+                const avgWeight = lastSets.reduce((sum, set) => sum + set.weight, 0) / lastSets.length;
+                const avgReps = lastSets.reduce((sum, set) => sum + set.reps, 0) / lastSets.length;
+                const numSets = lastSets.length;
+                
+                // Progressive overload logic
+                let recommendedWeight = avgWeight;
+                let recommendedReps = Math.round(avgReps);
+                let recommendedSets = numSets;
+                let note = '';
+                
+                if (avgReps >= 12) {
+                    const increase = avgWeight <= 20 ? 2.5 : (avgWeight * 0.05);
+                    recommendedWeight = Math.round((avgWeight + increase) * 2) / 2;
+                    recommendedReps = 8;
+                    note = '⬆️ Weight increased';
+                } else if (avgReps >= 10) {
+                    recommendedReps = Math.min(12, avgReps + 2);
+                    note = '➕ Adding reps';
+                } else if (avgReps >= 8) {
+                    recommendedReps = Math.min(10, avgReps + 1);
+                    note = '✅ Maintain level';
+                } else {
+                    recommendedWeight = Math.round((avgWeight * 0.92) * 2) / 2;
+                    recommendedReps = 10;
+                    note = '⬇️ Reduce weight for form';
+                }
+                
+                dayExercises.push({
+                    id: exercise.id,
+                    name: exercise.name,
+                    category: exercise.category,
+                    muscle: exercise.muscle,
+                    sets: recommendedSets,
+                    reps: recommendedReps,
+                    weight: recommendedWeight,
+                    note: note,
+                    lastPerformed: `Last: ${lastSets.map(s => `${s.reps}×${s.weight}kg`).join(', ')}`,
+                    daysSince: Math.round(daysSinceLastTrained),
+                    progress: Math.round(progressScore * 10) / 10
+                });
+            });
+        }
+        
+        if (dayExercises.length > 0) {
+            // Save this day's routine to memory
+            routineMemory[dayName] = {
+                exercises: dayExercises,
                 generatedAt: new Date().toISOString()
             };
+            
+            routine.push({
+                day: dayName,
+                exercises: dayExercises,
+                status: '🆕 New routine generated'
+            });
         }
-        
-        if (!selectedExercise) return;
-        
-        // Generate recommendation with progressive overload
-        const userData = selectedExercise.users[currentUser];
-        const history = userData.history || [];
-        const lastSession = history[history.length - 1];
-        const lastSets = lastSession.sets;
-        const avgWeight = lastSets.reduce((sum, set) => sum + set.weight, 0) / lastSets.length;
-        const avgReps = lastSets.reduce((sum, set) => sum + set.reps, 0) / lastSets.length;
-        const numSets = lastSets.length;
-        
-        // Progressive overload logic
-        let recommendedWeight = avgWeight;
-        let recommendedReps = Math.round(avgReps);
-        let recommendedSets = numSets;
-        let note = '';
-        
-        if (avgReps >= 12) {
-            const increase = avgWeight <= 20 ? 2.5 : (avgWeight * 0.05);
-            recommendedWeight = Math.round((avgWeight + increase) * 2) / 2;
-            recommendedReps = 8;
-            note = '⬆️ Weight increased';
-        } else if (avgReps >= 10) {
-            recommendedReps = Math.min(12, avgReps + 2);
-            note = '➕ Adding reps';
-        } else if (avgReps >= 8) {
-            recommendedReps = Math.min(10, avgReps + 1);
-            note = '✅ Maintain level';
-        } else {
-            recommendedWeight = Math.round((avgWeight * 0.92) * 2) / 2;
-            recommendedReps = 10;
-            note = '⬇️ Reduce weight for form';
-        }
-        
-        // Check if this is a new routine or continuing
-        const routineStatus = needNewRoutine ? '🆕 New routine' : '🔄 Continuing until trained';
-        
-        routine.push({
-            muscleGroup: muscleGroup,
-            exercise: {
-                name: selectedExercise.name,
-                muscle: selectedExercise.muscle,
-                sets: recommendedSets,
-                reps: recommendedReps,
-                weight: recommendedWeight,
-                note: note,
-                routineStatus: routineStatus,
-                lastPerformed: `Last: ${lastSets.map((s, i) => `${s.reps}×${s.weight}kg`).join(', ')}`
-            }
-        });
     });
     
     // Save routine memory to localStorage
     localStorage.setItem(routineKey, JSON.stringify(routineMemory));
     
     // Display routine in modal
-    displayRoutineModal(routine, trainingDays);
+    displayRoutineModal(routine);
 }
 
 // Display Routine Modal
-function displayRoutineModal(routine, trainingDays) {
+function displayRoutineModal(routine) {
     const routineModal = document.createElement('div');
     routineModal.className = 'modal';
     routineModal.style.display = 'block';
     
-    // Group by training days for display
-    const groupedRoutine = {};
-    routine.forEach(item => {
-        const muscle = item.muscleGroup;
-        let dayName = 'Other';
-        
-        // Find which training day this muscle belongs to
-        for (const [day, muscles] of Object.entries(trainingDays)) {
-            if (muscles.includes(muscle)) {
-                dayName = day;
-                break;
-            }
-        }
-        
-        if (!groupedRoutine[dayName]) {
-            groupedRoutine[dayName] = [];
-        }
-        groupedRoutine[dayName].push(item);
-    });
-    
-    const routineHTML = Object.entries(groupedRoutine).map(([dayName, items]) => `
+    const routineHTML = routine.map(day => `
         <div class="routine-day">
-            <h3>${dayName}</h3>
+            <h3>${day.day} ${day.status}</h3>
             <div class="routine-exercises">
-                ${items.map((item, idx) => `
+                ${day.exercises.map((ex, idx) => `
                     <div class="routine-exercise">
                         <div class="routine-ex-header">
                             <span class="routine-ex-number">${idx + 1}</span>
                             <div>
-                                <div class="routine-ex-name">${item.exercise.name}</div>
-                                <div class="routine-ex-muscle">${item.muscleGroup} - ${item.exercise.muscle}</div>
-                                <div class="routine-status" style="color: #667eea; font-size: 0.85em; margin-top: 3px;">${item.exercise.routineStatus}</div>
+                                <div class="routine-ex-name">${ex.name}</div>
+                                <div class="routine-ex-muscle">${ex.category} - ${ex.muscle}</div>
+                                <div style="font-size: 0.85em; color: #888; margin-top: 3px;">
+                                    📅 ${ex.daysSince}d ago | 📈 ${ex.progress > 0 ? '+' : ''}${ex.progress}% progress
+                                </div>
                             </div>
                         </div>
                         <div class="routine-ex-plan">
-                            <span class="routine-sets">${item.exercise.sets} sets × ${item.exercise.reps} reps @ ${item.exercise.weight}kg</span>
-                            <span class="routine-note">${item.exercise.note}</span>
+                            <span class="routine-sets">${ex.sets} sets × ${ex.reps} reps @ ${ex.weight}kg</span>
+                            <span class="routine-note">${ex.note}</span>
                         </div>
-                        <div class="routine-last">${item.exercise.lastPerformed}</div>
+                        <div class="routine-last">${ex.lastPerformed}</div>
                     </div>
                 `).join('')}
             </div>
@@ -1038,7 +1033,7 @@ function displayRoutineModal(routine, trainingDays) {
         <div class="modal-content" style="max-width: 1000px;">
             <span class="close" onclick="this.parentElement.parentElement.remove()">&times;</span>
             <h2>🗓️ Your Training Routine - ${currentUser}</h2>
-            <p style="color: #666; margin-bottom: 20px;">One exercise per muscle group. Routine persists until you train that muscle again!</p>
+            <p style="color: #666; margin-bottom: 20px;">Full workouts per training day. Routine updates when you complete exercises!</p>
             
             <div class="routine-container">
                 ${routineHTML}
@@ -1047,10 +1042,10 @@ function displayRoutineModal(routine, trainingDays) {
             <div class="routine-footer">
                 <p><strong>💡 How it works:</strong></p>
                 <ul>
-                    <li>🆕 <strong>New routine:</strong> Generated based on which muscles need training most</li>
-                    <li>🔄 <strong>Continuing:</strong> Same exercise until you complete it, then a new one generates</li>
-                    <li>📊 Recommendations use progressive overload for optimal gains</li>
-                    <li>🎯 Train each muscle group when you're ready - no fixed schedule!</li>
+                    <li>🆕 <strong>New routine:</strong> Generated when any muscle in that day is trained</li>
+                    <li>🔄 <strong>Continuing:</strong> Same routine until you complete at least one exercise from that day</li>
+                    <li>📊 Exercises prioritized by: time since last trained (60%) + slow progress (40%)</li>
+                    <li>🎯 Train the full day, then a new routine generates automatically!</li>
                 </ul>
             </div>
         </div>

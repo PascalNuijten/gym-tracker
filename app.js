@@ -189,6 +189,12 @@ function setupEventListeners() {
     
     // Debug Button
     document.getElementById('debugBtn').addEventListener('click', showDebugModal);
+    
+    // Export Button
+    document.getElementById('exportBtn').addEventListener('click', exportData);
+    
+    // Restore Button
+    document.getElementById('restoreBtn').addEventListener('click', restoreData);
 }
 
 // Show Debug Modal - View All Database Exercises
@@ -242,6 +248,82 @@ function showDebugModal() {
     `;
     
     document.body.appendChild(debugModal);
+}
+
+// Export Data
+function exportData() {
+    const data = {
+        exercises: exercises,
+        users: users,
+        timestamp: new Date().toISOString(),
+        version: '1.0'
+    };
+    
+    const dataStr = JSON.stringify(data, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gym-tracker-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    alert('✅ Data exported successfully!');
+}
+
+// Restore Data
+function restoreData() {
+    // First try localStorage backup
+    const localBackup = localStorage.getItem('gymTrackerBackup');
+    if (localBackup) {
+        const backup = JSON.parse(localBackup);
+        const backupDate = new Date(backup.timestamp).toLocaleString();
+        
+        if (confirm(`Restore from automatic backup created on ${backupDate}?\n\nThis will replace all current data.`)) {
+            exercises = backup.exercises;
+            users = backup.users || users;
+            saveToFirebase();
+            renderExercises();
+            alert('✅ Data restored from automatic backup!');
+            return;
+        }
+    }
+    
+    // If no local backup or user declined, offer file upload
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const data = JSON.parse(event.target.result);
+                
+                if (!data.exercises || !Array.isArray(data.exercises)) {
+                    alert('❌ Invalid backup file format!');
+                    return;
+                }
+                
+                const backupDate = data.timestamp ? new Date(data.timestamp).toLocaleString() : 'Unknown date';
+                
+                if (confirm(`Restore backup from ${backupDate}?\n\nExercises: ${data.exercises.length}\nThis will replace all current data.`)) {
+                    exercises = data.exercises;
+                    users = data.users || users;
+                    saveToFirebase();
+                    renderExercises();
+                    alert('✅ Data restored from file!');
+                }
+            } catch (error) {
+                console.error('Restore error:', error);
+                alert('❌ Error reading backup file: ' + error.message);
+            }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
 }
 
 // Reset Sets Container
@@ -2063,6 +2145,19 @@ function setupFirebaseListeners() {
 
 function saveToFirebase() {
     if (!database) return;
+    
+    // Create backup in localStorage before saving
+    try {
+        const backup = {
+            exercises: exercises,
+            timestamp: new Date().toISOString(),
+            users: users
+        };
+        localStorage.setItem('gymTrackerBackup', JSON.stringify(backup));
+        console.log('Backup saved to localStorage');
+    } catch (e) {
+        console.error('Failed to create backup:', e);
+    }
     
     database.ref('exercises').set(exercises)
         .then(() => {

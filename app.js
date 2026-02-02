@@ -187,67 +187,11 @@ function setupEventListeners() {
     // Weekly Summary Button
     document.getElementById('weeklySummaryBtn').addEventListener('click', showWeeklySummary);
     
-    // Debug Button
-    document.getElementById('debugBtn').addEventListener('click', showDebugModal);
-    
     // Export Button
     document.getElementById('exportBtn').addEventListener('click', exportData);
     
     // Restore Button
     document.getElementById('restoreBtn').addEventListener('click', restoreData);
-}
-
-// Show Debug Modal - View All Database Exercises
-function showDebugModal() {
-    const debugModal = document.createElement('div');
-    debugModal.className = 'modal';
-    debugModal.style.display = 'block';
-    
-    let debugHTML = '<h3>All Exercises in Database</h3>';
-    debugHTML += `<p>Total exercises: ${exercises.length}</p>`;
-    debugHTML += `<p>Current user: <strong>${currentUser}</strong></p>`;
-    debugHTML += '<div style="max-height: 500px; overflow-y: auto;">';
-    
-    exercises.forEach((ex, idx) => {
-        const allUsers = Object.keys(ex.users);
-        const usersWithHistory = allUsers.filter(user => 
-            ex.users[user].history && ex.users[user].history.length > 0
-        );
-        
-        const currentUserHistory = ex.users[currentUser]?.history?.length || 0;
-        const isCurrentUserExercise = currentUserHistory > 0;
-        
-        debugHTML += `
-            <div style="border: 1px solid ${isCurrentUserExercise ? '#4CAF50' : '#ddd'}; padding: 10px; margin: 10px 0; border-radius: 5px; background: ${isCurrentUserExercise ? '#f0f8f0' : 'white'};">
-                <strong>${idx + 1}. ${ex.name}</strong> ${isCurrentUserExercise ? '✅ <span style="color: green;">YOUR EXERCISE</span>' : ''}<br>
-                <small>Category: ${ex.category} | Muscle: ${ex.muscle}</small><br>
-                <small>ID: ${ex.id}</small><br>
-                <small>All users in object: ${allUsers.join(', ')}</small><br>
-                <small style="color: ${usersWithHistory.length > 0 ? 'green' : 'red'};">Users with history: ${usersWithHistory.length > 0 ? usersWithHistory.join(', ') : 'NONE'}</small><br>
-        `;
-        
-        // Show detailed history for each user
-        allUsers.forEach(user => {
-            const historyCount = ex.users[user]?.history?.length || 0;
-            const isCurrent = user === currentUser;
-            debugHTML += `<small style="font-weight: ${isCurrent ? 'bold' : 'normal'}; color: ${isCurrent ? '#4CAF50' : 'inherit'};">- ${user}: ${historyCount} workout(s)${isCurrent && historyCount > 0 ? ' 👈 YOU' : ''}</small><br>`;
-        });
-        
-        debugHTML += '</div>';
-    });
-    
-    debugHTML += '</div>';
-    debugHTML += '<p style="margin-top: 15px; color: #666;"><strong>💡 Tip:</strong> Exercises highlighted in green should be visible in your main list. Open browser console (F12) to see detailed logs.</p>';
-    
-    debugModal.innerHTML = `
-        <div class="modal-content" style="max-width: 800px;">
-            <span class="close" onclick="this.parentElement.parentElement.remove()">&times;</span>
-            <h2>🔍 Database Debug Info</h2>
-            ${debugHTML}
-        </div>
-    `;
-    
-    document.body.appendChild(debugModal);
 }
 
 // Export Data
@@ -1471,19 +1415,6 @@ function renderExercises() {
     const categoryValue = categoryFilter.value;
     const muscleValue = muscleFilter.value;
     const searchValue = searchInput.value.toLowerCase();
-    
-    console.log('=== RENDER EXERCISES DEBUG ===');
-    console.log('Current user:', currentUser);
-    console.log('Total exercises in DB:', exercises.length);
-    
-    // Log all exercises for current user
-    exercises.forEach(ex => {
-        const userData = ex.users[currentUser];
-        const historyCount = userData?.history?.length || 0;
-        if (userData || ex.name.toLowerCase().includes('leg')) {
-            console.log(`Exercise: ${ex.name}, User ${currentUser} history: ${historyCount}, All users:`, Object.keys(ex.users));
-        }
-    });
 
     let filtered = exercises.filter(exercise => {
         const matchCategory = categoryValue === 'all' || exercise.category === categoryValue;
@@ -1494,31 +1425,10 @@ function renderExercises() {
         
         // Only show exercises that the current user has done (has history)
         const userData = exercise.users[currentUser];
-        
-        // DEBUG: Log the actual structure
-        if (userData) {
-            console.log(`DEBUG ${exercise.name}:`, {
-                userDataExists: !!userData,
-                historyExists: !!userData.history,
-                historyType: typeof userData.history,
-                historyIsArray: Array.isArray(userData.history),
-                historyLength: userData.history?.length,
-                actualHistory: userData.history
-            });
-        }
-        
         const hasHistory = userData && userData.history && Array.isArray(userData.history) && userData.history.length > 0;
-        
-        // Extra debugging for exercises not showing
-        if (userData && userData.history) {
-            console.log(`${exercise.name}: hasHistory=${hasHistory}, will show=${matchCategory && matchMuscle && matchSearch && hasHistory}`);
-        }
         
         return matchCategory && matchMuscle && matchSearch && hasHistory;
     });
-    
-    console.log('Filtered exercises shown:', filtered.length);
-    console.log('=== END DEBUG ===');
 
     if (filtered.length === 0) {
         exerciseList.innerHTML = `
@@ -2130,12 +2040,46 @@ function setupFirebaseListeners() {
             renderExercises();
     } else {
         // Normal mode - listen for changes
-        exercisesRef.on('value', (snapshot) => {
+        exercisesRef.once('value', (snapshot) => {
             const data = snapshot.val();
-            if (data) {
+            
+            if (data && Array.isArray(data) && data.length > 0) {
+                // Firebase has data - use it
                 exercises = data;
+                console.log(`Loaded ${exercises.length} exercises from Firebase`);
+            } else {
+                // Firebase is empty - check localStorage backup first
+                const localBackup = localStorage.getItem('gymTrackerBackup');
+                if (localBackup) {
+                    try {
+                        const backup = JSON.parse(localBackup);
+                        if (backup.exercises && backup.exercises.length > 0) {
+                            exercises = backup.exercises;
+                            console.log(`Restored ${exercises.length} exercises from localStorage backup`);
+                            // Save to Firebase to restore it
+                            saveToFirebase();
+                        }
+                    } catch (e) {
+                        console.error('Failed to restore from backup:', e);
+                    }
+                }
+                
+                // If still empty, warn user
+                if (exercises.length === 0) {
+                    console.warn('No exercises found in Firebase or backup. Database is empty.');
+                }
             }
+            
             renderExercises();
+            
+            // Now listen for future changes
+            exercisesRef.on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data && Array.isArray(data)) {
+                    exercises = data;
+                    renderExercises();
+                }
+            });
         }, (error) => {
             console.error('Firebase read error:', error);
             alert('Error loading data. Check your internet connection.');
@@ -2145,6 +2089,13 @@ function setupFirebaseListeners() {
 
 function saveToFirebase() {
     if (!database) return;
+    
+    // SAFETY CHECK: Prevent saving empty array
+    if (!exercises || exercises.length === 0) {
+        console.error('SAFETY: Prevented saving empty exercises array to Firebase!');
+        alert('⚠️ Cannot save: No exercises to save. This prevents accidental data loss.');
+        return;
+    }
     
     // Create backup in localStorage before saving
     try {
@@ -2161,7 +2112,7 @@ function saveToFirebase() {
     
     database.ref('exercises').set(exercises)
         .then(() => {
-            console.log('Data saved to Firebase');
+            console.log(`Data saved to Firebase: ${exercises.length} exercises`);
         })
         .catch((error) => {
             console.error('Firebase save error:', error);

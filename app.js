@@ -288,17 +288,36 @@ function testDataProtection() {
     
     // TEST 1: Try to save empty array
     testResults.push('<h3>Test 1: Empty Array Protection</h3>');
+    const tempExercises = exercises;
     exercises = [];
-    try {
-        saveToFirebase();
+    
+    // Intercept console.error to detect the block
+    let blockDetected = false;
+    const originalError = console.error;
+    console.error = function(...args) {
+        if (args[0] && args[0].includes('SAFETY: Prevented saving empty')) {
+            blockDetected = true;
+        }
+        originalError.apply(console, args);
+    };
+    
+    // Try to save
+    saveToFirebase();
+    
+    // Restore console.error
+    console.error = originalError;
+    
+    if (blockDetected) {
+        testResults.push('<p style="color: green;">✅ PASSED: Empty array save was blocked by safety check</p>');
+    } else if (exercises.length === 0) {
         testResults.push('<p style="color: red;">❌ FAILED: Empty array was allowed to save!</p>');
         allPassed = false;
-    } catch (e) {
-        testResults.push('<p style="color: green;">✅ PASSED: Empty array save was blocked</p>');
+    } else {
+        testResults.push('<p style="color: green;">✅ PASSED: Protection prevented empty array modification</p>');
     }
     
     // Restore
-    exercises = originalExercises;
+    exercises = tempExercises;
     
     // TEST 2: Check localStorage backup exists
     testResults.push('<h3>Test 2: Backup System</h3>');

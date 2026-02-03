@@ -145,9 +145,6 @@ function setupEventListeners() {
         document.getElementById('exerciseCategory').required = true;
         document.getElementById('exerciseMuscle').required = true;
     });
-        document.getElementById('exerciseCategory').required = true;
-        document.getElementById('exerciseMuscle').required = true;
-    });
 
     // When selecting an existing exercise, update the form
     document.getElementById('existingExerciseSelect').addEventListener('change', (e) => {

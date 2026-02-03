@@ -2473,11 +2473,9 @@ let aiBackBtns;
 let aiModeButtons;
 
 // AI Mode Content Divs
-let aiFeedbackMode;
+let aiAnalysisMode;
 let aiCameraMode;
-let aiQuestionMode;
 let aiSubstituteMode;
-let aiCompareMode;
 
 // Camera variables
 let cameraStream = null;
@@ -2495,11 +2493,9 @@ function initAI() {
     aiModeButtons = document.querySelectorAll('.ai-mode-btn');
     
     // AI mode content divs
-    aiFeedbackMode = document.getElementById('aiFeedbackMode');
+    aiAnalysisMode = document.getElementById('aiAnalysisMode');
     aiCameraMode = document.getElementById('aiCameraMode');
-    aiQuestionMode = document.getElementById('aiQuestionMode');
     aiSubstituteMode = document.getElementById('aiSubstituteMode');
-    aiCompareMode = document.getElementById('aiCompareMode');
     
     // Camera elements
     cameraVideo = document.getElementById('cameraVideo');
@@ -2549,7 +2545,7 @@ function setupAIEventListeners() {
             document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             const period = btn.dataset.period;
-            generateFeedback(period);
+            generateCombinedAnalysis(period);
         });
     });
     
@@ -2558,70 +2554,247 @@ function setupAIEventListeners() {
     document.getElementById('stopCameraBtn').addEventListener('click', stopCamera);
     document.getElementById('captureBtn').addEventListener('click', captureAndAnalyze);
     
-    // Question mode
+    // Question mode in analysis
     document.querySelectorAll('.suggestion-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            document.getElementById('aiQuestionInput').value = btn.dataset.question;
-            answerQuestion(btn.dataset.question);
+            document.getElementById('aiAnalysisQuestionInput').value = btn.dataset.question;
+            answerAnalysisQuestion(btn.dataset.question);
         });
     });
     
-    document.getElementById('askQuestionBtn').addEventListener('click', () => {
-        const question = document.getElementById('aiQuestionInput').value;
+    document.getElementById('askAnalysisQuestionBtn').addEventListener('click', () => {
+        const question = document.getElementById('aiAnalysisQuestionInput').value;
         if (question.trim()) {
-            answerQuestion(question);
+            answerAnalysisQuestion(question);
         }
     });
     
     // Substitute mode
     document.getElementById('findSubstituteBtn').addEventListener('click', findSubstitutes);
     
-    // Compare mode
-    document.getElementById('analyzeProgressBtn').addEventListener('click', analyzeProgress);
+    // Compare mode removed - now part of analysis
 }
 
 function showAIModeSelection() {
     aiModeSelection.style.display = 'block';
-    aiFeedbackMode.style.display = 'none';
+    aiAnalysisMode.style.display = 'none';
     aiCameraMode.style.display = 'none';
-    aiQuestionMode.style.display = 'none';
     aiSubstituteMode.style.display = 'none';
-    aiCompareMode.style.display = 'none';
 }
 
 function showAIMode(mode) {
     aiModeSelection.style.display = 'none';
     
     // Hide all modes
-    aiFeedbackMode.style.display = 'none';
+    aiAnalysisMode.style.display = 'none';
     aiCameraMode.style.display = 'none';
-    aiQuestionMode.style.display = 'none';
     aiSubstituteMode.style.display = 'none';
-    aiCompareMode.style.display = 'none';
     
     // Show selected mode
     switch(mode) {
-        case 'feedback':
-            aiFeedbackMode.style.display = 'block';
-            generateFeedback('day'); // Default to today
+        case 'analysis':
+            aiAnalysisMode.style.display = 'block';
+            generateCombinedAnalysis('day'); // Default to today
             break;
         case 'camera':
             aiCameraMode.style.display = 'block';
-            break;
-        case 'question':
-            aiQuestionMode.style.display = 'block';
             break;
         case 'substitute':
             aiSubstituteMode.style.display = 'block';
             populateSubstituteExercises(); // Populate when mode is shown
             break;
-        case 'compare':
-            aiCompareMode.style.display = 'block';
-            break;
     }
 }
 
-// ==================== FEEDBACK MODE ====================
+// ==================== COMBINED ANALYSIS MODE ====================
+
+function generateCombinedAnalysis(period) {
+    const resultBox = document.getElementById('aiAnalysisResult');
+    resultBox.classList.add('show');
+    resultBox.innerHTML = '<div class="loading-spinner"></div> Analyzing your performance...';
+    
+    setTimeout(() => {
+        const userExercises = exercises.filter(ex => ex.user === currentUser);
+        const now = new Date();
+        let startDate;
+        let periodName;
+        
+        if (period === 'day') {
+            startDate = new Date(now);
+            startDate.setHours(0, 0, 0, 0);
+            periodName = 'Today';
+        } else if (period === 'week') {
+            startDate = new Date(now);
+            startDate.setDate(now.getDate() - 7);
+            startDate.setHours(0, 0, 0, 0);
+            periodName = 'This Week';
+        } else {
+            startDate = new Date(now);
+            startDate.setMonth(now.getMonth() - 1);
+            startDate.setHours(0, 0, 0, 0);
+            periodName = 'This Month';
+        }
+        
+        console.log('Period:', period, 'Start date:', startDate, 'Current date:', now);
+        
+        // Collect all workouts in period
+        const periodWorkouts = [];
+        userExercises.forEach(ex => {
+            if (ex.history && ex.history.length > 0) {
+                ex.history.forEach(h => {
+                    const workoutDate = new Date(h.date);
+                    if (workoutDate >= startDate && workoutDate <= now) {
+                        periodWorkouts.push({
+                            exercise: ex.name,
+                            category: ex.category,
+                            muscle: ex.muscle,
+                            date: h.date,
+                            sets: h.sets
+                        });
+                    }
+                });
+            }
+        });
+        
+        console.log('Found workouts:', periodWorkouts.length);
+        
+        if (periodWorkouts.length === 0) {
+            resultBox.innerHTML = `<h4>📊 ${periodName}'s Analysis</h4><p>No workouts recorded for ${periodName.toLowerCase()}. Get started and I'll provide detailed insights!</p>`;
+            return;
+        }
+        
+        // Calculate comprehensive stats
+        const totalSets = periodWorkouts.reduce((sum, w) => sum + w.sets.length, 0);
+        const totalVolume = periodWorkouts.reduce((sum, w) => {
+            return sum + w.sets.reduce((s, set) => s + (set.weight * set.reps), 0);
+        }, 0);
+        
+        const uniqueDays = new Set(periodWorkouts.map(w => new Date(w.date).toDateString())).size;
+        const uniqueExercises = new Set(periodWorkouts.map(w => w.exercise)).size;
+        
+        const categoryBreakdown = {};
+        periodWorkouts.forEach(w => {
+            categoryBreakdown[w.category] = (categoryBreakdown[w.category] || 0) + w.sets.length;
+        });
+        
+        const sortedCategories = Object.entries(categoryBreakdown).sort((a, b) => b[1] - a[1]);
+        const topCategory = sortedCategories[0][0];
+        const weakestCategory = sortedCategories[sortedCategories.length - 1][0];
+        
+        // Generate comprehensive feedback
+        let feedback = `<h4>📊 ${periodName}'s Complete Analysis</h4>`;
+        
+        // Workout Summary
+        feedback += `<p><strong>Workout Summary:</strong></p>`;
+        feedback += `<ul>`;
+        feedback += `<li>🏋️ ${uniqueExercises} different exercises completed</li>`;
+        feedback += `<li>💪 ${totalSets} total sets performed</li>`;
+        feedback += `<li>⚖️ ${totalVolume.toLocaleString()}kg total volume moved</li>`;
+        feedback += `<li>📅 ${uniqueDays} training days</li>`;
+        feedback += `</ul>`;
+        
+        // Muscle Group Distribution
+        feedback += `<p><strong>📈 Muscle Group Distribution:</strong></p>`;
+        feedback += `<ul>`;
+        sortedCategories.forEach(([cat, sets], idx) => {
+            const icon = idx === 0 ? '🏆' : idx === sortedCategories.length - 1 ? '⚠️' : '✓';
+            feedback += `<li>${icon} ${cat}: ${sets} sets</li>`;
+        });
+        feedback += `</ul>`;
+        
+        // Personalized Insights
+        feedback += `<p><strong>💡 Insights & Recommendations:</strong></p>`;
+        feedback += `<ul>`;
+        
+        // Training frequency feedback
+        if (period === 'week') {
+            if (uniqueDays < 3) {
+                feedback += `<li>🔴 ${uniqueDays} training days this week. Aim for 3-5 days for optimal muscle growth.</li>`;
+            } else if (uniqueDays >= 3 && uniqueDays <= 5) {
+                feedback += `<li>🟢 Excellent! ${uniqueDays} training days is ideal for most people.</li>`;
+            } else {
+                feedback += `<li>🟡 ${uniqueDays} training days is quite high. Ensure you're recovering properly!</li>`;
+            }
+        }
+        
+        // Volume feedback
+        const avgSetsPerDay = totalSets / uniqueDays;
+        if (avgSetsPerDay < 12) {
+            feedback += `<li>Consider increasing volume - averaging ${Math.round(avgSetsPerDay)} sets per session. Aim for 12-20.</li>`;
+        } else if (avgSetsPerDay > 25) {
+            feedback += `<li>High volume (${Math.round(avgSetsPerDay)} sets/session). Make sure you're eating and sleeping enough!</li>`;
+        } else {
+            feedback += `<li>Good volume - ${Math.round(avgSetsPerDay)} sets per session is in the sweet spot.</li>`;
+        }
+        
+        // Balance feedback
+        const ratio = sortedCategories[0][1] / (sortedCategories[sortedCategories.length - 1][1] || 1);
+        if (ratio > 2.5) {
+            feedback += `<li>⚠️ <strong>Imbalance detected:</strong> ${topCategory} trained ${ratio.toFixed(1)}x more than ${weakestCategory}. Add more ${weakestCategory} exercises!</li>`;
+        } else if (ratio > 1.5) {
+            feedback += `<li>Minor imbalance: Consider adding more ${weakestCategory} exercises for balanced development.</li>`;
+        } else {
+            feedback += `<li>✅ Well-balanced training across muscle groups!</li>`;
+        }
+        
+        // Push/Pull/Legs analysis
+        const pushCategories = ['Chest', 'Shoulders', 'Triceps'];
+        const pullCategories = ['Upper Back', 'Lower Back', 'Biceps'];
+        const legCategories = ['Legs'];
+        
+        const pushVolume = sortedCategories.filter(([cat]) => pushCategories.includes(cat))
+            .reduce((sum, [, sets]) => sum + sets, 0);
+        const pullVolume = sortedCategories.filter(([cat]) => pullCategories.includes(cat))
+            .reduce((sum, [, sets]) => sum + sets, 0);
+        const legVolume = sortedCategories.filter(([cat]) => legCategories.includes(cat))
+            .reduce((sum, [, sets]) => sum + sets, 0);
+        
+        if (legVolume > 0 && legVolume < pushVolume * 0.5) {
+            feedback += `<li>🦵 Don't skip leg day! Your leg volume (${legVolume} sets) is low compared to upper body (${pushVolume} sets).</li>`;
+        }
+        
+        if (pullVolume > 0 && pullVolume < pushVolume * 0.7) {
+            feedback += `<li>💡 Increase pull exercises (${pullVolume} sets) to balance pushing movements (${pushVolume} sets) and prevent shoulder issues.</li>`;
+        }
+        
+        feedback += `</ul>`;
+        
+        // Fun fact
+        feedback += generateFunFact(totalVolume, totalSets, period);
+        
+        resultBox.innerHTML = feedback;
+    }, 1000);
+}
+
+// Answer questions based on user data
+function answerAnalysisQuestion(question) {
+    const resultBox = document.getElementById('aiAnalysisQuestionResult');
+    resultBox.classList.add('show');
+    resultBox.innerHTML = '<div class="loading-spinner"></div> Analyzing your data...';
+    
+    setTimeout(() => {
+        const userExercises = exercises.filter(ex => ex.user === currentUser);
+        let answer = '';
+        
+        const lowerQ = question.toLowerCase();
+        
+        if (lowerQ.includes('not progressing') || lowerQ.includes('plateau')) {
+            answer = analyzeProgression(userExercises, question);
+        } else if (lowerQ.includes('training enough') || lowerQ.includes('enough')) {
+            answer = analyzeTrainingFrequency(userExercises);
+        } else if (lowerQ.includes('focus') || lowerQ.includes('next')) {
+            answer = suggestFocus(userExercises);
+        } else if (lowerQ.includes('compare') || lowerQ.includes('others')) {
+            answer = compareToOthers(userExercises);
+        } else {
+            answer = provideGeneralAdvice(question, userExercises);
+        }
+        
+        resultBox.innerHTML = answer;
+    }, 1000);
+}
+
+// ==================== FEEDBACK MODE (OLD - NOW PART OF COMBINED) ====================
 
 function generateFeedback(period) {
     const resultBox = document.getElementById('aiFeedbackResult');

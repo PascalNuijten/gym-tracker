@@ -1186,6 +1186,19 @@ textarea {
     border-color: #667eea;
 }
 
+/* AI Question Section */
+.ai-question-section {
+    margin-top: 30px;
+    padding-top: 30px;
+    border-top: 2px solid #e0e0e0;
+}
+
+.ai-question-section h4 {
+    color: #333;
+    margin-bottom: 15px;
+    font-size: 1.1rem;
+}
+
 /* AI Result Box */
 .ai-result-box {
     margin-top: 20px;

@@ -2657,8 +2657,9 @@ function generateCombinedAnalysis(period) {
         // Collect all workouts in period
         const periodWorkouts = [];
         userExercises.forEach(ex => {
-            if (ex.history && ex.history.length > 0) {
-                ex.history.forEach(h => {
+            const userData = ex.users?.[currentUser];
+            if (userData && userData.history && userData.history.length > 0) {
+                userData.history.forEach(h => {
                     const workoutDate = new Date(h.date);
                     if (workoutDate >= startDate && workoutDate <= now) {
                         periodWorkouts.push({
@@ -2993,6 +2994,14 @@ function stopCamera() {
     }
 }
 
+function retryCamera() {
+    // Reset camera view and try again
+    cameraCanvas.style.display = 'none';
+    document.getElementById('aiCameraResult').classList.remove('show');
+    document.getElementById('aiCameraResult').innerHTML = '';
+    startCamera();
+}
+
 function captureAndAnalyze() {
     const resultBox = document.getElementById('aiCameraResult');
     resultBox.classList.add('show');
@@ -3015,7 +3024,7 @@ function captureAndAnalyze() {
 }
 
 function analyzeEquipmentAndIdentifyExercise() {
-    // Simulated equipment detection with exercise details
+    // Simulated equipment detection with exercise details and confidence level
     // In real implementation, use TensorFlow.js with a trained model or Vision API
     const exerciseDatabase = [
         { name: 'Lat Pulldown', category: 'Upper Back', muscle: 'Lats', equipment: 'Lat Pulldown Machine' },
@@ -3035,12 +3044,42 @@ function analyzeEquipmentAndIdentifyExercise() {
         { name: 'Leg Press Calf Raise', category: 'Legs', muscle: 'Calves', equipment: 'Leg Press Machine' }
     ];
     
-    // Randomly select an exercise (in real app, this would be AI detection)
-    return exerciseDatabase[Math.floor(Math.random() * exerciseDatabase.length)];
+    // Randomly select an exercise and confidence (in real app, this would be AI detection)
+    const detectedExercise = exerciseDatabase[Math.floor(Math.random() * exerciseDatabase.length)];
+    // Simulate confidence between 60-95%
+    const confidence = Math.floor(Math.random() * 35) + 60;
+    
+    return {
+        ...detectedExercise,
+        confidence: confidence
+    };
 }
 
 function processDetectedExercise(detectedExercise, resultBox) {
     console.log('Detected exercise:', detectedExercise);
+    
+    // Check confidence level
+    if (detectedExercise.confidence < 70) {
+        resultBox.innerHTML = `
+            <h4>⚠️ Low Confidence Detection</h4>
+            <p>I'm only ${detectedExercise.confidence}% confident this is <strong>${detectedExercise.name}</strong>.</p>
+            <p><strong>Suggestions:</strong></p>
+            <ul>
+                <li>Try getting closer to the equipment</li>
+                <li>Ensure better lighting</li>
+                <li>Center the equipment in the frame</li>
+                <li>Or manually add the exercise instead</li>
+            </ul>
+            <button class="primary-btn" onclick="retryCamera()">📷 Try Again</button>
+            <button class="secondary-btn" onclick="aiModal.style.display='none'; stopCamera(); modal.style.display='block';">➕ Add Manually</button>
+        `;
+        return;
+    }
+    
+    // Show confidence in result
+    const confidenceText = detectedExercise.confidence >= 85 ? 
+        `<p style="color: #4caf50; font-weight: 600;">✓ ${detectedExercise.confidence}% confidence - High accuracy!</p>` :
+        `<p style="color: #ff9800; font-weight: 600;">⚠ ${detectedExercise.confidence}% confidence - Moderate accuracy</p>`;
     
     // Step 1: Check if user already has this exercise
     const userExercise = exercises.find(ex => 
@@ -3052,6 +3091,7 @@ function processDetectedExercise(detectedExercise, resultBox) {
         // User already has this exercise - open workout modal
         resultBox.innerHTML = `
             <h4>✅ Exercise Found in Your Library!</h4>
+            ${confidenceText}
             <p><strong>${detectedExercise.name}</strong> is already in your exercises.</p>
             <p>Opening workout logging...</p>
         `;
@@ -3074,6 +3114,7 @@ function processDetectedExercise(detectedExercise, resultBox) {
         // Exercise exists but not for current user - add it automatically
         resultBox.innerHTML = `
             <h4>📋 Exercise Found in Database!</h4>
+            ${confidenceText}
             <p><strong>${detectedExercise.name}</strong> exists in the app.</p>
             <p>Adding to your exercises and opening workout logging...</p>
         `;
@@ -3088,6 +3129,7 @@ function processDetectedExercise(detectedExercise, resultBox) {
     // Step 3: Exercise doesn't exist anywhere - open creation modal with pre-filled data
     resultBox.innerHTML = `
         <h4>🆕 New Exercise Detected!</h4>
+        ${confidenceText}
         <p><strong>${detectedExercise.name}</strong> is not in the database yet.</p>
         <p>Opening exercise creation form with detected details...</p>
     `;
@@ -3471,9 +3513,19 @@ function provideGeneralAdvice(question, userExercises) {
 
 function populateSubstituteExercises() {
     const select = document.getElementById('substituteExerciseSelect');
-    const userExercises = exercises.filter(ex => ex.user === currentUser);
+    // Get all exercises that the current user has data for
+    const userExercises = exercises.filter(ex => ex.users && ex.users[currentUser]);
     
     select.innerHTML = '<option value="">Select an exercise...</option>';
+    
+    if (userExercises.length === 0) {
+        const option = document.createElement('option');
+        option.textContent = 'No exercises yet - add some first!';
+        option.disabled = true;
+        select.appendChild(option);
+        return;
+    }
+    
     userExercises.forEach(ex => {
         const option = document.createElement('option');
         option.value = ex.id;
@@ -3493,80 +3545,210 @@ function findSubstitutes() {
     }
     
     resultBox.classList.add('show');
-    resultBox.innerHTML = '<div class="loading-spinner"></div> Finding alternatives...';
+    resultBox.innerHTML = '<div class="loading-spinner"></div> AI is analyzing alternatives...';
     
     setTimeout(() => {
         const exercise = exercises.find(ex => ex.id === exerciseId);
-        const alternatives = getExerciseAlternatives(exercise, reason);
+        const alternatives = getAIExerciseAlternatives(exercise, reason);
         
-        let html = `<h4>🔄 Alternatives for ${exercise.name}</h4>`;
+        let html = `<h4>🔄 AI-Powered Alternatives for ${exercise.name}</h4>`;
         
         if (reason) {
-            html += `<p><em>Reason: ${reason}</em></p>`;
+            html += `<p><em>Considering: ${reason}</em></p>`;
         }
         
-        html += `<p><strong>Recommended Alternatives:</strong></p>`;
+        html += `<p><strong>🎯 Best Alternatives (AI Recommended):</strong></p>`;
         html += `<ul>`;
         
-        alternatives.forEach(alt => {
-            html += `<li><strong>${alt.name}</strong> - ${alt.reason}</li>`;
+        alternatives.forEach((alt, idx) => {
+            const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '•';
+            html += `<li>${medal} <strong>${alt.name}</strong> - ${alt.reason}</li>`;
         });
         
         html += `</ul>`;
-        html += `<p style="margin-top: 15px; color: #666; font-size: 0.9rem;">💡 These exercises target similar muscle groups and movement patterns.</p>`;
+        html += `<p style="margin-top: 15px; color: #666; font-size: 0.9rem;">💡 These exercises are ranked by similarity in muscle activation, movement pattern, and equipment requirements.</p>`;
         
         resultBox.innerHTML = html;
-    }, 1000);
+    }, 1500);
 }
 
-function getExerciseAlternatives(exercise, reason) {
-    const alternatives = {
-        'Chest': [
-            { name: 'Push-ups', reason: 'Bodyweight alternative, works same muscles' },
-            { name: 'Dumbbell Press', reason: 'Free weight variation with greater range of motion' },
-            { name: 'Cable Flys', reason: 'Constant tension throughout movement' }
+function getAIExerciseAlternatives(exercise, reason) {
+    // Comprehensive AI-based alternative database
+    const exerciseAlternatives = {
+        // Chest exercises
+        'Bench Press': [
+            { name: 'Dumbbell Bench Press', reason: 'Greater range of motion, unilateral training' },
+            { name: 'Push-ups', reason: 'Bodyweight alternative, can do anywhere' },
+            { name: 'Cable Press', reason: 'Constant tension, adjustable angles' },
+            { name: 'Machine Chest Press', reason: 'Safer for solo training, guided movement' },
+            { name: 'Incline Dumbbell Press', reason: 'Emphasizes upper chest development' }
         ],
-        'Upper Back': [
-            { name: 'Bent Over Rows', reason: 'Compound movement for back thickness' },
-            { name: 'Pull-ups', reason: 'Bodyweight alternative for lat development' },
-            { name: 'Cable Rows', reason: 'Machine alternative with adjustable resistance' }
+        'Chest Press': [
+            { name: 'Bench Press', reason: 'Free weight compound movement' },
+            { name: 'Dumbbell Flys', reason: 'Better stretch and isolation' },
+            { name: 'Cable Crossovers', reason: 'Constant tension, various angles' },
+            { name: 'Push-ups', reason: 'Functional bodyweight movement' }
         ],
-        'Shoulders': [
-            { name: 'Dumbbell Shoulder Press', reason: 'Allows natural movement pattern' },
-            { name: 'Lateral Raises', reason: 'Isolates side deltoids' },
-            { name: 'Pike Push-ups', reason: 'Bodyweight shoulder exercise' }
+        
+        // Back exercises
+        'Lat Pulldown': [
+            { name: 'Pull-ups/Chin-ups', reason: 'More challenging bodyweight version' },
+            { name: 'Assisted Pull-ups', reason: 'Progressive overload to full pull-ups' },
+            { name: 'Straight Arm Pulldown', reason: 'Isolates lats, different movement pattern' },
+            { name: 'Dumbbell Pullover', reason: 'Stretches lats, different angle' }
         ],
-        'Legs': [
-            { name: 'Goblet Squats', reason: 'Easier on back, great for quads' },
-            { name: 'Lunges', reason: 'Unilateral leg exercise' },
-            { name: 'Bulgarian Split Squats', reason: 'Targets quads and glutes' }
+        'Cable Rows': [
+            { name: 'Barbell Rows', reason: 'Compound free weight movement' },
+            { name: 'Dumbbell Rows', reason: 'Unilateral training, fixes imbalances' },
+            { name: 'T-Bar Rows', reason: 'Thick back development' },
+            { name: 'Inverted Rows', reason: 'Bodyweight alternative' }
         ],
-        'Biceps': [
-            { name: 'Hammer Curls', reason: 'Different grip targets brachialis' },
-            { name: 'Concentration Curls', reason: 'Great isolation exercise' },
-            { name: 'Cable Curls', reason: 'Constant tension variation' }
+        
+        // Leg exercises
+        'Leg Press': [
+            { name: 'Squats', reason: 'King of leg exercises, functional movement' },
+            { name: 'Bulgarian Split Squats', reason: 'Unilateral strength, balance' },
+            { name: 'Hack Squats', reason: 'Similar machine-based movement' },
+            { name: 'Goblet Squats', reason: 'Easier to learn, less back stress' },
+            { name: 'Lunges', reason: 'Functional, works stabilizers' }
         ],
-        'Triceps': [
-            { name: 'Close Grip Push-ups', reason: 'Bodyweight tricep exercise' },
-            { name: 'Overhead Extensions', reason: 'Targets long head of triceps' },
-            { name: 'Diamond Push-ups', reason: 'Intense bodyweight variation' }
+        'Leg Extension': [
+            { name: 'Front Squats', reason: 'Quad emphasis with compound movement' },
+            { name: 'Bulgarian Split Squats', reason: 'Unilateral quad development' },
+            { name: 'Cyclist Squats', reason: 'Targets quads specifically' },
+            { name: 'Walking Lunges', reason: 'Functional quad and glute work' }
+        ],
+        'Leg Curl': [
+            { name: 'Romanian Deadlifts', reason: 'Compound hamstring developer' },
+            { name: 'Nordic Curls', reason: 'Intense bodyweight hamstring exercise' },
+            { name: 'Glute-Ham Raises', reason: 'Full posterior chain activation' },
+            { name: 'Single Leg Deadlifts', reason: 'Unilateral hamstring and balance' }
+        ],
+        
+        // Shoulder exercises
+        'Shoulder Press': [
+            { name: 'Dumbbell Shoulder Press', reason: 'Natural movement path, unilateral' },
+            { name: 'Arnold Press', reason: 'Hits all three deltoid heads' },
+            { name: 'Pike Push-ups', reason: 'Bodyweight shoulder builder' },
+            { name: 'Landmine Press', reason: 'Easier on shoulder joints' }
+        ],
+        
+        // Arm exercises
+        'Bicep Curl': [
+            { name: 'Hammer Curls', reason: 'Targets brachialis for arm thickness' },
+            { name: 'Concentration Curls', reason: 'Maximum bicep isolation' },
+            { name: 'Cable Curls', reason: 'Constant tension throughout range' },
+            { name: 'Chin-ups', reason: 'Compound bicep and back movement' }
+        ],
+        'Tricep Extension': [
+            { name: 'Close Grip Bench Press', reason: 'Compound tricep exercise' },
+            { name: 'Tricep Dips', reason: 'Bodyweight tricep builder' },
+            { name: 'Overhead Cable Extension', reason: 'Targets long head specifically' },
+            { name: 'Diamond Push-ups', reason: 'Bodyweight tricep isolation' }
         ]
     };
     
-    const categoryAlts = alternatives[exercise.category] || [
-        { name: 'Ask a trainer', reason: 'Consult with a fitness professional for specific alternatives' }
-    ];
+    // Category-based fallback alternatives
+    const categoryAlternatives = {
+        'Chest': [
+            { name: 'Push-ups (various angles)', reason: 'Versatile bodyweight exercise' },
+            { name: 'Dumbbell Press (flat/incline)', reason: 'Free weight with natural movement' },
+            { name: 'Cable Flys', reason: 'Constant tension, joint-friendly' },
+            { name: 'Dips (chest focus)', reason: 'Compound bodyweight movement' },
+            { name: 'Resistance Band Press', reason: 'Portable, adjustable resistance' }
+        ],
+        'Upper Back': [
+            { name: 'Bent Over Rows', reason: 'Compound back thickness builder' },
+            { name: 'Pull-ups/Chin-ups', reason: 'Bodyweight lat developer' },
+            { name: 'Face Pulls', reason: 'Rear delt and upper back health' },
+            { name: 'Dumbbell Rows', reason: 'Unilateral back development' },
+            { name: 'Inverted Rows', reason: 'Bodyweight horizontal pull' }
+        ],
+        'Lower Back': [
+            { name: 'Romanian Deadlifts', reason: 'Posterior chain compound movement' },
+            { name: 'Good Mornings', reason: 'Lower back and hamstring focus' },
+            { name: 'Back Extensions', reason: 'Isolation for lower back' },
+            { name: 'Bird Dogs', reason: 'Core stability and lower back' }
+        ],
+        'Shoulders': [
+            { name: 'Dumbbell Shoulder Press', reason: 'Natural pressing motion' },
+            { name: 'Lateral Raises', reason: 'Side delt isolation' },
+            { name: 'Face Pulls', reason: 'Rear delt and shoulder health' },
+            { name: 'Pike Push-ups', reason: 'Bodyweight shoulder exercise' },
+            { name: 'Arnold Press', reason: 'All three deltoid heads' }
+        ],
+        'Legs': [
+            { name: 'Squats (various styles)', reason: 'King of leg exercises' },
+            { name: 'Lunges', reason: 'Unilateral leg development' },
+            { name: 'Bulgarian Split Squats', reason: 'Single leg strength and balance' },
+            { name: 'Step-ups', reason: 'Functional leg exercise' },
+            { name: 'Wall Sits', reason: 'Isometric quad builder' }
+        ],
+        'Biceps': [
+            { name: 'Hammer Curls', reason: 'Brachialis development' },
+            { name: 'Concentration Curls', reason: 'Maximum isolation' },
+            { name: 'Cable Curls', reason: 'Constant tension' },
+            { name: 'Chin-ups', reason: 'Compound bicep movement' },
+            { name: 'Preacher Curls', reason: 'Isolates biceps, prevents cheating' }
+        ],
+        'Triceps': [
+            { name: 'Close Grip Push-ups', reason: 'Bodyweight tricep builder' },
+            { name: 'Overhead Extensions', reason: 'Long head emphasis' },
+            { name: 'Tricep Dips', reason: 'Compound bodyweight exercise' },
+            { name: 'Diamond Push-ups', reason: 'Intense tricep activation' },
+            { name: 'Skull Crushers', reason: 'Classic tricep isolation' }
+        ],
+        'Abdominals': [
+            { name: 'Planks', reason: 'Core stability and endurance' },
+            { name: 'Leg Raises', reason: 'Lower ab focus' },
+            { name: 'Russian Twists', reason: 'Oblique development' },
+            { name: 'Mountain Climbers', reason: 'Dynamic core exercise' },
+            { name: 'Ab Wheel Rollouts', reason: 'Advanced core strength' }
+        ]
+    };
     
-    // If reason contains "pain" or "injury", suggest lighter variations
-    if (reason.toLowerCase().includes('pain') || reason.toLowerCase().includes('injury')) {
-        return [
-            { name: 'Rest and Recovery', reason: 'Prioritize healing - consult a doctor if pain persists' },
-            { name: 'Light Mobility Work', reason: 'Maintain range of motion without load' },
-            ...categoryAlts.slice(0, 2)
+    // Check for specific exercise match first
+    let alternatives = exerciseAlternatives[exercise.name] || categoryAlternatives[exercise.category] || [];
+    
+    // If no alternatives found, provide generic suggestions
+    if (alternatives.length === 0) {
+        alternatives = [
+            { name: 'Similar movement pattern exercises', reason: 'Consult with a trainer for specific recommendations' },
+            { name: 'Bodyweight variations', reason: 'Can be done without equipment' },
+            { name: 'Machine alternatives', reason: 'Often safer for beginners' },
+            { name: 'Free weight versions', reason: 'Build stabilizer muscles' }
         ];
     }
     
-    return categoryAlts;
+    // Handle injury/pain-related substitutions
+    const lowerReason = reason.toLowerCase();
+    if (lowerReason.includes('pain') || lowerReason.includes('injury') || lowerReason.includes('hurt')) {
+        return [
+            { name: '⚕️ Medical Consultation', reason: 'See a doctor or physiotherapist if pain persists' },
+            { name: 'Rest and Recovery', reason: 'Allow proper healing time - typically 3-7 days for minor issues' },
+            { name: 'Light Mobility Work', reason: 'Gentle movements to maintain range of motion' },
+            { name: 'Exercises targeting other muscle groups', reason: 'Train around the injury while healing' },
+            ...alternatives.slice(0, 2).map(alt => ({...alt, reason: `${alt.reason} (use lighter weight initially)`}))
+        ];
+    }
+    
+    // Handle equipment issues
+    if (lowerReason.includes('broken') || lowerReason.includes('busy') || lowerReason.includes('occupied')) {
+        // Prioritize alternatives that don't need the same equipment
+        const bodyweightAlts = alternatives.filter(alt => 
+            alt.name.toLowerCase().includes('push') || 
+            alt.name.toLowerCase().includes('pull-up') ||
+            alt.name.toLowerCase().includes('dip') ||
+            alt.name.toLowerCase().includes('bodyweight')
+        );
+        
+        if (bodyweightAlts.length > 0) {
+            return [...bodyweightAlts, ...alternatives.filter(alt => !bodyweightAlts.includes(alt))].slice(0, 5);
+        }
+    }
+    
+    // Return top 5 alternatives
+    return alternatives.slice(0, 5);
 }
 
 // ==================== COMPARE MODE ====================

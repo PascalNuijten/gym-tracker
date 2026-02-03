@@ -2574,7 +2574,6 @@ function setupAIEventListeners() {
     });
     
     // Substitute mode
-    populateSubstituteExercises();
     document.getElementById('findSubstituteBtn').addEventListener('click', findSubstitutes);
     
     // Compare mode
@@ -2614,6 +2613,7 @@ function showAIMode(mode) {
             break;
         case 'substitute':
             aiSubstituteMode.style.display = 'block';
+            populateSubstituteExercises(); // Populate when mode is shown
             break;
         case 'compare':
             aiCompareMode.style.display = 'block';

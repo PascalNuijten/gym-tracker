@@ -255,57 +255,141 @@ function exportData() {
 
 // Restore Data
 function restoreData() {
-    // First try localStorage backup
+    // Show options modal
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    
     const localBackup = localStorage.getItem('gymTrackerBackup');
+    let backupInfo = '';
+    let backupDate = 'No backup found';
+    let hasBackup = false;
+    
     if (localBackup) {
+        try {
+            const backup = JSON.parse(localBackup);
+            backupDate = new Date(backup.timestamp).toLocaleString();
+            backupInfo = `
+                <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                    <h4>📦 Automatic Backup Available</h4>
+                    <p><strong>Created:</strong> ${backupDate}</p>
+                    <p><strong>Exercises:</strong> ${backup.exercises?.length || 0}</p>
+                    <p><strong>Users:</strong> ${backup.users?.join(', ') || 'Unknown'}</p>
+                    <button onclick="restoreFromLocalStorage()" class="btn-primary" style="margin-top: 10px; padding: 10px 20px; background: #4caf50; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                        🔄 Restore This Backup
+                    </button>
+                </div>
+            `;
+            hasBackup = true;
+        } catch (e) {
+            console.error('Error parsing backup:', e);
+        }
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 600px;">
+            <span class="close" onclick="this.parentElement.parentElement.remove()">&times;</span>
+            <h2>🔄 Restore Data</h2>
+            
+            ${backupInfo || '<p style="color: #f44336;">⚠️ No automatic backup found in browser storage.</p>'}
+            
+            <div style="border-top: 2px solid #eee; padding-top: 20px; margin-top: 20px;">
+                <h4>📁 Restore from File</h4>
+                <p>If you previously exported a backup file, upload it here:</p>
+                <input type="file" id="restoreFileInput" accept=".json" style="margin: 10px 0; padding: 10px; border: 2px solid #ddd; border-radius: 5px; width: 100%;">
+                <button onclick="restoreFromFile()" class="btn-primary" style="padding: 10px 20px; background: #2196f3; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    📂 Upload & Restore
+                </button>
+            </div>
+            
+            <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-top: 20px;">
+                <h4>🔥 Firebase Revision History</h4>
+                <p>Your Firebase database may have previous versions. To restore:</p>
+                <ol style="text-align: left; margin-left: 20px;">
+                    <li>Go to <a href="https://console.firebase.google.com/" target="_blank">Firebase Console</a></li>
+                    <li>Select your project: <strong>gym-tracker-58d6a</strong></li>
+                    <li>Go to <strong>Realtime Database</strong></li>
+                    <li>Click the <strong>⋮</strong> menu → <strong>Export JSON</strong></li>
+                    <li>Check if you have multiple backups/revisions</li>
+                    <li>Download the correct one and restore it here using the file upload above</li>
+                </ol>
+            </div>
+            
+            <div style="margin-top: 20px; padding: 15px; background: #ffebee; border-radius: 8px;">
+                <h4>⚠️ View Current Backup Data</h4>
+                <p>Open browser console (F12) and run:</p>
+                <code style="display: block; background: #333; color: #0f0; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                    JSON.parse(localStorage.getItem('gymTrackerBackup'))
+                </code>
+                <p style="font-size: 0.9em; color: #666;">This shows the timestamp and data in your automatic backup.</p>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+// Helper function to restore from localStorage
+window.restoreFromLocalStorage = function() {
+    const localBackup = localStorage.getItem('gymTrackerBackup');
+    if (!localBackup) {
+        alert('❌ No backup found!');
+        return;
+    }
+    
+    try {
         const backup = JSON.parse(localBackup);
         const backupDate = new Date(backup.timestamp).toLocaleString();
         
-        if (confirm(`Restore from automatic backup created on ${backupDate}?\n\nThis will replace all current data.`)) {
+        if (confirm(`⚠️ CONFIRM RESTORE\n\nThis will replace ALL current data with the backup from:\n${backupDate}\n\nExercises: ${backup.exercises?.length || 0}\n\nAre you absolutely sure?`)) {
             exercises = backup.exercises;
             users = backup.users || users;
             saveToFirebase();
             renderExercises();
             alert('✅ Data restored from automatic backup!');
-            return;
+            document.querySelector('.modal').remove();
         }
+    } catch (e) {
+        alert('❌ Error restoring backup: ' + e.message);
+    }
+}
+
+// Helper function to restore from file
+window.restoreFromFile = function() {
+    const input = document.getElementById('restoreFileInput');
+    const file = input.files[0];
+    
+    if (!file) {
+        alert('❌ Please select a file first!');
+        return;
     }
     
-    // If no local backup or user declined, offer file upload
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            try {
-                const data = JSON.parse(event.target.result);
-                
-                if (!data.exercises || !Array.isArray(data.exercises)) {
-                    alert('❌ Invalid backup file format!');
-                    return;
-                }
-                
-                const backupDate = data.timestamp ? new Date(data.timestamp).toLocaleString() : 'Unknown date';
-                
-                if (confirm(`Restore backup from ${backupDate}?\n\nExercises: ${data.exercises.length}\nThis will replace all current data.`)) {
-                    exercises = data.exercises;
-                    users = data.users || users;
-                    saveToFirebase();
-                    renderExercises();
-                    alert('✅ Data restored from file!');
-                }
-            } catch (error) {
-                console.error('Restore error:', error);
-                alert('❌ Error reading backup file: ' + error.message);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const data = JSON.parse(event.target.result);
+            
+            if (!data.exercises || !Array.isArray(data.exercises)) {
+                alert('❌ Invalid backup file format!');
+                return;
             }
-        };
-        reader.readAsText(file);
+            
+            const backupDate = data.timestamp ? new Date(data.timestamp).toLocaleString() : 'Unknown date';
+            
+            if (confirm(`⚠️ CONFIRM RESTORE\n\nRestore backup from ${backupDate}?\n\nExercises: ${data.exercises.length}\n\nThis will replace all current data.`)) {
+                exercises = data.exercises;
+                users = data.users || users;
+                saveToFirebase();
+                renderExercises();
+                alert('✅ Data restored from file!');
+                document.querySelector('.modal').remove();
+            }
+        } catch (error) {
+            console.error('Restore error:', error);
+            alert('❌ Error reading backup file: ' + error.message);
+        }
     };
-    input.click();
+    reader.readAsText(file);
 }
 
 // Reset Sets Container

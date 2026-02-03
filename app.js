@@ -1587,29 +1587,143 @@ function calculateStats(history) {
     };
 }
 
-// Generate Improvement Suggestion
+// Smart AI Improvement Suggestion
 function generateSuggestion(history) {
     if (!history || history.length === 0) {
-        return "Start with a comfortable weight and aim for 8-12 reps per set.";
+        return "🎯 <strong>Start Smart:</strong> Begin with a weight you can lift for 8-12 reps with proper form. Leave 2-3 reps 'in the tank' on your first session.";
     }
 
     const lastSession = history[history.length - 1];
     const lastSets = lastSession.sets;
     const avgWeight = lastSets.reduce((sum, set) => sum + set.weight, 0) / lastSets.length;
     const avgReps = lastSets.reduce((sum, set) => sum + set.reps, 0) / lastSets.length;
-
-    // Progressive overload logic
-    if (avgReps >= 12) {
-        const newWeight = Math.round((avgWeight * 1.05) * 2) / 2; // 5% increase, rounded to 0.5kg
-        return `Great progress! Try increasing weight to ${newWeight}kg and aim for 8-10 reps.`;
-    } else if (avgReps >= 8) {
-        return `You're in the optimal range! Try adding 1-2 more reps or increase weight by 2.5kg.`;
-    } else if (avgReps < 6) {
-        const newWeight = Math.round((avgWeight * 0.9) * 2) / 2; // 10% decrease
-        return `Consider reducing weight to ${newWeight}kg to hit 8-10 reps with good form.`;
-    } else {
-        return `Keep the current weight and aim to increase reps to 8-10.`;
+    const totalVolume = lastSets.reduce((sum, set) => sum + (set.reps * set.weight), 0);
+    
+    // Analyze progression pattern (last 5 sessions)
+    const recentSessions = history.slice(-5);
+    const isProgressing = analyzeProgressionTrend(recentSessions);
+    const isPlateaued = detectPlateauPattern(recentSessions);
+    const daysSinceLastWorkout = Math.floor((Date.now() - new Date(lastSession.date).getTime()) / (1000 * 60 * 60 * 24));
+    
+    // Check for consistent performance (3+ sessions at same weight/reps)
+    const consistency = checkConsistency(recentSessions);
+    
+    // Recovery consideration
+    if (daysSinceLastWorkout > 14) {
+        const deloadWeight = Math.round((avgWeight * 0.85) * 2) / 2;
+        return `⚠️ <strong>Long Break Detected (${daysSinceLastWorkout} days):</strong> Start with ${deloadWeight}kg for 8-10 reps to rebuild strength safely. You'll bounce back quickly!`;
     }
+    
+    // Plateau detection - stuck at same weight for 3+ sessions
+    if (isPlateaued && history.length >= 3) {
+        const strategies = [
+            `🔄 <strong>Plateau Break Strategy:</strong> Try a deload week at ${Math.round(avgWeight * 0.7 * 2) / 2}kg for 12-15 reps to recover, then push for ${Math.round((avgWeight + 2.5) * 2) / 2}kg.`,
+            `🎯 <strong>Volume Boost:</strong> Keep ${avgWeight}kg but add an extra set and increase total reps by 20%. This builds work capacity before adding weight.`,
+            `⚡ <strong>Rep Range Switch:</strong> Try ${Math.round((avgWeight * 1.1) * 2) / 2}kg for 5-6 heavy reps, or drop to ${Math.round((avgWeight * 0.85) * 2) / 2}kg for 15-20 reps to shock the muscle.`
+        ];
+        return strategies[Math.floor(Math.random() * strategies.length)];
+    }
+    
+    // Strong progression - hitting high reps consistently
+    if (avgReps >= 12 && consistency.avgReps >= 11) {
+        const newWeight = Math.round((avgWeight * 1.05) * 2) / 2;
+        const microLoad = avgWeight + 1.25; // Smaller increment option
+        
+        if (avgWeight >= 50) { // For heavier weights, suggest smaller jumps
+            return `🔥 <strong>Excellent Progress!</strong> You're dominating ${avgWeight}kg. Try <strong>${microLoad}kg for 10-12 reps</strong> (micro-loading), or jump to <strong>${newWeight}kg for 8-10 reps</strong> (standard progression).`;
+        }
+        return `🚀 <strong>Level Up!</strong> You're crushing ${avgReps} reps! Increase to <strong>${newWeight}kg</strong> and aim for 8-10 reps. You're ready for heavier weight!`;
+    }
+    
+    // In optimal hypertrophy range (8-12 reps)
+    if (avgReps >= 8 && avgReps < 12) {
+        if (isProgressing) {
+            return `💪 <strong>Perfect Zone!</strong> You're progressing well. Try adding <strong>1-2 reps per set</strong> at ${avgWeight}kg, or increase to <strong>${avgWeight + 2.5}kg</strong> and maintain 8 reps.`;
+        }
+        // Stagnating in optimal range
+        if (consistency.sameWeightCount >= 3) {
+            return `⚡ <strong>Time to Progress:</strong> You've done ${avgWeight}kg for ${consistency.sameWeightCount} sessions. Push to <strong>${avgWeight + 2.5}kg for 8 reps</strong>, even if it's tough. Adaptation needs stimulus!`;
+        }
+        return `✅ <strong>Optimal Range:</strong> ${avgWeight}kg for ${Math.round(avgReps)} reps is solid. Next session, aim for <strong>${Math.ceil(avgReps) + 1} reps</strong> or add 2.5kg.`;
+    }
+    
+    // Low reps - weight too heavy
+    if (avgReps < 6) {
+        const newWeight = Math.round((avgWeight * 0.90) * 2) / 2;
+        const moderateWeight = Math.round((avgWeight * 0.85) * 2) / 2;
+        
+        if (avgReps < 4) {
+            return `⚠️ <strong>Weight Too Heavy:</strong> ${avgReps} reps is in the strength range, which limits hypertrophy. Drop to <strong>${moderateWeight}kg for 8-10 reps</strong> for better muscle growth.`;
+        }
+        return `🎯 <strong>Form Check:</strong> ${avgReps} reps suggests you're pushing strength limits. Try <strong>${newWeight}kg</strong> to hit 8-10 quality reps with full range of motion.`;
+    }
+    
+    // Moderate reps (6-7) - almost there
+    if (avgReps >= 6 && avgReps < 8) {
+        if (recentSessions.length >= 2) {
+            const prevAvgReps = recentSessions[recentSessions.length - 2].sets.reduce((sum, set) => sum + set.reps, 0) / recentSessions[recentSessions.length - 2].sets.length;
+            
+            if (avgReps > prevAvgReps) {
+                return `📈 <strong>Upward Trend!</strong> You're improving (${Math.round(prevAvgReps)} → ${Math.round(avgReps)} reps). Keep ${avgWeight}kg and push for <strong>8+ reps</strong> next time!`;
+            }
+        }
+        return `💡 <strong>Close to Optimal:</strong> You're at ${Math.round(avgReps)} reps with ${avgWeight}kg. Stay at this weight and aim for <strong>8 reps</strong> to enter the growth zone.`;
+    }
+    
+    // Default progressive overload
+    return `🎯 <strong>Keep Progressing:</strong> Last session: ${avgWeight}kg for ${Math.round(avgReps)} reps. Try adding 1-2 reps or increase by 2.5kg.`;
+}
+
+// Analyze progression trend over recent sessions
+function analyzeProgressionTrend(sessions) {
+    if (sessions.length < 2) return false;
+    
+    const volumes = sessions.map(s => s.sets.reduce((sum, set) => sum + (set.reps * set.weight), 0));
+    const maxWeights = sessions.map(s => Math.max(...s.sets.map(set => set.weight)));
+    
+    // Check if volume or max weight is trending upward
+    const volumeIncreasing = volumes[volumes.length - 1] > volumes[0];
+    const weightIncreasing = maxWeights[maxWeights.length - 1] > maxWeights[0];
+    
+    return volumeIncreasing || weightIncreasing;
+}
+
+// Detect if performance has plateaued (same max weight for 3+ sessions)
+function detectPlateauPattern(sessions) {
+    if (sessions.length < 3) return false;
+    
+    const last3Sessions = sessions.slice(-3);
+    const maxWeights = last3Sessions.map(s => Math.max(...s.sets.map(set => set.weight)));
+    
+    // All same weight = plateau
+    return maxWeights.every(w => w === maxWeights[0]);
+}
+
+// Check consistency metrics (how long at same weight)
+function checkConsistency(sessions) {
+    if (sessions.length < 2) return { sameWeightCount: 1, avgReps: 0 };
+    
+    const lastWeight = Math.max(...sessions[sessions.length - 1].sets.map(set => set.weight));
+    let sameWeightCount = 1;
+    
+    // Count backwards how many sessions used this same max weight
+    for (let i = sessions.length - 2; i >= 0; i--) {
+        const sessionMaxWeight = Math.max(...sessions[i].sets.map(set => set.weight));
+        if (sessionMaxWeight === lastWeight) {
+            sameWeightCount++;
+        } else {
+            break;
+        }
+    }
+    
+    // Calculate average reps across these consistent sessions
+    const consistentSessions = sessions.slice(-sameWeightCount);
+    const totalReps = consistentSessions.reduce((sum, s) => {
+        return sum + (s.sets.reduce((repSum, set) => repSum + set.reps, 0) / s.sets.length);
+    }, 0);
+    const avgReps = totalReps / consistentSessions.length;
+    
+    return { sameWeightCount, avgReps };
 }
 
 // Delete History Entry

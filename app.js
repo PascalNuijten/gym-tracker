@@ -39,6 +39,11 @@ let exerciseList;
 let categoryFilter;
 let muscleFilter;
 let searchInput;
+let workoutModal;
+let workoutForm;
+let workoutModalClose;
+let workoutCancelBtn;
+let workoutSetCounter = 1;
 
 // Helper function to display weight
 function formatWeight(weight) {
@@ -58,6 +63,12 @@ function init() {
     categoryFilter = document.getElementById('categoryFilter');
     muscleFilter = document.getElementById('muscleFilter');
     searchInput = document.getElementById('searchInput');
+    
+    // Initialize workout modal elements
+    workoutModal = document.getElementById('workoutModal');
+    workoutForm = document.getElementById('workoutForm');
+    workoutModalClose = document.getElementById('workoutModalClose');
+    workoutCancelBtn = document.getElementById('workoutCancelBtn');
     
     // Set active user button based on localStorage
     userButtons.forEach(btn => {
@@ -87,9 +98,8 @@ function setupEventListeners() {
     // Add Exercise Button
     addExerciseBtn.addEventListener('click', () => {
         editingExerciseId = null;
-        document.getElementById('modalTitle').textContent = 'Add New Exercise';
+        document.getElementById('modalTitle').textContent = 'Add Exercise';
         exerciseForm.reset();
-        resetSetsContainer();
         
         // Enable form fields
         document.getElementById('exerciseName').readOnly = false;
@@ -105,11 +115,6 @@ function setupEventListeners() {
         // Show option toggle
         document.querySelector('.exercise-option-toggle').parentElement.style.display = 'block';
         
-        // Show sets section
-        document.getElementById('setsContainer').parentElement.style.display = 'block';
-        document.getElementById('addSetBtn').style.display = 'block';
-        document.querySelector('label[for="exerciseNotes"]').parentElement.style.display = 'block';
-        
         // Populate existing exercises dropdown
         populateExistingExercises();
         
@@ -123,16 +128,6 @@ function setupEventListeners() {
         document.getElementById('existingExerciseBtn').classList.add('active');
         document.getElementById('newExerciseBtn').classList.remove('active');
         
-        // Show sets section when logging workout for existing exercise
-        document.getElementById('setsContainer').style.display = 'block';
-        document.getElementById('addSetBtn').style.display = 'inline-block';
-        const notesParent = document.querySelector('label[for="exerciseNotes"]')?.parentElement;
-        if (notesParent) notesParent.style.display = 'block';
-        
-        // Change button text back to save workout
-        const submitBtn = document.querySelector('#exerciseModal button[type="submit"]');
-        if (submitBtn) submitBtn.textContent = 'Save Workout';
-        
         // Make exercise name not required when selecting existing
         document.getElementById('exerciseName').required = false;
         document.getElementById('exerciseCategory').required = false;
@@ -145,18 +140,11 @@ function setupEventListeners() {
         document.getElementById('newExerciseBtn').classList.add('active');
         document.getElementById('existingExerciseBtn').classList.remove('active');
         
-        // Hide sets section when creating NEW exercise - user will log workout separately
-        document.getElementById('setsContainer').style.display = 'none';
-        document.getElementById('addSetBtn').style.display = 'none';
-        const notesParent = document.querySelector('label[for="exerciseNotes"]')?.parentElement;
-        if (notesParent) notesParent.style.display = 'none';
-        
-        // Change button text to clarify this is creation only
-        const submitBtn = document.querySelector('#exerciseModal button[type="submit"]');
-        if (submitBtn) submitBtn.textContent = 'Create Exercise';
-        
         // Make exercise name required when creating new
         document.getElementById('exerciseName').required = true;
+        document.getElementById('exerciseCategory').required = true;
+        document.getElementById('exerciseMuscle').required = true;
+    });
         document.getElementById('exerciseCategory').required = true;
         document.getElementById('exerciseMuscle').required = true;
     });
@@ -195,8 +183,37 @@ function setupEventListeners() {
         saveExercise();
     });
 
-    // Add Set Button
-    document.getElementById('addSetBtn').addEventListener('click', addSet);
+    // Workout Modal Handlers
+    workoutModalClose.addEventListener('click', () => {
+        workoutModal.style.display = 'none';
+        editingExerciseId = null;
+    });
+
+    workoutCancelBtn.addEventListener('click', () => {
+        workoutModal.style.display = 'none';
+        editingExerciseId = null;
+    });
+
+    window.addEventListener('click', (e) => {
+        if (e.target === workoutModal) {
+            workoutModal.style.display = 'none';
+            editingExerciseId = null;
+        }
+    });
+
+    workoutForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        saveWorkout();
+    });
+
+    // Add Set Button for workout modal
+    document.getElementById('workoutAddSetBtn').addEventListener('click', addWorkoutSet);
+
+    // Add Set Button (legacy - for existing exercise selection, now removed)
+    const addSetBtn = document.getElementById('addSetBtn');
+    if (addSetBtn) {
+        addSetBtn.addEventListener('click', addSet);
+    }
 
     // Filters
     categoryFilter.addEventListener('change', renderExercises);
@@ -424,144 +441,261 @@ function populateExistingExercises() {
     });
 }
 
-// Save Exercise
+// Save Exercise (simplified - no workout logging, only creation/selection)
 function saveExercise() {
-    const sets = getSetsFromForm();
-    const notes = document.getElementById('exerciseNotes').value;
+    const existingExerciseBtn = document.getElementById('existingExerciseBtn');
+    const isSelectingExisting = existingExerciseBtn && existingExerciseBtn.classList.contains('active');
     
-    // Check if this is editing exercise details by checking if sets section is hidden
-    const setsContainer = document.getElementById('setsContainer');
-    const addSetBtn = document.getElementById('addSetBtn');
-    const isSetsHidden = setsContainer.style.display === 'none' || addSetBtn.style.display === 'none';
-    
-    if (isSetsHidden && editingExerciseId) {
-        // Just updating exercise details (sets section is hidden)
-        const exercise = exercises.find(ex => ex.id === editingExerciseId);
-        if (exercise) {
-            exercise.name = document.getElementById('exerciseName').value;
-            exercise.category = document.getElementById('exerciseCategory').value;
-            exercise.muscle = document.getElementById('exerciseMuscle').value;
-            exercise.image = document.getElementById('exerciseImage').value;
-            exercise.machineInfo = document.getElementById('machineInfo').value;
-            
-            saveToFirebase();
-            modal.style.display = 'none';
-            exerciseForm.reset();
-            editingExerciseId = null;
-            
-            // Reset visibility for next use
-            setsContainer.style.display = '';
-            const workoutHeading = setsContainer.previousElementSibling;
-            if (workoutHeading && workoutHeading.tagName === 'H3') {
-                workoutHeading.style.display = '';
-            }
-            addSetBtn.style.display = '';
-            const notesParent = document.querySelector('label[for="exerciseNotes"]')?.parentElement;
-            if (notesParent) notesParent.style.display = '';
-            const optionToggleParent = document.querySelector('.exercise-option-toggle')?.parentElement;
-            if (optionToggleParent) optionToggleParent.style.display = '';
-        }
-        return;
-    }
-    
-    // Determine if creating new exercise (no sets required) or logging workout (sets required)
-    const newExerciseBtn = document.getElementById('newExerciseBtn');
-    const isCreatingNewExercise = newExerciseBtn && newExerciseBtn.classList.contains('active') && !editingExerciseId;
-    
-    // Check if we need sets (not needed when creating new exercise)
-    if (sets.length === 0 && !isCreatingNewExercise) {
-        alert('Please add at least one set with reps and weight.');
-        return;
-    }
-    
-    // If creating new exercise without sets, handle differently
-    if (isCreatingNewExercise && sets.length === 0) {
-        const name = document.getElementById('exerciseName').value.trim();
-        const category = document.getElementById('exerciseCategory').value;
-        const muscle = document.getElementById('exerciseMuscle').value;
-        const machineInfo = document.getElementById('machineInfo').value.trim();
+    if (isSelectingExisting) {
+        // User is selecting an existing exercise
+        const existingExerciseSelect = document.getElementById('existingExerciseSelect');
+        const selectedId = parseInt(existingExerciseSelect.value);
         
-        if (!name || !category || !muscle) {
-            alert('Please fill in all required fields!');
+        if (!selectedId) {
+            alert('Please select an exercise from the list.');
             return;
         }
         
-        // Create exercise with EMPTY history (no sets required)
-        const newExercise = {
-            id: Date.now(),
-            name: name,
-            category: category,
-            muscle: muscle,
-            image: document.getElementById('exerciseImage').value || '',
-            machineInfo: machineInfo,
-            users: {}
-        };
+        const exercise = exercises.find(ex => ex.id === selectedId);
+        if (!exercise) {
+            alert('Exercise not found!');
+            return;
+        }
         
-        // Initialize all users with empty history
-        users.forEach(user => {
-            newExercise.users[user] = { history: [] };
-        });
+        // Ensure current user has an entry (but no history yet)
+        if (!exercise.users[currentUser]) {
+            exercise.users[currentUser] = { history: [] };
+        }
         
-        exercises.push(newExercise);
         saveToFirebase();
-        
-        alert(`Exercise "${name}" created successfully! Now click "Log Workout" to add your first session.`);
+        alert(`Exercise "${exercise.name}" added! Scroll down and click "Log Workout" to add your first session.`);
         modal.style.display = 'none';
         exerciseForm.reset();
         renderExercises();
         return;
     }
-
-    let exercise;
-    const isExistingExercise = document.getElementById('existingExerciseSection').style.display !== 'none';
     
-    if (isExistingExercise && editingExerciseId) {
-        // Adding workout to existing exercise that user hasn't done before
-        exercise = exercises.find(ex => ex.id === editingExerciseId);
-        if (!exercise) {
-            alert('Exercise not found!');
-            return;
-        }
-        
-        // Ensure current user has a history array
-        if (!exercise.users[currentUser]) {
-            exercise.users[currentUser] = { history: [] };
-        }
-    } else if (editingExerciseId && !isExistingExercise) {
-        // Logging new workout to existing exercise (from "Log Workout" button)
-        exercise = exercises.find(ex => ex.id === editingExerciseId);
-        if (!exercise) {
-            alert('Exercise not found!');
-            return;
-        }
-    } else {
-        // Creating brand new exercise
-        exercise = {
-            id: Date.now(),
-            name: document.getElementById('exerciseName').value,
-            category: document.getElementById('exerciseCategory').value,
-            muscle: document.getElementById('exerciseMuscle').value,
-            image: document.getElementById('exerciseImage').value,
-            machineInfo: document.getElementById('machineInfo').value,
-            users: {}
-        };
-        
-        // Initialize all users
-        users.forEach(user => {
-            exercise.users[user] = { history: [] };
-        });
-        
-        // Add to exercises array
-        exercises.push(exercise);
+    // User is creating a new exercise
+    const name = document.getElementById('exerciseName').value.trim();
+    const category = document.getElementById('exerciseCategory').value;
+    const muscle = document.getElementById('exerciseMuscle').value;
+    const machineInfo = document.getElementById('machineInfo').value.trim();
+    
+    if (!name || !category || !muscle) {
+        alert('Please fill in all required fields!');
+        return;
     }
-
-    // Add new workout session to current user's history
-    const session = {
-        date: new Date().toISOString(),
-        sets: sets,
-        notes: notes
+    
+    // Create exercise with EMPTY history for all users
+    const newExercise = {
+        id: Date.now(),
+        name: name,
+        category: category,
+        muscle: muscle,
+        image: document.getElementById('exerciseImage').value || '',
+        machineInfo: machineInfo,
+        users: {}
     };
     
+    // Initialize all users with empty history
+    users.forEach(user => {
+        newExercise.users[user] = { history: [] };
+    });
+    
+    exercises.push(newExercise);
+    saveToFirebase();
+    
+    alert(`Exercise "${name}" created! Scroll down and click "Log Workout" to add your first session.`);
+    modal.style.display = 'none';
+    exerciseForm.reset();
+    renderExercises();
+}
+
+// Show Record Celebration Popup
+function showRecordCelebration(exerciseName, recordType, increasePercent) {
+    const celebrationModal = document.createElement('div');
+    celebrationModal.className = 'modal';
+    celebrationModal.style.display = 'block';
+    celebrationModal.innerHTML = `
+        <div class="modal-content" style="max-width: 500px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+            <span class="close" onclick="this.parentElement.parentElement.remove()" style="color: white;">&times;</span>
+            <div style="font-size: 5em; margin: 20px 0;">🎉</div>
+            <h2 style="color: white; font-size: 2em; margin-bottom: 10px;">NEW RECORD!</h2>
+            <h3 style="color: rgba(255,255,255,0.9); margin-bottom: 20px;">${exerciseName}</h3>
+            <div style="background: rgba(255,255,255,0.2); padding: 20px; border-radius: 12px; margin: 20px 0;">
+                <div style="font-size: 1.1em; margin-bottom: 10px;">📊 ${recordType}</div>
+                <div style="font-size: 3em; font-weight: bold; color: #ffd700;">+${increasePercent}%</div>
+                <div style="font-size: 1em; margin-top: 10px; color: rgba(255,255,255,0.8);">Increase from previous best!</div>
+            </div>
+            <div style="font-size: 1.2em; margin: 20px 0;">💪 Keep crushing it!</div>
+            <button onclick="this.parentElement.parentElement.remove()" style="background: white; color: #667eea; border: none; padding: 12px 30px; font-size: 1.1em; font-weight: bold; border-radius: 25px; cursor: pointer; margin-top: 10px;">Awesome! 🔥</button>
+        </div>
+    `;
+    document.body.appendChild(celebrationModal);
+}
+
+// Log Workout (opens separate workout modal)
+function editExercise(id) {
+    const exercise = exercises.find(ex => ex.id === id);
+    if (!exercise) return;
+
+    editingExerciseId = id;
+    const workoutModal = document.getElementById('workoutModal');
+    const workoutModalTitle = document.getElementById('workoutModalTitle');
+    const workoutExerciseInfo = document.getElementById('workoutExerciseInfo');
+    
+    workoutModalTitle.textContent = `Log Workout - ${exercise.name}`;
+    
+    // Display exercise info
+    workoutExerciseInfo.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-weight: bold; font-size: 1.1em; margin-bottom: 5px;">${exercise.name}</div>
+                <div style="color: #666; font-size: 0.9em;">
+                    <span class="tag category">${exercise.category}</span>
+                    <span class="tag muscle">${exercise.muscle}</span>
+                </div>
+            </div>
+        </div>
+        ${exercise.machineInfo ? `<div style="margin-top: 10px; font-style: italic; color: #666;">${exercise.machineInfo}</div>` : ''}
+    `;
+    
+    // Reset workout sets
+    resetWorkoutSetsContainer();
+    document.getElementById('workoutNotes').value = '';
+
+    workoutModal.style.display = 'block';
+}
+
+// Edit Exercise Details (name, category, etc.) - DEPRECATED, keeping for compatibility
+function editExerciseDetails(id) {
+    const exercise = exercises.find(ex => ex.id === id);
+    if (!exercise) return;
+
+    // Close any open detail modals
+    document.querySelectorAll('.modal').forEach(m => {
+        if (m !== modal) m.remove();
+    });
+
+    editingExerciseId = id;
+    document.getElementById('modalTitle').textContent = 'Edit Exercise - ' + exercise.name;
+    
+    // Fill form with exercise data
+    document.getElementById('exerciseName').value = exercise.name;
+    document.getElementById('exerciseName').readOnly = false;
+    
+    document.getElementById('exerciseCategory').value = exercise.category;
+    document.getElementById('exerciseCategory').disabled = false;
+    
+    document.getElementById('exerciseMuscle').value = exercise.muscle;
+    document.getElementById('exerciseMuscle').disabled = false;
+    
+    document.getElementById('exerciseImage').value = exercise.image || '';
+    document.getElementById('machineInfo').value = exercise.machineInfo || '';
+    
+    // Show new exercise section
+    document.getElementById('existingExerciseSection').style.display = 'none';
+    document.getElementById('newExerciseSection').style.display = 'block';
+    document.getElementById('newExerciseBtn').classList.add('active');
+    document.getElementById('existingExerciseBtn').classList.remove('active');
+    
+    modal.style.display = 'block';
+}
+
+// Reset Workout Sets Container
+function resetWorkoutSetsContainer() {
+    workoutSetCounter = 1;
+    const container = document.getElementById('workoutSetsContainer');
+    container.innerHTML = `
+        <div class="set-entry" data-set="1">
+            <h4>Set 1</h4>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="workout_set1_reps">Reps</label>
+                    <input type="number" id="workout_set1_reps" class="workout-set-reps" min="0" placeholder="12" required>
+                </div>
+                <div class="form-group">
+                    <label for="workout_set1_weight">Weight (kg)</label>
+                    <input type="number" id="workout_set1_weight" class="workout-set-weight" min="0" step="0.5" placeholder="50" required>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Add Workout Set
+function addWorkoutSet() {
+    // Get previous set values to pre-fill
+    let prevReps = '';
+    let prevWeight = '';
+    if (workoutSetCounter > 0) {
+        const prevRepsInput = document.getElementById(`workout_set${workoutSetCounter}_reps`);
+        const prevWeightInput = document.getElementById(`workout_set${workoutSetCounter}_weight`);
+        if (prevRepsInput && prevRepsInput.value) prevReps = prevRepsInput.value;
+        if (prevWeightInput && prevWeightInput.value) prevWeight = prevWeightInput.value;
+    }
+    
+    workoutSetCounter++;
+    const container = document.getElementById('workoutSetsContainer');
+    const setDiv = document.createElement('div');
+    setDiv.className = 'set-entry';
+    setDiv.setAttribute('data-set', workoutSetCounter);
+    setDiv.innerHTML = `
+        <h4>Set ${workoutSetCounter} <button type="button" class="btn-remove-set" onclick="removeWorkoutSet(${workoutSetCounter})">✕</button></h4>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="workout_set${workoutSetCounter}_reps">Reps</label>
+                <input type="number" id="workout_set${workoutSetCounter}_reps" class="workout-set-reps" min="0" placeholder="12" value="${prevReps}" required>
+            </div>
+            <div class="form-group">
+                <label for="workout_set${workoutSetCounter}_weight">Weight (kg)</label>
+                <input type="number" id="workout_set${workoutSetCounter}_weight" class="workout-set-weight" min="0" step="0.5" placeholder="50" value="${prevWeight}" required>
+            </div>
+        </div>
+    `;
+    container.appendChild(setDiv);
+}
+
+// Remove Workout Set
+function removeWorkoutSet(setNumber) {
+    const setEntry = document.querySelector(`#workoutSetsContainer [data-set="${setNumber}"]`);
+    if (setEntry && workoutSetCounter > 1) {
+        setEntry.remove();
+        workoutSetCounter--;
+    }
+}
+
+// Save Workout
+function saveWorkout() {
+    const exercise = exercises.find(ex => ex.id === editingExerciseId);
+    if (!exercise) {
+        alert('Exercise not found!');
+        return;
+    }
+    
+    // Get sets from workout form
+    const sets = [];
+    for (let i = 1; i <= workoutSetCounter; i++) {
+        const repsInput = document.getElementById(`workout_set${i}_reps`);
+        const weightInput = document.getElementById(`workout_set${i}_weight`);
+        
+        if (repsInput && weightInput) {
+            const reps = parseInt(repsInput.value) || 0;
+            const weight = parseFloat(weightInput.value) || 0;
+            if (reps > 0 || weight > 0) {
+                sets.push({ reps, weight });
+            }
+        }
+    }
+    
+    if (sets.length === 0) {
+        alert('Please add at least one set with reps and weight.');
+        return;
+    }
+    
+    const notes = document.getElementById('workoutNotes').value.trim();
+    
+    // Ensure current user has history array
     if (!exercise.users[currentUser]) {
         exercise.users[currentUser] = { history: [] };
     }
@@ -602,8 +736,14 @@ function saveExercise() {
         }
     }
     
+    // Add new workout session
+    const session = {
+        date: new Date().toISOString(),
+        sets: sets,
+        notes: notes
+    };
+    
     exercise.users[currentUser].history.push(session);
-
     saveToFirebase();
     
     // Show celebration if new record!
@@ -613,138 +753,10 @@ function saveExercise() {
         alert('Workout logged successfully!');
     }
     
-    modal.style.display = 'none';
-    exerciseForm.reset();
+    workoutModal.style.display = 'none';
     editingExerciseId = null;
+    workoutForm.reset();
     renderExercises();
-}
-
-// Show Record Celebration Popup
-function showRecordCelebration(exerciseName, recordType, increasePercent) {
-    const celebrationModal = document.createElement('div');
-    celebrationModal.className = 'modal';
-    celebrationModal.style.display = 'block';
-    celebrationModal.innerHTML = `
-        <div class="modal-content" style="max-width: 500px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-            <span class="close" onclick="this.parentElement.parentElement.remove()" style="color: white;">&times;</span>
-            <div style="font-size: 5em; margin: 20px 0;">🎉</div>
-            <h2 style="color: white; font-size: 2em; margin-bottom: 10px;">NEW RECORD!</h2>
-            <h3 style="color: rgba(255,255,255,0.9); margin-bottom: 20px;">${exerciseName}</h3>
-            <div style="background: rgba(255,255,255,0.2); padding: 20px; border-radius: 12px; margin: 20px 0;">
-                <div style="font-size: 1.1em; margin-bottom: 10px;">📊 ${recordType}</div>
-                <div style="font-size: 3em; font-weight: bold; color: #ffd700;">+${increasePercent}%</div>
-                <div style="font-size: 1em; margin-top: 10px; color: rgba(255,255,255,0.8);">Increase from previous best!</div>
-            </div>
-            <div style="font-size: 1.2em; margin: 20px 0;">💪 Keep crushing it!</div>
-            <button onclick="this.parentElement.parentElement.remove()" style="background: white; color: #667eea; border: none; padding: 12px 30px; font-size: 1.1em; font-weight: bold; border-radius: 25px; cursor: pointer; margin-top: 10px;">Awesome! 🔥</button>
-        </div>
-    `;
-    document.body.appendChild(celebrationModal);
-}
-
-// Edit Exercise (add new session)
-function editExercise(id) {
-    const exercise = exercises.find(ex => ex.id === id);
-    if (!exercise) return;
-
-    editingExerciseId = id;
-    document.getElementById('modalTitle').textContent = 'Log Workout - ' + exercise.name;
-    
-    // Fill form with exercise data (read-only fields)
-    document.getElementById('exerciseName').value = exercise.name;
-    document.getElementById('exerciseCategory').value = exercise.category;
-    document.getElementById('exerciseMuscle').value = exercise.muscle;
-    document.getElementById('exerciseImage').value = exercise.image || '';
-    document.getElementById('machineInfo').value = exercise.machineInfo || '';
-    
-    // Make basic fields read-only when logging workout
-    document.getElementById('exerciseName').readOnly = true;
-    document.getElementById('exerciseCategory').disabled = true;
-    document.getElementById('exerciseMuscle').disabled = true;
-    
-    // Hide the option toggle when logging workout
-    const optionToggleParent = document.querySelector('.exercise-option-toggle')?.parentElement;
-    if (optionToggleParent) optionToggleParent.style.display = 'none';
-    document.getElementById('existingExerciseSection').style.display = 'none';
-    document.getElementById('newExerciseSection').style.display = 'block';
-    
-    // Show sets section for logging workout
-    const setsContainer = document.getElementById('setsContainer');
-    if (setsContainer) {
-        setsContainer.style.display = 'block';
-        const workoutHeading = setsContainer.previousElementSibling;
-        if (workoutHeading && workoutHeading.tagName === 'H3') {
-            workoutHeading.style.display = 'block';
-        }
-    }
-    document.getElementById('addSetBtn').style.display = 'block';
-    const notesParent = document.querySelector('label[for="exerciseNotes"]')?.parentElement;
-    if (notesParent) notesParent.style.display = 'block';
-    
-    // Reset sets for new workout
-    resetSetsContainer();
-    document.getElementById('exerciseNotes').value = '';
-
-    modal.style.display = 'block';
-}
-
-// Edit Exercise Details (name, category, etc.)
-function editExerciseDetails(id) {
-    const exercise = exercises.find(ex => ex.id === id);
-    if (!exercise) return;
-
-    // Close any open detail modals
-    document.querySelectorAll('.modal').forEach(m => {
-        if (m !== modal) m.remove();
-    });
-
-    editingExerciseId = id;
-    document.getElementById('modalTitle').textContent = 'Edit Exercise Details - ' + exercise.name;
-    
-    // Fill form with exercise data (editable)
-    document.getElementById('exerciseName').value = exercise.name;
-    document.getElementById('exerciseName').readOnly = false;
-    
-    document.getElementById('exerciseCategory').value = exercise.category;
-    document.getElementById('exerciseCategory').disabled = false;
-    
-    document.getElementById('exerciseMuscle').value = exercise.muscle;
-    document.getElementById('exerciseMuscle').disabled = false;
-    
-    document.getElementById('exerciseImage').value = exercise.image || '';
-    document.getElementById('exerciseImage').readOnly = false;
-    
-    document.getElementById('machineInfo').value = exercise.machineInfo || '';
-    document.getElementById('machineInfo').readOnly = false;
-    
-    // Hide option toggle and sets section
-    const optionToggle = document.querySelector('.exercise-option-toggle');
-    if (optionToggle && optionToggle.parentElement) {
-        optionToggle.parentElement.style.display = 'none';
-    }
-    document.getElementById('existingExerciseSection').style.display = 'none';
-    document.getElementById('newExerciseSection').style.display = 'block';
-    
-    // Hide sets container and workout heading
-    const setsContainer = document.getElementById('setsContainer');
-    if (setsContainer) {
-        setsContainer.style.display = 'none';
-        // Hide the "Today's Workout" heading (previous sibling)
-        const workoutHeading = setsContainer.previousElementSibling;
-        if (workoutHeading && workoutHeading.tagName === 'H3') {
-            workoutHeading.style.display = 'none';
-        }
-    }
-    
-    const addSetBtn = document.getElementById('addSetBtn');
-    if (addSetBtn) addSetBtn.style.display = 'none';
-    
-    const notesLabel = document.querySelector('label[for="exerciseNotes"]');
-    if (notesLabel && notesLabel.parentElement) {
-        notesLabel.parentElement.style.display = 'none';
-    }
-    
-    modal.style.display = 'block';
 }
 
 // Delete Exercise

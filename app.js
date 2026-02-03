@@ -439,6 +439,32 @@ function populateExistingExercises() {
 
 // Save Exercise (simplified - no workout logging, only creation/selection)
 function saveExercise() {
+    // Check if we're editing an existing exercise
+    if (editingExerciseId) {
+        const exercise = exercises.find(ex => ex.id === editingExerciseId);
+        if (exercise) {
+            // Update exercise details
+            exercise.name = document.getElementById('exerciseName').value.trim();
+            exercise.category = document.getElementById('exerciseCategory').value;
+            exercise.muscle = document.getElementById('exerciseMuscle').value;
+            exercise.image = document.getElementById('exerciseImage').value || '';
+            exercise.machineInfo = document.getElementById('machineInfo').value.trim();
+            
+            if (!exercise.name || !exercise.category || !exercise.muscle) {
+                alert('Please fill in all required fields!');
+                return;
+            }
+            
+            saveToFirebase();
+            alert(`Exercise "${exercise.name}" updated successfully!`);
+            modal.style.display = 'none';
+            editingExerciseId = null;
+            exerciseForm.reset();
+            renderExercises();
+            return;
+        }
+    }
+    
     const existingExerciseBtn = document.getElementById('existingExerciseBtn');
     const isSelectingExisting = existingExerciseBtn && existingExerciseBtn.classList.contains('active');
     
@@ -845,7 +871,7 @@ function showWeeklySummary() {
     
     // Get user's exercises with history
     const userExercises = exercises.filter(ex => {
-        const userData = ex.users[currentUser];
+        const userData = ex.users?.[currentUser];
         return userData && userData.history && userData.history.length > 0;
     });
     
@@ -1783,7 +1809,7 @@ function renderExercises() {
                           exercise.category.toLowerCase().includes(searchValue);
         
         // Only show exercises that the current user has done (has history)
-        const userData = exercise.users[currentUser];
+        const userData = exercise.users?.[currentUser];
         const hasHistory = userData && userData.history && Array.isArray(userData.history) && userData.history.length > 0;
         
         return matchCategory && matchMuscle && matchSearch && hasHistory;
@@ -1800,8 +1826,8 @@ function renderExercises() {
     }
 
     exerciseList.innerHTML = filtered.map(exercise => {
-        const userData = exercise.users[currentUser];
-        const history = userData.history || [];
+        const userData = exercise.users?.[currentUser];
+        const history = userData?.history || [];
         const stats = calculateStats(history);
         
         // Get last trained date

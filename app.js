@@ -1,3 +1,4 @@
+// Gym Tracker v2.0 - Separate Exercise Creation & Workout Logging
 // Firebase Configuration
 const firebaseConfig = {
   apiKey: "AIzaSyBfu3Z86uW0yjuZGPqObGeOaEEPY2aI0hI",

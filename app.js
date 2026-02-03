@@ -123,6 +123,16 @@ function setupEventListeners() {
         document.getElementById('existingExerciseBtn').classList.add('active');
         document.getElementById('newExerciseBtn').classList.remove('active');
         
+        // Show sets section when logging workout for existing exercise
+        document.getElementById('setsContainer').style.display = 'block';
+        document.getElementById('addSetBtn').style.display = 'inline-block';
+        const notesParent = document.querySelector('label[for="exerciseNotes"]')?.parentElement;
+        if (notesParent) notesParent.style.display = 'block';
+        
+        // Change button text back to save workout
+        const submitBtn = document.querySelector('#exerciseModal button[type="submit"]');
+        if (submitBtn) submitBtn.textContent = 'Save Workout';
+        
         // Make exercise name not required when selecting existing
         document.getElementById('exerciseName').required = false;
         document.getElementById('exerciseCategory').required = false;
@@ -134,6 +144,16 @@ function setupEventListeners() {
         document.getElementById('existingExerciseSection').style.display = 'none';
         document.getElementById('newExerciseBtn').classList.add('active');
         document.getElementById('existingExerciseBtn').classList.remove('active');
+        
+        // Hide sets section when creating NEW exercise - user will log workout separately
+        document.getElementById('setsContainer').style.display = 'none';
+        document.getElementById('addSetBtn').style.display = 'none';
+        const notesParent = document.querySelector('label[for="exerciseNotes"]')?.parentElement;
+        if (notesParent) notesParent.style.display = 'none';
+        
+        // Change button text to clarify this is creation only
+        const submitBtn = document.querySelector('#exerciseModal button[type="submit"]');
+        if (submitBtn) submitBtn.textContent = 'Create Exercise';
         
         // Make exercise name required when creating new
         document.getElementById('exerciseName').required = true;
@@ -444,9 +464,51 @@ function saveExercise() {
         return;
     }
     
-    // Check if we need any sets for workout logging
-    if (sets.length === 0) {
+    // Determine if creating new exercise (no sets required) or logging workout (sets required)
+    const newExerciseBtn = document.getElementById('newExerciseBtn');
+    const isCreatingNewExercise = newExerciseBtn && newExerciseBtn.classList.contains('active') && !editingExerciseId;
+    
+    // Check if we need sets (not needed when creating new exercise)
+    if (sets.length === 0 && !isCreatingNewExercise) {
         alert('Please add at least one set with reps and weight.');
+        return;
+    }
+    
+    // If creating new exercise without sets, handle differently
+    if (isCreatingNewExercise && sets.length === 0) {
+        const name = document.getElementById('exerciseName').value.trim();
+        const category = document.getElementById('exerciseCategory').value;
+        const muscle = document.getElementById('exerciseMuscle').value;
+        const machineInfo = document.getElementById('machineInfo').value.trim();
+        
+        if (!name || !category || !muscle) {
+            alert('Please fill in all required fields!');
+            return;
+        }
+        
+        // Create exercise with EMPTY history (no sets required)
+        const newExercise = {
+            id: Date.now(),
+            name: name,
+            category: category,
+            muscle: muscle,
+            image: document.getElementById('exerciseImage').value || '',
+            machineInfo: machineInfo,
+            users: {}
+        };
+        
+        // Initialize all users with empty history
+        users.forEach(user => {
+            newExercise.users[user] = { history: [] };
+        });
+        
+        exercises.push(newExercise);
+        saveToFirebase();
+        
+        alert(`Exercise "${name}" created successfully! Now click "Log Workout" to add your first session.`);
+        modal.style.display = 'none';
+        exerciseForm.reset();
+        renderExercises();
         return;
     }
 
@@ -506,12 +568,78 @@ function saveExercise() {
     if (!exercise.users[currentUser].history) {
         exercise.users[currentUser].history = [];
     }
+    
+    // Check for new record BEFORE adding to history
+    let isNewRecord = false;
+    let recordIncrease = 0;
+    let recordType = '';
+    
+    const history = exercise.users[currentUser].history;
+    if (history && history.length > 0) {
+        // Calculate new session's total volume
+        const newVolume = sets.reduce((sum, set) => sum + (set.reps * set.weight), 0);
+        const newMaxWeight = Math.max(...sets.map(s => s.weight));
+        
+        // Calculate historical best volume
+        let bestVolume = 0;
+        let bestMaxWeight = 0;
+        history.forEach(s => {
+            const sessionVolume = s.sets.reduce((sum, set) => sum + (set.reps * set.weight), 0);
+            const sessionMaxWeight = Math.max(...s.sets.map(set => set.weight));
+            if (sessionVolume > bestVolume) bestVolume = sessionVolume;
+            if (sessionMaxWeight > bestMaxWeight) bestMaxWeight = sessionMaxWeight;
+        });
+        
+        // Check if new record
+        if (newVolume > bestVolume && bestVolume > 0) {
+            isNewRecord = true;
+            recordIncrease = Math.round(((newVolume - bestVolume) / bestVolume) * 100 * 10) / 10;
+            recordType = 'Total Volume';
+        } else if (newMaxWeight > bestMaxWeight && bestMaxWeight > 0) {
+            isNewRecord = true;
+            recordIncrease = Math.round(((newMaxWeight - bestMaxWeight) / bestMaxWeight) * 100 * 10) / 10;
+            recordType = 'Max Weight';
+        }
+    }
+    
     exercise.users[currentUser].history.push(session);
 
     saveToFirebase();
+    
+    // Show celebration if new record!
+    if (isNewRecord) {
+        showRecordCelebration(exercise.name, recordType, recordIncrease);
+    } else {
+        alert('Workout logged successfully!');
+    }
+    
     modal.style.display = 'none';
     exerciseForm.reset();
     editingExerciseId = null;
+    renderExercises();
+}
+
+// Show Record Celebration Popup
+function showRecordCelebration(exerciseName, recordType, increasePercent) {
+    const celebrationModal = document.createElement('div');
+    celebrationModal.className = 'modal';
+    celebrationModal.style.display = 'block';
+    celebrationModal.innerHTML = `
+        <div class="modal-content" style="max-width: 500px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+            <span class="close" onclick="this.parentElement.parentElement.remove()" style="color: white;">&times;</span>
+            <div style="font-size: 5em; margin: 20px 0;">🎉</div>
+            <h2 style="color: white; font-size: 2em; margin-bottom: 10px;">NEW RECORD!</h2>
+            <h3 style="color: rgba(255,255,255,0.9); margin-bottom: 20px;">${exerciseName}</h3>
+            <div style="background: rgba(255,255,255,0.2); padding: 20px; border-radius: 12px; margin: 20px 0;">
+                <div style="font-size: 1.1em; margin-bottom: 10px;">📊 ${recordType}</div>
+                <div style="font-size: 3em; font-weight: bold; color: #ffd700;">+${increasePercent}%</div>
+                <div style="font-size: 1em; margin-top: 10px; color: rgba(255,255,255,0.8);">Increase from previous best!</div>
+            </div>
+            <div style="font-size: 1.2em; margin: 20px 0;">💪 Keep crushing it!</div>
+            <button onclick="this.parentElement.parentElement.remove()" style="background: white; color: #667eea; border: none; padding: 12px 30px; font-size: 1.1em; font-weight: bold; border-radius: 25px; cursor: pointer; margin-top: 10px;">Awesome! 🔥</button>
+        </div>
+    `;
+    document.body.appendChild(celebrationModal);
 }
 
 // Edit Exercise (add new session)
@@ -772,12 +900,54 @@ function showWeeklySummary() {
             ? ((thisWeekWorkouts - lastWeekWorkouts) / lastWeekWorkouts * 100)
             : 0;
         
-        // Calculate performance percentage: >0 = progress, 0 = same, <0 = weaker
+        // Calculate SMARTER performance percentage using VOLUME (weight × reps × sets)
         let performancePercent = 0;
         if (totalExercises > 0) {
-            // Score: +1 for each record, -1 for each weaker, 0 for unchanged
-            const performanceScore = recordsCount - weakerCount;
-            performancePercent = Math.round((performanceScore / totalExercises) * 100);
+            // OLD METHOD: Just counted records vs weaker (based on max weight only)
+            // NEW METHOD: Calculate actual volume improvement percentage
+            
+            let totalVolumeImprovement = 0;
+            let exercisesWithBothWeeks = 0;
+            
+            categoryExercises.forEach(ex => {
+                const history = ex.users[currentUser].history || [];
+                
+                // Calculate this week's average volume
+                const thisWeekSessions = history.filter(session => {
+                    const sessionDate = new Date(session.date).getTime();
+                    return sessionDate >= oneWeekAgo;
+                });
+                
+                // Calculate last week's average volume
+                const lastWeekSessions = history.filter(session => {
+                    const sessionDate = new Date(session.date).getTime();
+                    return sessionDate >= twoWeeksAgo && sessionDate < oneWeekAgo;
+                });
+                
+                if (thisWeekSessions.length > 0 && lastWeekSessions.length > 0) {
+                    // Calculate average volume per session
+                    const thisWeekAvgVolume = thisWeekSessions.reduce((sum, s) => {
+                        const sessionVolume = s.sets.reduce((setSum, set) => setSum + (set.reps * set.weight), 0);
+                        return sum + sessionVolume;
+                    }, 0) / thisWeekSessions.length;
+                    
+                    const lastWeekAvgVolume = lastWeekSessions.reduce((sum, s) => {
+                        const sessionVolume = s.sets.reduce((setSum, set) => setSum + (set.reps * set.weight), 0);
+                        return sum + sessionVolume;
+                    }, 0) / lastWeekSessions.length;
+                    
+                    if (lastWeekAvgVolume > 0) {
+                        const volumeChange = ((thisWeekAvgVolume - lastWeekAvgVolume) / lastWeekAvgVolume) * 100;
+                        totalVolumeImprovement += volumeChange;
+                        exercisesWithBothWeeks++;
+                    }
+                }
+            });
+            
+            // Average improvement across all exercises that have data for both weeks
+            if (exercisesWithBothWeeks > 0) {
+                performancePercent = Math.round((totalVolumeImprovement / exercisesWithBothWeeks) * 10) / 10;
+            }
         }
         
         return {
@@ -885,6 +1055,11 @@ function displayWeeklySummaryModal(categorySummary, overall) {
                 </div>
             </div>
             
+            <h3 style="margin-top: 30px; margin-bottom: 15px;">📊 Performance History (Last 8 Weeks)</h3>
+            <div class="chart-container" style="width: 100%; overflow-x: auto; margin-bottom: 30px;">
+                <canvas id="weeklyPerformanceChart" style="height: 300px; min-width: 600px;"></canvas>
+            </div>
+            
             <h3 style="margin-top: 30px; margin-bottom: 15px;">Progress by Category</h3>
             
             <div class="category-summary-grid">
@@ -939,6 +1114,130 @@ function displayWeeklySummaryModal(categorySummary, overall) {
     `;
     
     document.body.appendChild(summaryModal);
+    
+    // Draw Performance History Bar Chart (last 8 weeks)
+    const ctx = document.getElementById('weeklyPerformanceChart');
+    if (ctx) {
+        // Calculate performance for the last 8 weeks
+        const now = Date.now();
+        const weekLabels = [];
+        const performanceData = [];
+        
+        for (let i = 7; i >= 0; i--) {
+            const weekEnd = now - (i * 7 * 24 * 60 * 60 * 1000);
+            const weekStart = weekEnd - (7 * 24 * 60 * 60 * 1000);
+            
+            // Create label (e.g., "Week -7", "Week -6", ..., "This Week")
+            weekLabels.push(i === 0 ? 'This Week' : `${i} weeks ago`);
+            
+            // Calculate performance for this week
+            const categories = ['Chest', 'Back/Shoulder', 'Legs', 'Functional'];
+            const userExercises = exercises.filter(ex => {
+                const userData = ex.users[currentUser];
+                return userData && userData.history && userData.history.length > 0;
+            });
+            
+            let totalVolumeImprovement = 0;
+            let exerciseCount = 0;
+            
+            categories.forEach(category => {
+                const categoryExercises = userExercises.filter(ex => ex.category === category);
+                
+                categoryExercises.forEach(ex => {
+                    const history = ex.users[currentUser].history || [];
+                    
+                    const thisWeekSessions = history.filter(session => {
+                        const sessionDate = new Date(session.date).getTime();
+                        return sessionDate >= weekStart && sessionDate < weekEnd;
+                    });
+                    
+                    const lastWeekSessions = history.filter(session => {
+                        const sessionDate = new Date(session.date).getTime();
+                        return sessionDate >= (weekStart - 7 * 24 * 60 * 60 * 1000) && sessionDate < weekStart;
+                    });
+                    
+                    if (thisWeekSessions.length > 0 && lastWeekSessions.length > 0) {
+                        const thisWeekAvgVolume = thisWeekSessions.reduce((sum, s) => {
+                            return sum + s.sets.reduce((setSum, set) => setSum + (set.reps * set.weight), 0);
+                        }, 0) / thisWeekSessions.length;
+                        
+                        const lastWeekAvgVolume = lastWeekSessions.reduce((sum, s) => {
+                            return sum + s.sets.reduce((setSum, set) => setSum + (set.reps * set.weight), 0);
+                        }, 0) / lastWeekSessions.length;
+                        
+                        if (lastWeekAvgVolume > 0) {
+                            const volumeChange = ((thisWeekAvgVolume - lastWeekAvgVolume) / lastWeekAvgVolume) * 100;
+                            totalVolumeImprovement += volumeChange;
+                            exerciseCount++;
+                        }
+                    }
+                });
+            });
+            
+            const avgPerformance = exerciseCount > 0 ? Math.round((totalVolumeImprovement / exerciseCount) * 10) / 10 : 0;
+            performanceData.push(avgPerformance);
+        }
+        
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: weekLabels,
+                datasets: [{
+                    label: 'Performance Score (%)',
+                    data: performanceData,
+                    backgroundColor: performanceData.map(value => {
+                        if (value > 5) return 'rgba(76, 175, 80, 0.8)';
+                        if (value > 0) return 'rgba(139, 195, 74, 0.8)';
+                        if (value === 0) return 'rgba(158, 158, 158, 0.8)';
+                        if (value > -5) return 'rgba(255, 152, 0, 0.8)';
+                        return 'rgba(244, 67, 54, 0.8)';
+                    }),
+                    borderColor: performanceData.map(value => {
+                        if (value > 5) return '#4caf50';
+                        if (value > 0) return '#8bc34a';
+                        if (value === 0) return '#999';
+                        if (value > -5) return '#ff9800';
+                        return '#f44336';
+                    }),
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `Performance: ${context.parsed.y > 0 ? '+' : ''}${context.parsed.y}%`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Performance Change (%)'
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+    }
 }
 
 // Generate Weekly Training Routine
@@ -980,9 +1279,23 @@ function generateWeeklyRoutine() {
         if (categoryExercises.length === 0) return;
         
         // Check if ANY muscle in this category was trained since last routine generation
+        // BUT only regenerate if 4 hours have passed since last workout
         let needNewRoutine = true;
         if (routineMemory[categoryName]) {
             const lastGeneratedDate = new Date(routineMemory[categoryName].generatedAt);
+            
+            // Find most recent workout in this category
+            let mostRecentWorkoutTime = 0;
+            categoryExercises.forEach(ex => {
+                const userData = ex.users[currentUser];
+                if (userData && userData.history && userData.history.length > 0) {
+                    const lastSession = userData.history[userData.history.length - 1];
+                    const sessionTime = new Date(lastSession.date).getTime();
+                    if (sessionTime > mostRecentWorkoutTime) {
+                        mostRecentWorkoutTime = sessionTime;
+                    }
+                }
+            });
             
             // Check if any exercise from this category was trained after generation
             const anyTrained = categoryExercises.some(ex => {
@@ -992,7 +1305,11 @@ function generateWeeklyRoutine() {
                 return recentWorkouts.length > 0;
             });
             
-            needNewRoutine = anyTrained;
+            // Only regenerate if trained AND 4 hours have passed since last workout
+            const fourHoursInMs = 4 * 60 * 60 * 1000; // 4 hours
+            const timeSinceLastWorkout = Date.now() - mostRecentWorkoutTime;
+            
+            needNewRoutine = anyTrained && (timeSinceLastWorkout >= fourHoursInMs);
         }
         
         let dayExercises = [];

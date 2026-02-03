@@ -28,6 +28,7 @@ let editingExerciseId = null;
 let setCounter = 1;
 let currentChart = null;
 let users = ['Fran', 'Pascal', 'Cicci']; // Track all users
+let isNewlyAddedFromCamera = false; // Track if exercise was just added from camera
 
 // DOM Elements (will be initialized in init())
 let userButtons;
@@ -183,19 +184,16 @@ function setupEventListeners() {
 
     // Workout Modal Handlers
     workoutModalClose.addEventListener('click', () => {
-        workoutModal.style.display = 'none';
-        editingExerciseId = null;
+        handleWorkoutModalClose();
     });
 
     workoutCancelBtn.addEventListener('click', () => {
-        workoutModal.style.display = 'none';
-        editingExerciseId = null;
+        handleWorkoutModalClose();
     });
 
     window.addEventListener('click', (e) => {
         if (e.target === workoutModal) {
-            workoutModal.style.display = 'none';
-            editingExerciseId = null;
+            handleWorkoutModalClose();
         }
     });
 
@@ -600,6 +598,24 @@ function editExerciseDetails(id) {
     modal.style.display = 'block';
 }
 
+// Handle workout modal close - remove exercise if newly added and no sets logged
+function handleWorkoutModalClose() {
+    if (isNewlyAddedFromCamera && editingExerciseId) {
+        const exercise = exercises.find(ex => ex.id === editingExerciseId);
+        if (exercise && (!exercise.history || exercise.history.length === 0)) {
+            // Exercise was added from camera but user didn't log any workout
+            console.log('Removing newly added exercise with no workout data:', exercise.name);
+            exercises = exercises.filter(ex => ex.id !== editingExerciseId);
+            saveData();
+            renderExercises();
+        }
+    }
+    
+    workoutModal.style.display = 'none';
+    editingExerciseId = null;
+    isNewlyAddedFromCamera = false;
+}
+
 // Reset Workout Sets Container
 function resetWorkoutSetsContainer() {
     workoutSetCounter = 1;
@@ -753,6 +769,7 @@ function saveWorkout() {
     
     workoutModal.style.display = 'none';
     editingExerciseId = null;
+    isNewlyAddedFromCamera = false; // Reset flag
     workoutForm.reset();
     renderExercises();
 }
@@ -2979,7 +2996,7 @@ function stopCamera() {
 function captureAndAnalyze() {
     const resultBox = document.getElementById('aiCameraResult');
     resultBox.classList.add('show');
-    resultBox.innerHTML = '<div class="loading-spinner"></div> Analyzing equipment...';
+    resultBox.innerHTML = '<div class="loading-spinner"></div> Analyzing equipment and identifying exercise...';
     
     // Capture image
     cameraCanvas.width = cameraVideo.videoWidth;
@@ -2992,9 +3009,198 @@ function captureAndAnalyze() {
     
     // Simulate AI analysis (in real implementation, you'd use TensorFlow.js or cloud vision API)
     setTimeout(() => {
-        const detectedEquipment = analyzeEquipment();
-        displayEquipmentSuggestions(detectedEquipment, resultBox);
+        const detectedExercise = analyzeEquipmentAndIdentifyExercise();
+        processDetectedExercise(detectedExercise, resultBox);
     }, 2000);
+}
+
+function analyzeEquipmentAndIdentifyExercise() {
+    // Simulated equipment detection with exercise details
+    // In real implementation, use TensorFlow.js with a trained model or Vision API
+    const exerciseDatabase = [
+        { name: 'Lat Pulldown', category: 'Upper Back', muscle: 'Lats', equipment: 'Lat Pulldown Machine' },
+        { name: 'Leg Press', category: 'Legs', muscle: 'Quads', equipment: 'Leg Press Machine' },
+        { name: 'Chest Press', category: 'Chest', muscle: 'Middle Chest', equipment: 'Chest Press Machine' },
+        { name: 'Shoulder Press', category: 'Shoulders', muscle: 'Front Delts', equipment: 'Shoulder Press Machine' },
+        { name: 'Cable Rows', category: 'Upper Back', muscle: 'Lats', equipment: 'Cable Machine' },
+        { name: 'Cable Chest Flys', category: 'Chest', muscle: 'Middle Chest', equipment: 'Cable Machine' },
+        { name: 'Leg Extension', category: 'Legs', muscle: 'Quads', equipment: 'Leg Extension Machine' },
+        { name: 'Leg Curl', category: 'Legs', muscle: 'Hamstrings', equipment: 'Leg Curl Machine' },
+        { name: 'Seated Row', category: 'Upper Back', muscle: 'Lats', equipment: 'Rowing Machine' },
+        { name: 'Bench Press', category: 'Chest', muscle: 'Middle Chest', equipment: 'Bench Press' },
+        { name: 'Incline Bench Press', category: 'Chest', muscle: 'Upper Chest', equipment: 'Incline Bench' },
+        { name: 'Pec Deck', category: 'Chest', muscle: 'Middle Chest', equipment: 'Pec Deck Machine' },
+        { name: 'Tricep Pushdown', category: 'Triceps', muscle: 'Triceps', equipment: 'Cable Machine' },
+        { name: 'Bicep Curl Machine', category: 'Biceps', muscle: 'Biceps', equipment: 'Bicep Curl Machine' },
+        { name: 'Leg Press Calf Raise', category: 'Legs', muscle: 'Calves', equipment: 'Leg Press Machine' }
+    ];
+    
+    // Randomly select an exercise (in real app, this would be AI detection)
+    return exerciseDatabase[Math.floor(Math.random() * exerciseDatabase.length)];
+}
+
+function processDetectedExercise(detectedExercise, resultBox) {
+    console.log('Detected exercise:', detectedExercise);
+    
+    // Step 1: Check if user already has this exercise
+    const userExercise = exercises.find(ex => 
+        ex.user === currentUser && 
+        ex.name.toLowerCase() === detectedExercise.name.toLowerCase()
+    );
+    
+    if (userExercise) {
+        // User already has this exercise - open workout modal
+        resultBox.innerHTML = `
+            <h4>✅ Exercise Found in Your Library!</h4>
+            <p><strong>${detectedExercise.name}</strong> is already in your exercises.</p>
+            <p>Opening workout logging...</p>
+        `;
+        
+        setTimeout(() => {
+            // Close AI modal and open workout modal
+            aiModal.style.display = 'none';
+            stopCamera();
+            openWorkoutModalForExercise(userExercise.id);
+        }, 1500);
+        return;
+    }
+    
+    // Step 2: Check if exercise exists in global database (other users have it)
+    const globalExercise = exercises.find(ex => 
+        ex.name.toLowerCase() === detectedExercise.name.toLowerCase()
+    );
+    
+    if (globalExercise) {
+        // Exercise exists but not for current user - add it automatically
+        resultBox.innerHTML = `
+            <h4>📋 Exercise Found in Database!</h4>
+            <p><strong>${detectedExercise.name}</strong> exists in the app.</p>
+            <p>Adding to your exercises and opening workout logging...</p>
+        `;
+        
+        setTimeout(() => {
+            // Add exercise for current user
+            addExerciseFromTemplate(globalExercise);
+        }, 1500);
+        return;
+    }
+    
+    // Step 3: Exercise doesn't exist anywhere - open creation modal with pre-filled data
+    resultBox.innerHTML = `
+        <h4>🆕 New Exercise Detected!</h4>
+        <p><strong>${detectedExercise.name}</strong> is not in the database yet.</p>
+        <p>Opening exercise creation form with detected details...</p>
+    `;
+    
+    setTimeout(() => {
+        // Close AI modal and open exercise modal with pre-filled data
+        aiModal.style.display = 'none';
+        stopCamera();
+        openExerciseModalWithDetectedData(detectedExercise);
+    }, 1500);
+}
+
+function openWorkoutModalForExercise(exerciseId, isFromCamera = false) {
+    const exercise = exercises.find(ex => ex.id === exerciseId);
+    if (!exercise) return;
+    
+    // Open workout modal
+    editingExerciseId = exerciseId;
+    isNewlyAddedFromCamera = isFromCamera; // Track if this was added from camera
+    
+    // Set exercise info
+    document.getElementById('workoutExerciseName').textContent = exercise.name;
+    document.getElementById('workoutExerciseCategory').textContent = exercise.category;
+    document.getElementById('workoutExerciseMuscle').textContent = exercise.muscle;
+    
+    // Reset and initialize sets
+    resetWorkoutSetsContainer();
+    
+    // Pre-fill with last workout data if available
+    if (exercise.history && exercise.history.length > 0) {
+        const lastWorkout = exercise.history[exercise.history.length - 1];
+        const setsContainer = document.getElementById('workoutSetsContainer');
+        setsContainer.innerHTML = '';
+        workoutSetCounter = 1;
+        
+        lastWorkout.sets.forEach((set, index) => {
+            const setDiv = document.createElement('div');
+            setDiv.className = 'set-input-group';
+            setDiv.innerHTML = `
+                <span class="set-number">Set ${workoutSetCounter}</span>
+                <input type="number" class="workout-set-weight" placeholder="Weight (kg)" value="${set.weight}" step="0.5" min="0">
+                <input type="number" class="workout-set-reps" placeholder="Reps" value="${set.reps}" step="1" min="1">
+                <button type="button" class="remove-set-btn" onclick="removeWorkoutSet(this)">✕</button>
+            `;
+            setsContainer.appendChild(setDiv);
+            workoutSetCounter++;
+        });
+    }
+    
+    // Clear notes
+    document.getElementById('workoutNotes').value = '';
+    
+    workoutModal.style.display = 'block';
+}
+
+function addExerciseFromTemplate(templateExercise) {
+    // Create new exercise for current user based on template
+    const newExercise = {
+        id: Date.now(),
+        user: currentUser,
+        name: templateExercise.name,
+        category: templateExercise.category,
+        muscle: templateExercise.muscle,
+        history: [],
+        createdAt: new Date().toISOString()
+    };
+    
+    exercises.push(newExercise);
+    saveData();
+    renderExercises();
+    
+    // Close AI modal and open workout modal for the new exercise
+    aiModal.style.display = 'none';
+    stopCamera();
+    
+    // Open workout modal with a flag to track if sets are added
+    setTimeout(() => {
+        openWorkoutModalForExercise(newExercise.id, true); // true = isNewlyAdded
+    }, 500);
+}
+
+function openExerciseModalWithDetectedData(detectedExercise) {
+    // Reset form
+    document.getElementById('exerciseForm').reset();
+    editingExerciseId = null;
+    
+    // Set to "new" mode
+    document.getElementById('newExerciseOption').click();
+    
+    // Pre-fill detected data
+    document.getElementById('exerciseName').value = detectedExercise.name;
+    document.getElementById('exerciseCategory').value = detectedExercise.category;
+    
+    // Trigger category change to load muscle options
+    const categoryEvent = new Event('change');
+    document.getElementById('exerciseCategory').dispatchEvent(categoryEvent);
+    
+    // Wait a bit for muscle options to load, then set muscle
+    setTimeout(() => {
+        const muscleSelect = document.getElementById('exerciseMuscle');
+        // Try to find matching muscle option
+        for (let i = 0; i < muscleSelect.options.length; i++) {
+            if (muscleSelect.options[i].value === detectedExercise.muscle) {
+                muscleSelect.value = detectedExercise.muscle;
+                break;
+            }
+        }
+    }, 100);
+    
+    // Update modal title
+    document.getElementById('modalTitle').textContent = '📸 Add Detected Exercise';
+    
+    modal.style.display = 'block';
 }
 
 function analyzeEquipment() {

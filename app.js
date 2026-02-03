@@ -40,6 +40,11 @@ let categoryFilter;
 let muscleFilter;
 let searchInput;
 
+// Helper function to display weight
+function formatWeight(weight) {
+    return weight === 0 ? 'Bodyweight' : `${weight}kg`;
+}
+
 // Initialize App
 function init() {
     // Initialize DOM elements
@@ -293,6 +298,16 @@ function resetSetsContainer() {
 
 // Add Set
 function addSet() {
+    // Get previous set values to pre-fill
+    let prevReps = '';
+    let prevWeight = '';
+    if (setCounter > 0) {
+        const prevRepsInput = document.getElementById(`set${setCounter}_reps`);
+        const prevWeightInput = document.getElementById(`set${setCounter}_weight`);
+        if (prevRepsInput && prevRepsInput.value) prevReps = prevRepsInput.value;
+        if (prevWeightInput && prevWeightInput.value) prevWeight = prevWeightInput.value;
+    }
+    
     setCounter++;
     const container = document.getElementById('setsContainer');
     const setDiv = document.createElement('div');
@@ -303,11 +318,11 @@ function addSet() {
         <div class="form-row">
             <div class="form-group">
                 <label for="set${setCounter}_reps">Reps</label>
-                <input type="number" id="set${setCounter}_reps" class="set-reps" min="0" placeholder="12">
+                <input type="number" id="set${setCounter}_reps" class="set-reps" min="0" placeholder="12" value="${prevReps}">
             </div>
             <div class="form-group">
                 <label for="set${setCounter}_weight">Weight (kg)</label>
-                <input type="number" id="set${setCounter}_weight" class="set-weight" min="0" step="0.5" placeholder="50">
+                <input type="number" id="set${setCounter}_weight" class="set-weight" min="0" step="0.5" placeholder="50" value="${prevWeight}">
             </div>
         </div>
     `;
@@ -1124,7 +1139,7 @@ function displayRoutineModal(routines) {
                             </div>
                         </div>
                         <div class="routine-ex-plan">
-                            <span class="routine-sets">${ex.sets} sets × ${ex.reps} reps @ ${ex.weight}kg</span>
+                            <span class="routine-sets">${ex.sets} sets × ${ex.reps} reps @ ${formatWeight(ex.weight)}</span>
                             <span class="routine-note">${ex.note}</span>
                         </div>
                         <div class="routine-last">${ex.lastPerformed}</div>
@@ -1294,7 +1309,7 @@ function showExerciseDetails(id) {
             </div>
 
             <div class="chart-container">
-                <canvas id="progressChart"></canvas>
+                <canvas id="progressChart" style="max-height: 450px;"></canvas>
             </div>
 
             <div class="history-section">
@@ -1308,7 +1323,7 @@ function showExerciseDetails(id) {
                             </div>
                             <div class="history-sets">
                                 ${session.sets.map((set, i) => `
-                                    <span class="set-badge">Set ${i+1}: ${set.reps} reps @ ${set.weight}kg</span>
+                                    <span class="set-badge">Set ${i+1}: ${set.reps} reps @ ${formatWeight(set.weight)}</span>
                                 `).join('')}
                             </div>
                             ${session.notes ? `<div class="history-notes">💭 ${session.notes}</div>` : ''}
@@ -1474,7 +1489,7 @@ function renderExercises() {
                             <div class="stat">
                                 <div class="stat-label">Last Workout</div>
                                 <div class="stat-value">${stats.lastReps ? stats.lastReps + ' reps' : '-'}</div>
-                                <div class="stat-sublabel">${stats.lastWeight ? stats.lastWeight + ' kg' : ''}</div>
+                                <div class="stat-sublabel">${stats.lastWeight !== undefined ? formatWeight(stats.lastWeight) : ''}</div>
                             </div>
                             <div class="stat">
                                 <div class="stat-label">Personal Best</div>

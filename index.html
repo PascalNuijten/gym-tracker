@@ -257,11 +257,118 @@
         </div>
     </div>
 
+    <!-- AI Assistant Floating Button -->
+    <button id="aiFloatingBtn" class="ai-floating-btn" title="AI Coach">🤖</button>
+
+    <!-- AI Assistant Modal -->
+    <div id="aiModal" class="modal">
+        <div class="modal-content ai-modal-content">
+            <div class="modal-header">
+                <h2>🤖 AI Fitness Coach</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- AI Mode Selection -->
+                <div id="aiModeSelection" class="ai-mode-selection">
+                    <h3>How can I help you today?</h3>
+                    <div class="ai-mode-grid">
+                        <button class="ai-mode-btn" data-mode="feedback">
+                            📊 Get Performance Feedback
+                            <span class="ai-mode-desc">Analyze your progress and get personalized insights</span>
+                        </button>
+                        <button class="ai-mode-btn" data-mode="camera">
+                            📸 Equipment Recognition
+                            <span class="ai-mode-desc">Point camera at machine for exercise suggestions</span>
+                        </button>
+                        <button class="ai-mode-btn" data-mode="question">
+                            💬 Ask Questions
+                            <span class="ai-mode-desc">Get answers about your training progress</span>
+                        </button>
+                        <button class="ai-mode-btn" data-mode="substitute">
+                            🔄 Exercise Substitution
+                            <span class="ai-mode-desc">Find alternative exercises</span>
+                        </button>
+                        <button class="ai-mode-btn" data-mode="compare">
+                            📈 Progress Analysis
+                            <span class="ai-mode-desc">Compare muscle groups and identify imbalances</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Feedback Mode -->
+                <div id="aiFeedbackMode" class="ai-mode-content" style="display: none;">
+                    <button class="ai-back-btn">← Back</button>
+                    <h3>📊 Performance Feedback</h3>
+                    <div class="feedback-period-select">
+                        <button class="period-btn active" data-period="day">Today</button>
+                        <button class="period-btn" data-period="week">This Week</button>
+                        <button class="period-btn" data-period="month">This Month</button>
+                    </div>
+                    <div id="aiFeedbackResult" class="ai-result-box"></div>
+                </div>
+
+                <!-- Camera Mode -->
+                <div id="aiCameraMode" class="ai-mode-content" style="display: none;">
+                    <button class="ai-back-btn">← Back</button>
+                    <h3>📸 Equipment Recognition</h3>
+                    <div class="camera-container">
+                        <video id="cameraVideo" autoplay playsinline style="display: none;"></video>
+                        <canvas id="cameraCanvas" style="display: none;"></canvas>
+                        <div id="cameraPreview" class="camera-preview">
+                            <p>Click "Start Camera" to begin</p>
+                        </div>
+                        <button id="startCameraBtn" class="primary-btn">📷 Start Camera</button>
+                        <button id="captureBtn" class="primary-btn" style="display: none;">📸 Capture & Analyze</button>
+                        <button id="stopCameraBtn" class="secondary-btn" style="display: none;">⏹️ Stop Camera</button>
+                    </div>
+                    <div id="aiCameraResult" class="ai-result-box"></div>
+                </div>
+
+                <!-- Question Mode -->
+                <div id="aiQuestionMode" class="ai-mode-content" style="display: none;">
+                    <button class="ai-back-btn">← Back</button>
+                    <h3>💬 Ask Your Coach</h3>
+                    <div class="question-suggestions">
+                        <p>Common questions:</p>
+                        <button class="suggestion-btn" data-question="Why am I not progressing on squats?">Why am I not progressing on squats?</button>
+                        <button class="suggestion-btn" data-question="Am I training enough?">Am I training enough?</button>
+                        <button class="suggestion-btn" data-question="What should I focus on next?">What should I focus on next?</button>
+                        <button class="suggestion-btn" data-question="How do I compare to others?">How do I compare to others?</button>
+                    </div>
+                    <textarea id="aiQuestionInput" class="ai-input" placeholder="Or type your own question..."></textarea>
+                    <button id="askQuestionBtn" class="primary-btn">Ask Coach</button>
+                    <div id="aiQuestionResult" class="ai-result-box"></div>
+                </div>
+
+                <!-- Substitute Mode -->
+                <div id="aiSubstituteMode" class="ai-mode-content" style="display: none;">
+                    <button class="ai-back-btn">← Back</button>
+                    <h3>🔄 Exercise Substitution</h3>
+                    <select id="substituteExerciseSelect" class="filter-select">
+                        <option value="">Select an exercise...</option>
+                    </select>
+                    <input type="text" id="substituteReason" class="ai-input" placeholder="Reason (optional): e.g., machine broken, shoulder pain...">
+                    <button id="findSubstituteBtn" class="primary-btn">Find Alternatives</button>
+                    <div id="aiSubstituteResult" class="ai-result-box"></div>
+                </div>
+
+                <!-- Compare Mode -->
+                <div id="aiCompareMode" class="ai-mode-content" style="display: none;">
+                    <button class="ai-back-btn">← Back</button>
+                    <h3>📈 Progress Comparison</h3>
+                    <p class="ai-description">Analyze your training balance across muscle groups</p>
+                    <button id="analyzeProgressBtn" class="primary-btn">Analyze My Progress</button>
+                    <div id="aiCompareResult" class="ai-result-box"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <!-- Chart.js for progress visualization -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=2.0"></script>
+    <script src="app.js?v=2.1"></script>
 </body>
 </html>

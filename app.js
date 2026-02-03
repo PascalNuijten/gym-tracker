@@ -2462,5 +2462,854 @@ function saveToFirebase() {
         });
 }
 
+// ==================== AI COACH FUNCTIONALITY ====================
+
+// AI DOM Elements
+let aiFloatingBtn;
+let aiModal;
+let aiModalClose;
+let aiModeSelection;
+let aiBackBtns;
+let aiModeButtons;
+
+// AI Mode Content Divs
+let aiFeedbackMode;
+let aiCameraMode;
+let aiQuestionMode;
+let aiSubstituteMode;
+let aiCompareMode;
+
+// Camera variables
+let cameraStream = null;
+let cameraVideo;
+let cameraCanvas;
+
+// Initialize AI Features
+function initAI() {
+    // Get AI DOM elements
+    aiFloatingBtn = document.getElementById('aiFloatingBtn');
+    aiModal = document.getElementById('aiModal');
+    aiModalClose = aiModal.querySelector('.close');
+    aiModeSelection = document.getElementById('aiModeSelection');
+    aiBackBtns = document.querySelectorAll('.ai-back-btn');
+    aiModeButtons = document.querySelectorAll('.ai-mode-btn');
+    
+    // AI mode content divs
+    aiFeedbackMode = document.getElementById('aiFeedbackMode');
+    aiCameraMode = document.getElementById('aiCameraMode');
+    aiQuestionMode = document.getElementById('aiQuestionMode');
+    aiSubstituteMode = document.getElementById('aiSubstituteMode');
+    aiCompareMode = document.getElementById('aiCompareMode');
+    
+    // Camera elements
+    cameraVideo = document.getElementById('cameraVideo');
+    cameraCanvas = document.getElementById('cameraCanvas');
+    
+    // Setup AI event listeners
+    setupAIEventListeners();
+}
+
+function setupAIEventListeners() {
+    // Floating button
+    aiFloatingBtn.addEventListener('click', () => {
+        aiModal.style.display = 'block';
+        showAIModeSelection();
+    });
+    
+    // Close modal
+    aiModalClose.addEventListener('click', () => {
+        aiModal.style.display = 'none';
+        stopCamera();
+    });
+    
+    // Close on outside click
+    window.addEventListener('click', (e) => {
+        if (e.target === aiModal) {
+            aiModal.style.display = 'none';
+            stopCamera();
+        }
+    });
+    
+    // Mode buttons
+    aiModeButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mode = btn.dataset.mode;
+            showAIMode(mode);
+        });
+    });
+    
+    // Back buttons
+    aiBackBtns.forEach(btn => {
+        btn.addEventListener('click', showAIModeSelection);
+    });
+    
+    // Feedback period buttons
+    document.querySelectorAll('.period-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const period = btn.dataset.period;
+            generateFeedback(period);
+        });
+    });
+    
+    // Camera buttons
+    document.getElementById('startCameraBtn').addEventListener('click', startCamera);
+    document.getElementById('stopCameraBtn').addEventListener('click', stopCamera);
+    document.getElementById('captureBtn').addEventListener('click', captureAndAnalyze);
+    
+    // Question mode
+    document.querySelectorAll('.suggestion-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.getElementById('aiQuestionInput').value = btn.dataset.question;
+            answerQuestion(btn.dataset.question);
+        });
+    });
+    
+    document.getElementById('askQuestionBtn').addEventListener('click', () => {
+        const question = document.getElementById('aiQuestionInput').value;
+        if (question.trim()) {
+            answerQuestion(question);
+        }
+    });
+    
+    // Substitute mode
+    populateSubstituteExercises();
+    document.getElementById('findSubstituteBtn').addEventListener('click', findSubstitutes);
+    
+    // Compare mode
+    document.getElementById('analyzeProgressBtn').addEventListener('click', analyzeProgress);
+}
+
+function showAIModeSelection() {
+    aiModeSelection.style.display = 'block';
+    aiFeedbackMode.style.display = 'none';
+    aiCameraMode.style.display = 'none';
+    aiQuestionMode.style.display = 'none';
+    aiSubstituteMode.style.display = 'none';
+    aiCompareMode.style.display = 'none';
+}
+
+function showAIMode(mode) {
+    aiModeSelection.style.display = 'none';
+    
+    // Hide all modes
+    aiFeedbackMode.style.display = 'none';
+    aiCameraMode.style.display = 'none';
+    aiQuestionMode.style.display = 'none';
+    aiSubstituteMode.style.display = 'none';
+    aiCompareMode.style.display = 'none';
+    
+    // Show selected mode
+    switch(mode) {
+        case 'feedback':
+            aiFeedbackMode.style.display = 'block';
+            generateFeedback('day'); // Default to today
+            break;
+        case 'camera':
+            aiCameraMode.style.display = 'block';
+            break;
+        case 'question':
+            aiQuestionMode.style.display = 'block';
+            break;
+        case 'substitute':
+            aiSubstituteMode.style.display = 'block';
+            break;
+        case 'compare':
+            aiCompareMode.style.display = 'block';
+            break;
+    }
+}
+
+// ==================== FEEDBACK MODE ====================
+
+function generateFeedback(period) {
+    const resultBox = document.getElementById('aiFeedbackResult');
+    resultBox.classList.add('show');
+    resultBox.innerHTML = '<div class="loading-spinner"></div> Analyzing your performance...';
+    
+    setTimeout(() => {
+        const userExercises = exercises.filter(ex => ex.user === currentUser);
+        const now = Date.now();
+        let startDate;
+        let periodName;
+        
+        if (period === 'day') {
+            startDate = new Date();
+            startDate.setHours(0, 0, 0, 0);
+            periodName = 'Today';
+        } else if (period === 'week') {
+            startDate = new Date();
+            startDate.setDate(startDate.getDate() - 7);
+            periodName = 'This Week';
+        } else {
+            startDate = new Date();
+            startDate.setMonth(startDate.getMonth() - 1);
+            periodName = 'This Month';
+        }
+        
+        const periodExercises = userExercises.filter(ex => {
+            return ex.history && ex.history.some(h => new Date(h.date).getTime() >= startDate.getTime());
+        });
+        
+        const periodWorkouts = [];
+        periodExercises.forEach(ex => {
+            ex.history.forEach(h => {
+                if (new Date(h.date).getTime() >= startDate.getTime()) {
+                    periodWorkouts.push({
+                        exercise: ex.name,
+                        category: ex.category,
+                        muscle: ex.muscle,
+                        date: h.date,
+                        sets: h.sets
+                    });
+                }
+            });
+        });
+        
+        if (periodWorkouts.length === 0) {
+            resultBox.innerHTML = `<p>No workouts recorded for ${periodName.toLowerCase()}. Get started and I'll provide insights!</p>`;
+            return;
+        }
+        
+        // Calculate stats
+        const totalSets = periodWorkouts.reduce((sum, w) => sum + w.sets.length, 0);
+        const totalVolume = periodWorkouts.reduce((sum, w) => {
+            return sum + w.sets.reduce((s, set) => s + (set.weight * set.reps), 0);
+        }, 0);
+        
+        const uniqueDays = new Set(periodWorkouts.map(w => new Date(w.date).toDateString())).size;
+        const categoryBreakdown = {};
+        periodWorkouts.forEach(w => {
+            categoryBreakdown[w.category] = (categoryBreakdown[w.category] || 0) + w.sets.length;
+        });
+        
+        const topCategory = Object.keys(categoryBreakdown).reduce((a, b) => 
+            categoryBreakdown[a] > categoryBreakdown[b] ? a : b
+        );
+        
+        // Generate personalized feedback
+        let feedback = `<h4>📊 ${periodName}'s Performance</h4>`;
+        feedback += `<p><strong>Workout Summary:</strong></p>`;
+        feedback += `<ul>`;
+        feedback += `<li>🏋️ ${periodWorkouts.length} exercises completed</li>`;
+        feedback += `<li>💪 ${totalSets} total sets performed</li>`;
+        feedback += `<li>📅 ${uniqueDays} training days</li>`;
+        feedback += `<li>🎯 Most trained: ${topCategory} (${categoryBreakdown[topCategory]} sets)</li>`;
+        feedback += `</ul>`;
+        
+        // Insights
+        feedback += `<p><strong>💡 Insights:</strong></p>`;
+        feedback += `<ul>`;
+        
+        if (uniqueDays < 3 && period === 'week') {
+            feedback += `<li>Consider training more frequently - aim for 3-4 days per week for optimal results.</li>`;
+        } else if (uniqueDays >= 4 && period === 'week') {
+            feedback += `<li>Excellent consistency! ${uniqueDays} training days is great for muscle growth.</li>`;
+        }
+        
+        const categoriesCount = Object.keys(categoryBreakdown).length;
+        if (categoriesCount < 3) {
+            feedback += `<li>You're focusing on ${categoriesCount} muscle groups. Consider adding more variety for balanced development.</li>`;
+        } else {
+            feedback += `<li>Great variety! You're training ${categoriesCount} different muscle groups.</li>`;
+        }
+        
+        const avgSetsPerDay = totalSets / uniqueDays;
+        if (avgSetsPerDay < 12) {
+            feedback += `<li>Average ${Math.round(avgSetsPerDay)} sets per session. Consider increasing volume for better gains.</li>`;
+        } else if (avgSetsPerDay > 25) {
+            feedback += `<li>High volume detected (${Math.round(avgSetsPerDay)} sets/session). Make sure you're recovering properly!</li>`;
+        }
+        
+        feedback += `</ul>`;
+        
+        // Fun fact
+        feedback += generateFunFact(totalVolume, totalSets, period);
+        
+        resultBox.innerHTML = feedback;
+    }, 1500);
+}
+
+function generateFunFact(totalVolume, totalSets, period) {
+    const facts = [];
+    
+    // Volume comparisons
+    if (totalVolume > 0) {
+        const elephants = (totalVolume / 6000).toFixed(1);
+        const cars = (totalVolume / 1500).toFixed(1);
+        
+        if (elephants >= 1) {
+            facts.push(`You moved ${totalVolume}kg - that's equivalent to ${elephants} elephants! 🐘`);
+        } else if (cars >= 1) {
+            facts.push(`You moved ${totalVolume}kg - that's like lifting ${cars} cars! 🚗`);
+        } else {
+            const pianos = (totalVolume / 400).toFixed(1);
+            if (pianos >= 1) {
+                facts.push(`You moved ${totalVolume}kg - equivalent to ${pianos} grand pianos! 🎹`);
+            }
+        }
+    }
+    
+    // Performance percentiles (simulated)
+    const percentile = Math.min(95, 50 + (totalSets * 2));
+    facts.push(`Based on your volume, you're in the top ${100 - percentile}% of recreational lifters! 🏆`);
+    
+    // Athlete comparisons
+    if (totalVolume > 10000) {
+        facts.push(`Your training volume matches that of competitive powerlifters! 💪`);
+    } else if (totalVolume > 5000) {
+        facts.push(`You're training like a college athlete! Keep it up! 🎓`);
+    }
+    
+    // Sets comparison
+    if (totalSets > 100) {
+        facts.push(`${totalSets} sets ${period === 'week' ? 'this week' : 'this month'}! That's more than most professional bodybuilders! 🏋️‍♂️`);
+    }
+    
+    const randomFact = facts[Math.floor(Math.random() * facts.length)];
+    return `<div class="fun-fact-box"><h5>🎉 Fun Fact</h5><p>${randomFact}</p></div>`;
+}
+
+// ==================== CAMERA MODE ====================
+
+async function startCamera() {
+    try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment' } 
+        });
+        cameraVideo.srcObject = cameraStream;
+        cameraVideo.style.display = 'block';
+        document.getElementById('cameraPreview').style.display = 'none';
+        document.getElementById('startCameraBtn').style.display = 'none';
+        document.getElementById('captureBtn').style.display = 'block';
+        document.getElementById('stopCameraBtn').style.display = 'block';
+    } catch (err) {
+        console.error('Camera access error:', err);
+        alert('Unable to access camera. Please grant camera permissions.');
+    }
+}
+
+function stopCamera() {
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+        cameraVideo.style.display = 'none';
+        cameraCanvas.style.display = 'none';
+        document.getElementById('cameraPreview').style.display = 'flex';
+        document.getElementById('startCameraBtn').style.display = 'block';
+        document.getElementById('captureBtn').style.display = 'none';
+        document.getElementById('stopCameraBtn').style.display = 'none';
+    }
+}
+
+function captureAndAnalyze() {
+    const resultBox = document.getElementById('aiCameraResult');
+    resultBox.classList.add('show');
+    resultBox.innerHTML = '<div class="loading-spinner"></div> Analyzing equipment...';
+    
+    // Capture image
+    cameraCanvas.width = cameraVideo.videoWidth;
+    cameraCanvas.height = cameraVideo.videoHeight;
+    const ctx = cameraCanvas.getContext('2d');
+    ctx.drawImage(cameraVideo, 0, 0);
+    
+    cameraVideo.style.display = 'none';
+    cameraCanvas.style.display = 'block';
+    
+    // Simulate AI analysis (in real implementation, you'd use TensorFlow.js or cloud vision API)
+    setTimeout(() => {
+        const detectedEquipment = analyzeEquipment();
+        displayEquipmentSuggestions(detectedEquipment, resultBox);
+    }, 2000);
+}
+
+function analyzeEquipment() {
+    // Simulated equipment detection
+    // In real implementation, use TensorFlow.js with a trained model
+    const equipmentTypes = [
+        'Cable Machine',
+        'Bench Press',
+        'Leg Press',
+        'Lat Pulldown',
+        'Chest Press Machine',
+        'Shoulder Press Machine',
+        'Leg Extension',
+        'Leg Curl',
+        'Rowing Machine',
+        'Smith Machine'
+    ];
+    
+    return equipmentTypes[Math.floor(Math.random() * equipmentTypes.length)];
+}
+
+function displayEquipmentSuggestions(equipment, resultBox) {
+    const suggestions = {
+        'Cable Machine': [
+            { name: 'Cable Chest Flys', category: 'Chest', muscle: 'Middle Chest' },
+            { name: 'Cable Lateral Raises', category: 'Shoulders', muscle: 'Side Delts' },
+            { name: 'Cable Rows', category: 'Upper Back', muscle: 'Lats' }
+        ],
+        'Bench Press': [
+            { name: 'Flat Bench Press', category: 'Chest', muscle: 'Middle Chest' },
+            { name: 'Incline Bench Press', category: 'Chest', muscle: 'Upper Chest' },
+            { name: 'Decline Bench Press', category: 'Chest', muscle: 'Lower Chest' }
+        ],
+        'Leg Press': [
+            { name: 'Leg Press', category: 'Legs', muscle: 'Quads' },
+            { name: 'Single Leg Press', category: 'Legs', muscle: 'Quads' }
+        ],
+        'Lat Pulldown': [
+            { name: 'Lat Pulldown', category: 'Upper Back', muscle: 'Lats' },
+            { name: 'Close Grip Pulldown', category: 'Upper Back', muscle: 'Lats' },
+            { name: 'Wide Grip Pulldown', category: 'Upper Back', muscle: 'Lats' }
+        ]
+    };
+    
+    const defaultSuggestions = [
+        { name: 'General Exercise', category: 'Various', muscle: 'Multiple' }
+    ];
+    
+    const exerciseSuggestions = suggestions[equipment] || defaultSuggestions;
+    
+    let html = `<h4>📸 Equipment Detected: ${equipment}</h4>`;
+    html += `<p><strong>Suggested Exercises:</strong></p><ul>`;
+    
+    exerciseSuggestions.forEach(ex => {
+        html += `<li><strong>${ex.name}</strong> - ${ex.category} (${ex.muscle})</li>`;
+    });
+    
+    html += `</ul>`;
+    html += `<p style="margin-top: 15px; color: #666; font-size: 0.9rem;">💡 Tip: Adjust your grip width and stance to target different muscle fibers!</p>`;
+    
+    resultBox.innerHTML = html;
+}
+
+// ==================== QUESTION MODE ====================
+
+function answerQuestion(question) {
+    const resultBox = document.getElementById('aiQuestionResult');
+    resultBox.classList.add('show');
+    resultBox.innerHTML = '<div class="loading-spinner"></div> Analyzing your data...';
+    
+    setTimeout(() => {
+        const userExercises = exercises.filter(ex => ex.user === currentUser);
+        let answer = '';
+        
+        const lowerQ = question.toLowerCase();
+        
+        if (lowerQ.includes('not progressing') || lowerQ.includes('plateau')) {
+            answer = analyzeProgression(userExercises, question);
+        } else if (lowerQ.includes('training enough') || lowerQ.includes('enough')) {
+            answer = analyzeTrainingFrequency(userExercises);
+        } else if (lowerQ.includes('focus') || lowerQ.includes('next')) {
+            answer = suggestFocus(userExercises);
+        } else if (lowerQ.includes('compare') || lowerQ.includes('others')) {
+            answer = compareToOthers(userExercises);
+        } else {
+            answer = provideGeneralAdvice(question, userExercises);
+        }
+        
+        resultBox.innerHTML = answer;
+    }, 1500);
+}
+
+function analyzeProgression(userExercises, question) {
+    const exerciseName = question.match(/on (.+?)\?/)?.[1] || 'this exercise';
+    const matchingExercises = userExercises.filter(ex => 
+        ex.name.toLowerCase().includes(exerciseName.toLowerCase())
+    );
+    
+    let html = `<h4>💬 Progression Analysis</h4>`;
+    
+    if (matchingExercises.length === 0) {
+        html += `<p>I couldn't find data for "${exerciseName}". Make sure you're logging this exercise regularly!</p>`;
+    } else {
+        const ex = matchingExercises[0];
+        const recentWorkouts = ex.history?.slice(-5) || [];
+        
+        html += `<p><strong>Analyzing: ${ex.name}</strong></p>`;
+        html += `<p><strong>Possible reasons for plateau:</strong></p>`;
+        html += `<ul>`;
+        html += `<li>🍽️ <strong>Nutrition:</strong> Make sure you're eating enough protein (1.6-2.2g per kg bodyweight) and in a slight calorie surplus.</li>`;
+        html += `<li>😴 <strong>Recovery:</strong> Are you getting 7-9 hours of sleep? Muscles grow during rest!</li>`;
+        html += `<li>📈 <strong>Progressive Overload:</strong> Try increasing weight by 2.5kg or adding 1-2 reps per set.</li>`;
+        html += `<li>🔄 <strong>Variation:</strong> Change your grip, tempo, or exercise angle to stimulate new growth.</li>`;
+        html += `<li>⚡ <strong>Intensity:</strong> Take sets closer to failure (1-2 reps in reserve).</li>`;
+        html += `</ul>`;
+        
+        if (recentWorkouts.length >= 3) {
+            const volumes = recentWorkouts.map(w => 
+                w.sets.reduce((sum, s) => sum + (s.weight * s.reps), 0)
+            );
+            const avgRecent = volumes.slice(-2).reduce((a, b) => a + b, 0) / 2;
+            const avgPrevious = volumes.slice(0, -2).reduce((a, b) => a + b, 0) / (volumes.length - 2);
+            
+            if (avgRecent < avgPrevious) {
+                html += `<p><strong>⚠️ Your volume has decreased recently.</strong> This could indicate fatigue or undertraining.</p>`;
+            }
+        }
+    }
+    
+    return html;
+}
+
+function analyzeTrainingFrequency(userExercises) {
+    const now = Date.now();
+    const weekAgo = now - (7 * 24 * 60 * 60 * 1000);
+    
+    const weeklyWorkouts = [];
+    userExercises.forEach(ex => {
+        ex.history?.forEach(h => {
+            if (new Date(h.date).getTime() >= weekAgo) {
+                weeklyWorkouts.push(h);
+            }
+        });
+    });
+    
+    const uniqueDays = new Set(weeklyWorkouts.map(w => new Date(w.date).toDateString())).size;
+    const totalSets = weeklyWorkouts.reduce((sum, w) => sum + w.sets.length, 0);
+    
+    let html = `<h4>💬 Training Frequency Analysis</h4>`;
+    html += `<p><strong>Last 7 days:</strong></p>`;
+    html += `<ul>`;
+    html += `<li>📅 ${uniqueDays} training days</li>`;
+    html += `<li>💪 ${totalSets} total sets</li>`;
+    html += `</ul>`;
+    
+    html += `<p><strong>Recommendations:</strong></p>`;
+    html += `<ul>`;
+    
+    if (uniqueDays < 3) {
+        html += `<li>🔴 You're training ${uniqueDays} days per week. For optimal muscle growth, aim for 3-5 days.</li>`;
+    } else if (uniqueDays >= 3 && uniqueDays <= 5) {
+        html += `<li>🟢 Perfect! ${uniqueDays} days per week is ideal for most people.</li>`;
+    } else {
+        html += `<li>🟡 ${uniqueDays} days is quite high. Make sure you're recovering properly between sessions.</li>`;
+    }
+    
+    const setsPerWeek = totalSets;
+    if (setsPerWeek < 40) {
+        html += `<li>Consider increasing your volume - aim for 40-70 sets per week across all muscle groups.</li>`;
+    } else if (setsPerWeek >= 40 && setsPerWeek <= 70) {
+        html += `<li>Your weekly volume (${setsPerWeek} sets) is in the optimal range!</li>`;
+    } else {
+        html += `<li>High volume detected (${setsPerWeek} sets/week). Monitor for signs of overtraining.</li>`;
+    }
+    
+    html += `</ul>`;
+    
+    return html;
+}
+
+function suggestFocus(userExercises) {
+    const categoryVolume = {};
+    const now = Date.now();
+    const monthAgo = now - (30 * 24 * 60 * 60 * 1000);
+    
+    userExercises.forEach(ex => {
+        ex.history?.forEach(h => {
+            if (new Date(h.date).getTime() >= monthAgo) {
+                categoryVolume[ex.category] = (categoryVolume[ex.category] || 0) + h.sets.length;
+            }
+        });
+    });
+    
+    const sortedCategories = Object.entries(categoryVolume).sort((a, b) => b[1] - a[1]);
+    const leastTrained = Object.keys(categoryVolume).length > 0 ? 
+        sortedCategories[sortedCategories.length - 1][0] : 'Legs';
+    
+    let html = `<h4>💬 Training Focus Suggestions</h4>`;
+    html += `<p><strong>Your training distribution (last 30 days):</strong></p>`;
+    html += `<ul>`;
+    
+    sortedCategories.forEach(([cat, sets]) => {
+        html += `<li>${cat}: ${sets} sets</li>`;
+    });
+    
+    html += `</ul>`;
+    html += `<p><strong>Recommendation:</strong></p>`;
+    html += `<p>Focus more on <strong>${leastTrained}</strong> to balance your physique. Aim for at least 10-20 sets per muscle group per week.</p>`;
+    
+    html += `<p><strong>💡 Pro Tips:</strong></p>`;
+    html += `<ul>`;
+    html += `<li>Train each muscle group 2x per week for optimal growth</li>`;
+    html += `<li>Prioritize weak points by training them first in your workout</li>`;
+    html += `<li>Don't neglect posterior chain (back, hamstrings, glutes)</li>`;
+    html += `</ul>`;
+    
+    return html;
+}
+
+function compareToOthers(userExercises) {
+    const allExercises = exercises;
+    const userWorkouts = userExercises.reduce((sum, ex) => sum + (ex.history?.length || 0), 0);
+    const avgWorkouts = allExercises.reduce((sum, ex) => sum + (ex.history?.length || 0), 0) / users.length;
+    
+    const userVolume = userExercises.reduce((sum, ex) => {
+        return sum + (ex.history?.reduce((s, h) => 
+            s + h.sets.reduce((ss, set) => ss + (set.weight * set.reps), 0), 0) || 0);
+    }, 0);
+    
+    let html = `<h4>💬 How You Compare</h4>`;
+    html += `<p><strong>Your Stats:</strong></p>`;
+    html += `<ul>`;
+    html += `<li>Total workouts logged: ${userWorkouts}</li>`;
+    html += `<li>Total volume moved: ${userVolume.toLocaleString()}kg</li>`;
+    html += `</ul>`;
+    
+    let percentile;
+    if (userWorkouts >= avgWorkouts * 1.5) {
+        percentile = "top 10%";
+    } else if (userWorkouts >= avgWorkouts) {
+        percentile = "top 30%";
+    } else {
+        percentile = "top 50%";
+    }
+    
+    html += `<p><strong>🏆 You're in the ${percentile} of users in this app!</strong></p>`;
+    html += `<p>Keep up the great work! Consistency is key to long-term success. 💪</p>`;
+    
+    return html;
+}
+
+function provideGeneralAdvice(question, userExercises) {
+    let html = `<h4>💬 General Advice</h4>`;
+    html += `<p>Based on your question: "${question}"</p>`;
+    html += `<p><strong>General Training Principles:</strong></p>`;
+    html += `<ul>`;
+    html += `<li>🎯 <strong>Progressive Overload:</strong> Gradually increase weight, reps, or sets over time</li>`;
+    html += `<li>🍗 <strong>Nutrition:</strong> Eat 1.6-2.2g protein per kg bodyweight daily</li>`;
+    html += `<li>😴 <strong>Recovery:</strong> Get 7-9 hours of sleep and rest days between training same muscles</li>`;
+    html += `<li>📊 <strong>Track Progress:</strong> Log all your workouts (you're already doing this!)</li>`;
+    html += `<li>🔄 <strong>Consistency:</strong> Train 3-5 times per week for best results</li>`;
+    html += `</ul>`;
+    
+    return html;
+}
+
+// ==================== SUBSTITUTE MODE ====================
+
+function populateSubstituteExercises() {
+    const select = document.getElementById('substituteExerciseSelect');
+    const userExercises = exercises.filter(ex => ex.user === currentUser);
+    
+    select.innerHTML = '<option value="">Select an exercise...</option>';
+    userExercises.forEach(ex => {
+        const option = document.createElement('option');
+        option.value = ex.id;
+        option.textContent = `${ex.name} (${ex.category})`;
+        select.appendChild(option);
+    });
+}
+
+function findSubstitutes() {
+    const exerciseId = parseInt(document.getElementById('substituteExerciseSelect').value);
+    const reason = document.getElementById('substituteReason').value;
+    const resultBox = document.getElementById('aiSubstituteResult');
+    
+    if (!exerciseId) {
+        alert('Please select an exercise');
+        return;
+    }
+    
+    resultBox.classList.add('show');
+    resultBox.innerHTML = '<div class="loading-spinner"></div> Finding alternatives...';
+    
+    setTimeout(() => {
+        const exercise = exercises.find(ex => ex.id === exerciseId);
+        const alternatives = getExerciseAlternatives(exercise, reason);
+        
+        let html = `<h4>🔄 Alternatives for ${exercise.name}</h4>`;
+        
+        if (reason) {
+            html += `<p><em>Reason: ${reason}</em></p>`;
+        }
+        
+        html += `<p><strong>Recommended Alternatives:</strong></p>`;
+        html += `<ul>`;
+        
+        alternatives.forEach(alt => {
+            html += `<li><strong>${alt.name}</strong> - ${alt.reason}</li>`;
+        });
+        
+        html += `</ul>`;
+        html += `<p style="margin-top: 15px; color: #666; font-size: 0.9rem;">💡 These exercises target similar muscle groups and movement patterns.</p>`;
+        
+        resultBox.innerHTML = html;
+    }, 1000);
+}
+
+function getExerciseAlternatives(exercise, reason) {
+    const alternatives = {
+        'Chest': [
+            { name: 'Push-ups', reason: 'Bodyweight alternative, works same muscles' },
+            { name: 'Dumbbell Press', reason: 'Free weight variation with greater range of motion' },
+            { name: 'Cable Flys', reason: 'Constant tension throughout movement' }
+        ],
+        'Upper Back': [
+            { name: 'Bent Over Rows', reason: 'Compound movement for back thickness' },
+            { name: 'Pull-ups', reason: 'Bodyweight alternative for lat development' },
+            { name: 'Cable Rows', reason: 'Machine alternative with adjustable resistance' }
+        ],
+        'Shoulders': [
+            { name: 'Dumbbell Shoulder Press', reason: 'Allows natural movement pattern' },
+            { name: 'Lateral Raises', reason: 'Isolates side deltoids' },
+            { name: 'Pike Push-ups', reason: 'Bodyweight shoulder exercise' }
+        ],
+        'Legs': [
+            { name: 'Goblet Squats', reason: 'Easier on back, great for quads' },
+            { name: 'Lunges', reason: 'Unilateral leg exercise' },
+            { name: 'Bulgarian Split Squats', reason: 'Targets quads and glutes' }
+        ],
+        'Biceps': [
+            { name: 'Hammer Curls', reason: 'Different grip targets brachialis' },
+            { name: 'Concentration Curls', reason: 'Great isolation exercise' },
+            { name: 'Cable Curls', reason: 'Constant tension variation' }
+        ],
+        'Triceps': [
+            { name: 'Close Grip Push-ups', reason: 'Bodyweight tricep exercise' },
+            { name: 'Overhead Extensions', reason: 'Targets long head of triceps' },
+            { name: 'Diamond Push-ups', reason: 'Intense bodyweight variation' }
+        ]
+    };
+    
+    const categoryAlts = alternatives[exercise.category] || [
+        { name: 'Ask a trainer', reason: 'Consult with a fitness professional for specific alternatives' }
+    ];
+    
+    // If reason contains "pain" or "injury", suggest lighter variations
+    if (reason.toLowerCase().includes('pain') || reason.toLowerCase().includes('injury')) {
+        return [
+            { name: 'Rest and Recovery', reason: 'Prioritize healing - consult a doctor if pain persists' },
+            { name: 'Light Mobility Work', reason: 'Maintain range of motion without load' },
+            ...categoryAlts.slice(0, 2)
+        ];
+    }
+    
+    return categoryAlts;
+}
+
+// ==================== COMPARE MODE ====================
+
+function analyzeProgress() {
+    const resultBox = document.getElementById('aiCompareResult');
+    resultBox.classList.add('show');
+    resultBox.innerHTML = '<div class="loading-spinner"></div> Analyzing muscle group progress...';
+    
+    setTimeout(() => {
+        const userExercises = exercises.filter(ex => ex.user === currentUser);
+        const categoryProgress = {};
+        
+        userExercises.forEach(ex => {
+            if (!categoryProgress[ex.category]) {
+                categoryProgress[ex.category] = {
+                    totalWorkouts: 0,
+                    totalVolume: 0,
+                    exercises: 0
+                };
+            }
+            
+            categoryProgress[ex.category].exercises++;
+            categoryProgress[ex.category].totalWorkouts += ex.history?.length || 0;
+            
+            ex.history?.forEach(h => {
+                const volume = h.sets.reduce((sum, s) => sum + (s.weight * s.reps), 0);
+                categoryProgress[ex.category].totalVolume += volume;
+            });
+        });
+        
+        const categories = Object.keys(categoryProgress);
+        
+        if (categories.length === 0) {
+            resultBox.innerHTML = '<p>Not enough data yet. Keep logging workouts!</p>';
+            return;
+        }
+        
+        // Find strongest and weakest
+        const sorted = categories.sort((a, b) => 
+            categoryProgress[b].totalWorkouts - categoryProgress[a].totalWorkouts
+        );
+        
+        const strongest = sorted[0];
+        const weakest = sorted[sorted.length - 1];
+        
+        let html = `<h4>📈 Progress Comparison Analysis</h4>`;
+        html += `<p><strong>Muscle Group Breakdown:</strong></p>`;
+        html += `<ul>`;
+        
+        sorted.forEach(cat => {
+            const data = categoryProgress[cat];
+            html += `<li><strong>${cat}:</strong> ${data.totalWorkouts} workouts, ${data.exercises} exercises`;
+            
+            if (cat === strongest) {
+                html += ` 🏆 <em>(Most trained)</em>`;
+            } else if (cat === weakest) {
+                html += ` ⚠️ <em>(Needs attention)</em>`;
+            }
+            
+            html += `</li>`;
+        });
+        
+        html += `</ul>`;
+        
+        html += `<p><strong>💡 Analysis:</strong></p>`;
+        
+        const strongestWorkouts = categoryProgress[strongest].totalWorkouts;
+        const weakestWorkouts = categoryProgress[weakest].totalWorkouts;
+        const ratio = strongestWorkouts / (weakestWorkouts || 1);
+        
+        if (ratio > 2) {
+            html += `<p>⚠️ <strong>Significant Imbalance Detected!</strong></p>`;
+            html += `<p>Your ${strongest} is trained ${ratio.toFixed(1)}x more than your ${weakest}. This could lead to:</p>`;
+            html += `<ul>`;
+            html += `<li>Muscle imbalances and postural issues</li>`;
+            html += `<li>Increased injury risk</li>`;
+            html += `<li>Unbalanced physique development</li>`;
+            html += `</ul>`;
+            html += `<p><strong>Recommendation:</strong> Add 2-3 exercises for ${weakest} and train them 2x per week.</p>`;
+        } else if (ratio > 1.5) {
+            html += `<p>Your ${strongest} progresses faster than ${weakest}. Consider adding more volume to ${weakest} for balanced development.</p>`;
+        } else {
+            html += `<p>✅ <strong>Well-balanced training!</strong> Your muscle groups are developing relatively evenly.</p>`;
+        }
+        
+        // Push/Pull/Legs analysis
+        const pushCategories = ['Chest', 'Shoulders', 'Triceps'];
+        const pullCategories = ['Upper Back', 'Lower Back', 'Biceps'];
+        const legCategories = ['Legs'];
+        
+        const pushVolume = categories.filter(c => pushCategories.includes(c))
+            .reduce((sum, c) => sum + categoryProgress[c].totalWorkouts, 0);
+        const pullVolume = categories.filter(c => pullCategories.includes(c))
+            .reduce((sum, c) => sum + categoryProgress[c].totalWorkouts, 0);
+        const legVolume = categories.filter(c => legCategories.includes(c))
+            .reduce((sum, c) => sum + categoryProgress[c].totalWorkouts, 0);
+        
+        html += `<p><strong>Push/Pull/Legs Balance:</strong></p>`;
+        html += `<ul>`;
+        html += `<li>Push (Chest/Shoulders/Triceps): ${pushVolume} workouts</li>`;
+        html += `<li>Pull (Back/Biceps): ${pullVolume} workouts</li>`;
+        html += `<li>Legs: ${legVolume} workouts</li>`;
+        html += `</ul>`;
+        
+        if (legVolume < pushVolume * 0.5) {
+            html += `<p>⚠️ Classic mistake: Don't skip leg day! Your leg volume is low compared to upper body.</p>`;
+        }
+        
+        if (pullVolume < pushVolume * 0.7) {
+            html += `<p>💡 Increase pull exercises to balance out pushing movements and prevent shoulder issues.</p>`;
+        }
+        
+        resultBox.innerHTML = html;
+    }, 1500);
+}
+
+// Initialize AI when DOM loads (called after main init)
+document.addEventListener('DOMContentLoaded', () => {
+    // Wait a bit for main init to complete
+    setTimeout(initAI, 100);
+});
+
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', init);

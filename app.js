@@ -260,24 +260,46 @@ function restoreData() {
     modal.className = 'modal';
     modal.style.display = 'block';
     
+    // Collect all backup versions
+    const backups = [];
     const localBackup = localStorage.getItem('gymTrackerBackup');
-    let backupInfo = '';
-    let backupDate = 'No backup found';
-    let hasBackup = false;
-    
     if (localBackup) {
         try {
-            const backup = JSON.parse(localBackup);
-            backupDate = new Date(backup.timestamp).toLocaleString();
-            backupInfo = `
-                <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                    <h4>📦 Automatic Backup Available</h4>
-                    <p><strong>Created:</strong> ${backupDate}</p>
-                    <p><strong>Exercises:</strong> ${backup.exercises?.length || 0}</p>
-                    <p><strong>Users:</strong> ${backup.users?.join(', ') || 'Unknown'}</p>
-                    <button onclick="restoreFromLocalStorage()" class="btn-primary" style="margin-top: 10px; padding: 10px 20px; background: #4caf50; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                        🔄 Restore This Backup
-                    </button>
+            backups.push({ ...JSON.parse(localBackup), version: 'Latest' });
+        } catch (e) {}
+    }
+    
+    // Get versioned backups
+    for (let i = 1; i <= 5; i++) {
+        const versionedBackup = localStorage.getItem(`gymTrackerBackup_v${i}`);
+        if (versionedBackup) {
+            try {
+                backups.push({ ...JSON.parse(versionedBackup), version: `v${i}` });
+            } catch (e) {}
+        }
+    }
+    
+    let backupInfo = '';
+    if (backups.length > 0) {
+        backupInfo = `
+            <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>📦 Available Backups (${backups.length} found)</h4>
+                ${backups.map((backup, idx) => `
+                    <div style="background: white; padding: 10px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #4caf50;">
+                        <p style="margin: 5px 0;"><strong>Backup ${idx + 1}</strong> ${backup.version !== 'Latest' ? `(${backup.version})` : '(Current)'}</p>
+                        <p style="margin: 5px 0; font-size: 0.9em;">📅 ${new Date(backup.timestamp).toLocaleString()}</p>
+                        <p style="margin: 5px 0; font-size: 0.9em;">📊 ${backup.exercises?.length || 0} exercises | 👥 ${backup.users?.join(', ') || 'Unknown'}</p>
+                        <button onclick="restoreFromVersion('${backup.version === 'Latest' ? 'current' : backup.version}')" 
+                                style="margin-top: 5px; padding: 8px 15px; background: #4caf50; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                            🔄 Restore This
+                        </button>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    } else {
+        backupInfo = '<p style="color: #f44336;">⚠️ No automatic backups found in browser storage.</p>';
+    }
                 </div>
             `;
             hasBackup = true;
@@ -329,24 +351,26 @@ function restoreData() {
     document.body.appendChild(modal);
 }
 
-// Helper function to restore from localStorage
-window.restoreFromLocalStorage = function() {
-    const localBackup = localStorage.getItem('gymTrackerBackup');
-    if (!localBackup) {
-        alert('❌ No backup found!');
+// Helper function to restore from versioned backups
+window.restoreFromVersion = function(version) {
+    let backupKey = version === 'current' ? 'gymTrackerBackup' : `gymTrackerBackup_${version}`;
+    const backupData = localStorage.getItem(backupKey);
+    
+    if (!backupData) {
+        alert('❌ Backup not found!');
         return;
     }
     
     try {
-        const backup = JSON.parse(localBackup);
+        const backup = JSON.parse(backupData);
         const backupDate = new Date(backup.timestamp).toLocaleString();
         
-        if (confirm(`⚠️ CONFIRM RESTORE\n\nThis will replace ALL current data with the backup from:\n${backupDate}\n\nExercises: ${backup.exercises?.length || 0}\n\nAre you absolutely sure?`)) {
+        if (confirm(`⚠️ CONFIRM RESTORE\n\nRestore backup from:\n${backupDate}\n\nExercises: ${backup.exercises?.length || 0}\n\nThis will replace ALL current data.`)) {
             exercises = backup.exercises;
             users = backup.users || users;
             saveToFirebase();
             renderExercises();
-            alert('✅ Data restored from automatic backup!');
+            alert('✅ Data restored successfully!');
             document.querySelector('.modal').remove();
         }
     } catch (e) {
@@ -354,6 +378,10 @@ window.restoreFromLocalStorage = function() {
     }
 }
 
+// Helper function to restore from localStorage (legacy support)
+window.restoreFromLocalStorage = function() {
+    restoreFromVersion('current');
+}
 // Helper function to restore from file
 window.restoreFromFile = function() {
     const input = document.getElementById('restoreFileInput');
@@ -2627,9 +2655,48 @@ function setupFirebaseListeners() {
             const data = snapshot.val();
             
             if (data && Array.isArray(data) && data.length > 0) {
-                // Firebase has data - use it
+                // SAFETY CHECK: Validate loaded data before accepting it
+                const validationResult = validateDataIntegrity(data);
+                
+                if (!validationResult.isValid) {
+                    console.warn('⚠️ Loaded data failed validation:', validationResult.errors);
+                    
+                    // Check if we have a better backup
+                    const localBackup = localStorage.getItem('gymTrackerBackup');
+                    if (localBackup) {
+                        try {
+                            const backup = JSON.parse(localBackup);
+                            const backupValidation = validateDataIntegrity(backup.exercises);
+                            
+                            if (backupValidation.isValid) {
+                                const useBackup = confirm(`⚠️ DATA CORRUPTION DETECTED\n\nFirebase data appears corrupted:\n${validationResult.errors.join('\n')}\n\nYour localStorage backup from ${new Date(backup.timestamp).toLocaleString()} is valid.\n\nUse backup instead of corrupted Firebase data?`);
+                                
+                                if (useBackup) {
+                                    exercises = backup.exercises;
+                                    console.log('✅ Using validated backup instead of corrupted Firebase data');
+                                    saveToFirebase(); // Overwrite corrupted Firebase data
+                                    renderExercises();
+                                    return;
+                                }
+                            }
+                        } catch (e) {
+                            console.error('Error checking backup:', e);
+                        }
+                    }
+                    
+                    // If user declined backup or no backup available, warn but continue
+                    const proceed = confirm(`⚠️ WARNING\n\nLoaded data has validation issues:\n${validationResult.errors.join('\n')}\n\nContinue loading this data?\n\n(Cancel to prevent loading)`);
+                    
+                    if (!proceed) {
+                        console.log('User cancelled loading corrupted data');
+                        alert('Data load cancelled. Please use the Restore button to load a backup.');
+                        return;
+                    }
+                }
+                
+                // Data validated or user accepted warnings - load it
                 exercises = data;
-                console.log(`Loaded ${exercises.length} exercises from Firebase`);
+                console.log(`✅ Loaded ${exercises.length} exercises from Firebase`);
             } else {
                 // Firebase is empty - check localStorage backup first
                 const localBackup = localStorage.getItem('gymTrackerBackup');
@@ -2673,34 +2740,114 @@ function setupFirebaseListeners() {
 function saveToFirebase() {
     if (!database) return;
     
-    // SAFETY CHECK: Prevent saving empty array
+    // SAFETY CHECK 1: Prevent saving empty array
     if (!exercises || exercises.length === 0) {
         console.error('SAFETY: Prevented saving empty exercises array to Firebase!');
         alert('⚠️ Cannot save: No exercises to save. This prevents accidental data loss.');
         return;
     }
     
-    // Create backup in localStorage before saving
+    // SAFETY CHECK 2: Validate data integrity before saving
+    const validationResult = validateDataIntegrity(exercises);
+    if (!validationResult.isValid) {
+        console.error('SAFETY: Data validation failed!', validationResult.errors);
+        const shouldContinue = confirm(`⚠️ DATA INTEGRITY WARNING\n\n${validationResult.errors.join('\n')}\n\nThis might indicate corrupted data. Continue saving anyway?\n\n(Click Cancel to prevent saving)`);
+        if (!shouldContinue) {
+            console.log('Save cancelled by user due to validation warnings');
+            return;
+        }
+    }
+    
+    // Create VERSIONED backup in localStorage (keep last 5 backups)
     try {
+        const timestamp = new Date().toISOString();
         const backup = {
             exercises: exercises,
-            timestamp: new Date().toISOString(),
+            timestamp: timestamp,
             users: users
         };
+        
+        // Save current backup
         localStorage.setItem('gymTrackerBackup', JSON.stringify(backup));
-        console.log('Backup saved to localStorage');
+        
+        // Maintain version history (last 5 backups)
+        const backupHistory = [];
+        for (let i = 1; i <= 4; i++) {
+            const oldBackup = localStorage.getItem(`gymTrackerBackup_v${i}`);
+            if (oldBackup) backupHistory.push(JSON.parse(oldBackup));
+        }
+        
+        // Add current backup to history
+        backupHistory.unshift(backup);
+        
+        // Keep only last 5
+        for (let i = 0; i < Math.min(5, backupHistory.length); i++) {
+            localStorage.setItem(`gymTrackerBackup_v${i + 1}`, JSON.stringify(backupHistory[i]));
+        }
+        
+        console.log(`✅ Backup saved (${backupHistory.length} versions in history)`);
     } catch (e) {
         console.error('Failed to create backup:', e);
+        alert('⚠️ Warning: Backup creation failed. Continue?');
     }
     
     database.ref('exercises').set(exercises)
         .then(() => {
-            console.log(`Data saved to Firebase: ${exercises.length} exercises`);
+            console.log(`✅ Data saved to Firebase: ${exercises.length} exercises`);
         })
         .catch((error) => {
             console.error('Firebase save error:', error);
             alert('Error saving data. Check your internet connection.');
         });
+}
+
+// Validate data integrity to prevent corruption
+function validateDataIntegrity(data) {
+    const errors = [];
+    
+    if (!Array.isArray(data)) {
+        errors.push('❌ Data is not an array');
+        return { isValid: false, errors };
+    }
+    
+    // Check for suspicious date patterns (all dates within 1 minute = likely corruption)
+    const allDates = [];
+    data.forEach(ex => {
+        if (ex.users) {
+            Object.values(ex.users).forEach(userData => {
+                if (userData.history && Array.isArray(userData.history)) {
+                    userData.history.forEach(session => {
+                        if (session.date) allDates.push(new Date(session.date).getTime());
+                    });
+                }
+            });
+        }
+    });
+    
+    if (allDates.length > 5) {
+        // Check if more than 80% of dates are within 1 minute of each other
+        const sortedDates = allDates.sort((a, b) => a - b);
+        const median = sortedDates[Math.floor(sortedDates.length / 2)];
+        const oneMinute = 60 * 1000;
+        const nearMedian = allDates.filter(d => Math.abs(d - median) < oneMinute);
+        
+        if (nearMedian.length > allDates.length * 0.8) {
+            errors.push(`⚠️ ${Math.round(nearMedian.length / allDates.length * 100)}% of workout dates are suspiciously similar (within 1 minute)`);
+            errors.push(`This suggests data corruption. Median date: ${new Date(median).toLocaleString()}`);
+        }
+    }
+    
+    // Check for exercises without proper structure
+    const missingStructure = data.filter(ex => !ex.id || !ex.name || !ex.category);
+    if (missingStructure.length > 0) {
+        errors.push(`⚠️ ${missingStructure.length} exercises missing required fields (id, name, or category)`);
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        errors: errors,
+        warnings: errors.length > 0 ? errors : ['✅ Data validation passed']
+    };
 }
 
 // ==================== AI COACH FUNCTIONALITY ====================

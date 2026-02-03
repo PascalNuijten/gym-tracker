@@ -896,7 +896,7 @@ function showWeeklySummary() {
         let totalExercises = 0; // Total exercises in category
         
         categoryExercises.forEach(ex => {
-            const history = ex.users[currentUser].history || [];
+            const history = ex.users?.[currentUser]?.history || [];
             
             // Find this week's and last week's sessions for this exercise
             const thisWeekSessions = [];
@@ -963,7 +963,7 @@ function showWeeklySummary() {
             let exercisesWithBothWeeks = 0;
             
             categoryExercises.forEach(ex => {
-                const history = ex.users[currentUser].history || [];
+                const history = ex.users?.[currentUser]?.history || [];
                 
                 // Calculate this week's average volume
                 const thisWeekSessions = history.filter(session => {
@@ -1186,7 +1186,7 @@ function displayWeeklySummaryModal(categorySummary, overall) {
             // Calculate performance for this week
             const categories = ['Chest', 'Back/Shoulder', 'Legs', 'Functional'];
             const userExercises = exercises.filter(ex => {
-                const userData = ex.users[currentUser];
+                const userData = ex.users?.[currentUser];
                 return userData && userData.history && userData.history.length > 0;
             });
             
@@ -1197,7 +1197,7 @@ function displayWeeklySummaryModal(categorySummary, overall) {
                 const categoryExercises = userExercises.filter(ex => ex.category === category);
                 
                 categoryExercises.forEach(ex => {
-                    const history = ex.users[currentUser].history || [];
+                    const history = ex.users?.[currentUser]?.history || [];
                     
                     const thisWeekSessions = history.filter(session => {
                         const sessionDate = new Date(session.date).getTime();

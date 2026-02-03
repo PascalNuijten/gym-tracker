@@ -2631,7 +2631,11 @@ function generateCombinedAnalysis(period) {
     resultBox.innerHTML = '<div class="loading-spinner"></div> Analyzing your performance...';
     
     setTimeout(() => {
-        const userExercises = exercises.filter(ex => ex.user === currentUser);
+        const userExercises = exercises.filter(ex => ex.users && ex.users[currentUser]);
+        
+        console.log('Analysis for period:', period);
+        console.log('User exercises found:', userExercises.length);
+        
         const now = new Date();
         let startDate;
         let periodName;
@@ -2791,7 +2795,11 @@ function answerAnalysisQuestion(question) {
     resultBox.innerHTML = '<div class="loading-spinner"></div> Analyzing your data...';
     
     setTimeout(() => {
-        const userExercises = exercises.filter(ex => ex.user === currentUser);
+        const userExercises = exercises.filter(ex => ex.users && ex.users[currentUser]);
+        
+        console.log('Question:', question);
+        console.log('User exercises found:', userExercises.length);
+        
         let answer = '';
         
         const lowerQ = question.toLowerCase();
@@ -3347,9 +3355,16 @@ function analyzeProgression(userExercises, question) {
         html += `<p>I couldn't find data for "${exerciseName}". Make sure you're logging this exercise regularly!</p>`;
     } else {
         const ex = matchingExercises[0];
-        const recentWorkouts = ex.history?.slice(-5) || [];
+        const userData = ex.users?.[currentUser];
+        const recentWorkouts = userData?.history?.slice(-5) || [];
         
         html += `<p><strong>Analyzing: ${ex.name}</strong></p>`;
+        
+        if (recentWorkouts.length === 0) {
+            html += `<p><strong>⚠️ No workout history found.</strong> Start logging workouts for this exercise to track progression!</p>`;
+            return html;
+        }
+        
         html += `<p><strong>Possible reasons for plateau:</strong></p>`;
         html += `<ul>`;
         html += `<li>🍽️ <strong>Nutrition:</strong> Make sure you're eating enough protein (1.6-2.2g per kg bodyweight) and in a slight calorie surplus.</li>`;
@@ -3381,7 +3396,8 @@ function analyzeTrainingFrequency(userExercises) {
     
     const weeklyWorkouts = [];
     userExercises.forEach(ex => {
-        ex.history?.forEach(h => {
+        const userData = ex.users?.[currentUser];
+        userData?.history?.forEach(h => {
             if (new Date(h.date).getTime() >= weekAgo) {
                 weeklyWorkouts.push(h);
             }
@@ -3429,7 +3445,8 @@ function suggestFocus(userExercises) {
     const monthAgo = now - (30 * 24 * 60 * 60 * 1000);
     
     userExercises.forEach(ex => {
-        ex.history?.forEach(h => {
+        const userData = ex.users?.[currentUser];
+        userData?.history?.forEach(h => {
             if (new Date(h.date).getTime() >= monthAgo) {
                 categoryVolume[ex.category] = (categoryVolume[ex.category] || 0) + h.sets.length;
             }
@@ -3464,11 +3481,33 @@ function suggestFocus(userExercises) {
 
 function compareToOthers(userExercises) {
     const allExercises = exercises;
-    const userWorkouts = userExercises.reduce((sum, ex) => sum + (ex.history?.length || 0), 0);
-    const avgWorkouts = allExercises.reduce((sum, ex) => sum + (ex.history?.length || 0), 0) / users.length;
     
+    // Count user's workouts
+    const userWorkouts = userExercises.reduce((sum, ex) => {
+        const userData = ex.users?.[currentUser];
+        return sum + (userData?.history?.length || 0);
+    }, 0);
+    
+    // Calculate average workouts across all users
+    let totalWorkouts = 0;
+    let totalUsers = 0;
+    allExercises.forEach(ex => {
+        if (ex.users) {
+            Object.keys(ex.users).forEach(user => {
+                const userData = ex.users[user];
+                if (userData?.history) {
+                    totalWorkouts += userData.history.length;
+                    totalUsers++;
+                }
+            });
+        }
+    });
+    const avgWorkouts = totalUsers > 0 ? totalWorkouts / totalUsers : 0;
+    
+    // Calculate user's volume
     const userVolume = userExercises.reduce((sum, ex) => {
-        return sum + (ex.history?.reduce((s, h) => 
+        const userData = ex.users?.[currentUser];
+        return sum + (userData?.history?.reduce((s, h) => 
             s + h.sets.reduce((ss, set) => ss + (set.weight * set.reps), 0), 0) || 0);
     }, 0);
     

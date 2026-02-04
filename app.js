@@ -2108,6 +2108,55 @@ function renderExercises() {
     }).join('');
 }
 
+// Validate data integrity to prevent corruption
+function validateDataIntegrity(data) {
+    const errors = [];
+    
+    if (!Array.isArray(data)) {
+        errors.push('❌ Data is not an array');
+        return { isValid: false, errors };
+    }
+    
+    // Check for suspicious date patterns (all dates within 1 minute = likely corruption)
+    const allDates = [];
+    data.forEach(ex => {
+        if (ex.users) {
+            Object.values(ex.users).forEach(userData => {
+                if (userData.history && Array.isArray(userData.history)) {
+                    userData.history.forEach(session => {
+                        if (session.date) allDates.push(new Date(session.date).getTime());
+                    });
+                }
+            });
+        }
+    });
+    
+    if (allDates.length > 5) {
+        // Check if more than 80% of dates are within 1 minute of each other
+        const sortedDates = allDates.sort((a, b) => a - b);
+        const median = sortedDates[Math.floor(sortedDates.length / 2)];
+        const oneMinute = 60 * 1000;
+        const nearMedian = allDates.filter(d => Math.abs(d - median) < oneMinute);
+        
+        if (nearMedian.length > allDates.length * 0.8) {
+            errors.push(`⚠️ ${Math.round(nearMedian.length / allDates.length * 100)}% of workout dates are suspiciously similar (within 1 minute)`);
+            errors.push(`This suggests data corruption. Median date: ${new Date(median).toLocaleString()}`);
+        }
+    }
+    
+    // Check for exercises without proper structure
+    const missingStructure = data.filter(ex => !ex.id || !ex.name || !ex.category);
+    if (missingStructure.length > 0) {
+        errors.push(`⚠️ ${missingStructure.length} exercises missing required fields (id, name, or category)`);
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        errors: errors,
+        warnings: errors.length > 0 ? errors : ['✅ Data validation passed']
+    };
+}
+
 // Firebase Database Functions
 function setupFirebaseListeners() {
     if (!database) return;
@@ -2735,55 +2784,6 @@ function setupFirebaseListeners() {
             alert('Error loading data. Check your internet connection.');
         });
     }
-}
-
-// Validate data integrity to prevent corruption
-function validateDataIntegrity(data) {
-    const errors = [];
-    
-    if (!Array.isArray(data)) {
-        errors.push('❌ Data is not an array');
-        return { isValid: false, errors };
-    }
-    
-    // Check for suspicious date patterns (all dates within 1 minute = likely corruption)
-    const allDates = [];
-    data.forEach(ex => {
-        if (ex.users) {
-            Object.values(ex.users).forEach(userData => {
-                if (userData.history && Array.isArray(userData.history)) {
-                    userData.history.forEach(session => {
-                        if (session.date) allDates.push(new Date(session.date).getTime());
-                    });
-                }
-            });
-        }
-    });
-    
-    if (allDates.length > 5) {
-        // Check if more than 80% of dates are within 1 minute of each other
-        const sortedDates = allDates.sort((a, b) => a - b);
-        const median = sortedDates[Math.floor(sortedDates.length / 2)];
-        const oneMinute = 60 * 1000;
-        const nearMedian = allDates.filter(d => Math.abs(d - median) < oneMinute);
-        
-        if (nearMedian.length > allDates.length * 0.8) {
-            errors.push(`⚠️ ${Math.round(nearMedian.length / allDates.length * 100)}% of workout dates are suspiciously similar (within 1 minute)`);
-            errors.push(`This suggests data corruption. Median date: ${new Date(median).toLocaleString()}`);
-        }
-    }
-    
-    // Check for exercises without proper structure
-    const missingStructure = data.filter(ex => !ex.id || !ex.name || !ex.category);
-    if (missingStructure.length > 0) {
-        errors.push(`⚠️ ${missingStructure.length} exercises missing required fields (id, name, or category)`);
-    }
-    
-    return {
-        isValid: errors.length === 0,
-        errors: errors,
-        warnings: errors.length > 0 ? errors : ['✅ Data validation passed']
-    };
 }
 
 function saveToFirebase() {

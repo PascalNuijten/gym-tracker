@@ -3989,8 +3989,157 @@ function findSubstitutes() {
 }
 
 function getAIExerciseAlternatives(exercise, reason) {
-    // Comprehensive muscle-specific alternative database with video tutorials
-    const exerciseDatabase = {
+    // AI-POWERED DYNAMIC RECOMMENDATIONS
+    // Analyzes exercise characteristics and generates intelligent alternatives
+    
+    const lowerReason = reason.toLowerCase();
+    const exerciseName = exercise.name.toLowerCase();
+    const muscle = (exercise.muscle || exercise.category || '').toLowerCase();
+    
+    // Handle injury/pain - prioritize recovery
+    if (lowerReason.includes('pain') || lowerReason.includes('injury') || lowerReason.includes('hurt')) {
+        return [
+            { name: '⚕️ See a Doctor/PT', muscle: 'Recovery', reason: 'Professional diagnosis for persistent pain', video: 'https://www.youtube.com/results?search_query=when+to+see+doctor+gym+injury' },
+            { name: 'Rest & Ice (RICE Protocol)', muscle: 'Recovery', reason: '48-72 hours for acute injuries', video: 'https://www.youtube.com/results?search_query=RICE+protocol+injury' },
+            { name: 'Mobility Work', muscle: 'Recovery', reason: 'Gentle movements to maintain range of motion', video: 'https://www.youtube.com/results?search_query=injury+mobility+exercises' },
+            { name: 'Light Antagonist Training', muscle: 'Active Recovery', reason: 'Train opposite muscle groups while healing', video: 'https://www.youtube.com/results?search_query=training+around+injury' },
+            { name: `Light ${exercise.name} (50% weight)`, muscle: muscle, reason: 'Test with minimal load after recovery', video: `https://www.youtube.com/results?search_query=${encodeURIComponent(exercise.name)}+light+weight+recovery` }
+        ];
+    }
+    
+    // AI ANALYSIS: Determine exercise characteristics
+    const isCompound = exerciseName.includes('press') || exerciseName.includes('squat') || 
+                       exerciseName.includes('deadlift') || exerciseName.includes('row') || 
+                       exerciseName.includes('pull') || exerciseName.includes('dip');
+    
+    const isIsolation = exerciseName.includes('curl') || exerciseName.includes('extension') || 
+                        exerciseName.includes('raise') || exerciseName.includes('fly');
+    
+    const equipment = exerciseName.includes('dumbbell') ? 'dumbbell' :
+                     exerciseName.includes('barbell') ? 'barbell' :
+                     exerciseName.includes('cable') ? 'cable' :
+                     exerciseName.includes('machine') ? 'machine' :
+                     exerciseName.includes('bodyweight') || exerciseName.includes('push-up') || 
+                     exerciseName.includes('pull-up') || exerciseName.includes('dip') ? 'bodyweight' : 'unknown';
+    
+    // AI GENERATION: Create intelligent alternatives based on muscle group and exercise type
+    const alternatives = [];
+    
+    // CHEST EXERCISES
+    if (muscle.includes('chest') || exerciseName.includes('bench') || exerciseName.includes('press') && muscle.includes('chest')) {
+        const chestAlts = [
+            { name: 'Dumbbell Bench Press', muscle: 'Full Chest', reason: 'Greater range of motion, fixes imbalances', difficulty: 'Intermediate' },
+            { name: 'Incline Barbell Press', muscle: 'Upper Chest', reason: '30-45° targets clavicular head', difficulty: 'Intermediate' },
+            { name: 'Decline Press', muscle: 'Lower Chest', reason: 'Emphasizes lower pec fibers', difficulty: 'Intermediate' },
+            { name: 'Cable Crossovers', muscle: 'Inner Chest', reason: 'Constant tension, peak contraction', difficulty: 'Beginner' },
+            { name: 'Weighted Dips', muscle: 'Lower Chest + Triceps', reason: 'Compound movement, lean forward', difficulty: 'Advanced' },
+            { name: 'Landmine Press', muscle: 'Upper Chest', reason: 'Shoulder-friendly angle', difficulty: 'Intermediate' },
+            { name: 'Push-ups (Diamond/Decline)', muscle: 'Chest Variations', reason: 'Bodyweight progression', difficulty: 'Beginner' },
+            { name: 'Pec Deck Machine', muscle: 'Chest Isolation', reason: 'Easy to control, constant tension', difficulty: 'Beginner' }
+        ];
+        
+        // Smart filtering based on equipment preference
+        if (lowerReason.includes('busy') || lowerReason.includes('occupied')) {
+            alternatives.push(...chestAlts.filter(a => a.name.toLowerCase().includes('bodyweight') || a.name.toLowerCase().includes('push-up') || a.name.toLowerCase().includes('dip')));
+        } else if (equipment === 'dumbbell') {
+            alternatives.push(...chestAlts.filter(a => a.name.includes('Dumbbell') || a.name.includes('Cable')));
+        } else if (equipment === 'barbell') {
+            alternatives.push(...chestAlts.filter(a => a.name.includes('Barbell') || a.name.includes('Decline') || a.name.includes('Incline')));
+        } else {
+            alternatives.push(...chestAlts.slice(0, 5));
+        }
+    }
+    
+    // BACK EXERCISES
+    else if (muscle.includes('back') || muscle.includes('lat') || exerciseName.includes('row') || exerciseName.includes('pull')) {
+        const backAlts = [
+            { name: 'Weighted Pull-ups', muscle: 'Lats + Biceps', reason: 'King of back width', difficulty: 'Advanced' },
+            { name: 'Pendlay Rows', muscle: 'Upper Back', reason: 'Explosive power from floor', difficulty: 'Advanced' },
+            { name: 'T-Bar Rows', muscle: 'Mid Back Thickness', reason: 'Supported, heavy loads', difficulty: 'Intermediate' },
+            { name: 'Lat Pulldown (Close Grip)', muscle: 'Lower Lats', reason: 'Targets lower lat fibers', difficulty: 'Beginner' },
+            { name: 'Face Pulls', muscle: 'Rear Delts + Upper Back', reason: 'Shoulder health essential', difficulty: 'Beginner' },
+            { name: 'Straight Arm Pulldown', muscle: 'Lat Isolation', reason: 'Removes biceps, pure lat', difficulty: 'Intermediate' },
+            { name: 'Inverted Rows', muscle: 'Mid Back', reason: 'Bodyweight horizontal pull', difficulty: 'Beginner' },
+            { name: 'Chest-Supported Row', muscle: 'Clean Reps', reason: 'Eliminates cheating', difficulty: 'Intermediate' }
+        ];
+        alternatives.push(...backAlts.slice(0, 5));
+    }
+    
+    // SHOULDER EXERCISES
+    else if (muscle.includes('shoulder') || muscle.includes('delt') || exerciseName.includes('shoulder') || 
+             (exerciseName.includes('press') && !muscle.includes('chest') && !muscle.includes('leg'))) {
+        const shoulderAlts = [
+            { name: 'Arnold Press', muscle: 'All 3 Deltoid Heads', reason: 'Rotation hits front/side/rear', difficulty: 'Intermediate' },
+            { name: 'Cable Lateral Raises', muscle: 'Side Delts', reason: 'Constant tension, width builder', difficulty: 'Beginner' },
+            { name: 'Face Pulls', muscle: 'Rear Delts', reason: 'Shoulder health and posture', difficulty: 'Beginner' },
+            { name: 'Lu Raises', muscle: 'Side + Rear Delts', reason: 'Overhead finish, unique stimulus', difficulty: 'Advanced' },
+            { name: 'Landmine Press', muscle: 'Front Delts', reason: 'Joint-friendly angle', difficulty: 'Intermediate' },
+            { name: 'Pike Push-ups', muscle: 'Shoulders', reason: 'Bodyweight shoulder builder', difficulty: 'Beginner' },
+            { name: 'Reverse Pec Deck', muscle: 'Rear Delts', reason: 'Isolation, constant tension', difficulty: 'Beginner' }
+        ];
+        alternatives.push(...shoulderAlts.slice(0, 5));
+    }
+    
+    // LEG EXERCISES
+    else if (muscle.includes('leg') || muscle.includes('quad') || muscle.includes('hamstring') || 
+             exerciseName.includes('squat') || exerciseName.includes('leg') || exerciseName.includes('deadlift')) {
+        const legAlts = [
+            { name: 'Bulgarian Split Squats', muscle: 'Quads + Glutes', reason: 'Best single-leg exercise', difficulty: 'Intermediate' },
+            { name: 'Front Squats', muscle: 'Quads', reason: 'More upright, quad emphasis', difficulty: 'Advanced' },
+            { name: 'Romanian Deadlifts', muscle: 'Hamstrings', reason: 'Hip hinge, posterior chain', difficulty: 'Intermediate' },
+            { name: 'Nordic Curls', muscle: 'Hamstrings', reason: 'Eccentric strength, injury prevention', difficulty: 'Advanced' },
+            { name: 'Goblet Squats', muscle: 'Quads', reason: 'Easy to learn, mobility', difficulty: 'Beginner' },
+            { name: 'Walking Lunges', muscle: 'Functional Legs', reason: 'Dynamic, real-world strength', difficulty: 'Beginner' },
+            { name: 'Sissy Squats', muscle: 'Quad Isolation', reason: 'Bodyweight quad killer', difficulty: 'Advanced' }
+        ];
+        alternatives.push(...legAlts.slice(0, 5));
+    }
+    
+    // BICEP EXERCISES
+    else if (muscle.includes('bicep') || exerciseName.includes('curl')) {
+        const bicepAlts = [
+            { name: 'Spider Curls', muscle: 'Bicep Peak', reason: 'Strict form, peak contraction', difficulty: 'Intermediate' },
+            { name: 'Incline Dumbbell Curls', muscle: 'Bicep Stretch', reason: 'Deep stretch, long head', difficulty: 'Beginner' },
+            { name: 'Hammer Curls', muscle: 'Brachialis', reason: 'Arm thickness, forearm size', difficulty: 'Beginner' },
+            { name: '21s (7+7+7 Reps)', muscle: 'Complete Bicep', reason: 'Time under tension, extreme pump', difficulty: 'Advanced' },
+            { name: 'Drag Curls', muscle: 'Long Head Bicep', reason: 'Bar drags up torso, unique angle', difficulty: 'Intermediate' },
+            { name: 'Chin-ups', muscle: 'Biceps + Back', reason: 'Compound bodyweight movement', difficulty: 'Intermediate' }
+        ];
+        alternatives.push(...bicepAlts.slice(0, 5));
+    }
+    
+    // TRICEP EXERCISES
+    else if (muscle.includes('tricep') || exerciseName.includes('tricep') || 
+             (exerciseName.includes('extension') && !exerciseName.includes('leg'))) {
+        const tricepAlts = [
+            { name: 'JM Press', muscle: 'Tricep Mass', reason: 'Hybrid skull crusher + close grip', difficulty: 'Advanced' },
+            { name: 'Overhead Cable Extension', muscle: 'Long Head', reason: 'Overhead stretches long head', difficulty: 'Beginner' },
+            { name: 'Close Grip Bench Press', muscle: 'Compound Tricep', reason: 'Heavy loads, full arm', difficulty: 'Intermediate' },
+            { name: 'Diamond Push-ups', muscle: 'Triceps', reason: 'Bodyweight, anywhere', difficulty: 'Beginner' },
+            { name: 'Tate Press', muscle: 'Lateral/Medial Head', reason: 'Unique elbow position', difficulty: 'Advanced' },
+            { name: 'Tricep Dips', muscle: 'Triceps + Chest', reason: 'Compound bodyweight', difficulty: 'Intermediate' }
+        ];
+        alternatives.push(...tricepAlts.slice(0, 5));
+    }
+    
+    // GENERIC FALLBACK for uncommon exercises
+    else {
+        alternatives.push(
+            { name: 'Progressive Overload', muscle: 'All Muscles', reason: 'Gradually increase weight/reps/sets', difficulty: 'All Levels' },
+            { name: 'Compound Movements', muscle: 'Multiple Groups', reason: 'Multi-joint efficiency', difficulty: 'All Levels' },
+            { name: 'Bodyweight Variations', muscle: 'Functional', reason: 'Master bodyweight first', difficulty: 'Beginner' },
+            { name: 'Consult a Trainer', muscle: 'Personalized', reason: 'Get exercise-specific recommendations', difficulty: 'All Levels' }
+        );
+    }
+    
+    // AI ENHANCEMENT: Add YouTube video links dynamically
+    const enhancedAlternatives = alternatives.slice(0, 5).map(alt => ({
+        ...alt,
+        video: `https://www.youtube.com/results?search_query=${encodeURIComponent(alt.name + ' form tutorial')}`
+    }));
+    
+    return enhancedAlternatives;
+}
         // ========== CHEST EXERCISES ==========
         'Bench Press': [
             { name: 'Dumbbell Bench Press', muscle: 'Full Chest', reason: 'Greater range of motion, fixes strength imbalances', video: 'https://www.youtube.com/results?search_query=dumbbell+bench+press+form' },
@@ -3998,222 +4147,6 @@ function getAIExerciseAlternatives(exercise, reason) {
             { name: 'Decline Press', muscle: 'Lower Chest', reason: 'Targets lower sternocostal fibers', video: 'https://www.youtube.com/results?search_query=decline+bench+press' },
             { name: 'Floor Press', muscle: 'Mid Chest', reason: 'Reduces shoulder stress, builds lockout strength', video: 'https://www.youtube.com/results?search_query=floor+press+technique' },
             { name: 'Weighted Dips', muscle: 'Lower Chest + Triceps', reason: 'Compound movement, lean forward for chest focus', video: 'https://www.youtube.com/results?search_query=chest+dips+form' }
-        ],
-        'Cable Flies': [
-            { name: 'Dumbbell Flys', muscle: 'Chest Stretch', reason: 'Deep stretch at bottom, peak contraction', video: 'https://www.youtube.com/results?search_query=dumbbell+fly+form' },
-            { name: 'Pec Deck Machine', muscle: 'Inner Chest', reason: 'Constant tension, easy to control', video: 'https://www.youtube.com/results?search_query=pec+deck+fly' },
-            { name: 'Cable Crossovers (high to low)', muscle: 'Lower Chest', reason: 'Adjustable angles for different chest areas', video: 'https://www.youtube.com/results?search_query=cable+crossover+chest' },
-            { name: 'Landmine Press', muscle: 'Upper Chest', reason: 'Unique angle, shoulder-friendly', video: 'https://www.youtube.com/results?search_query=landmine+press' }
-        ],
-        'Push-ups': [
-            { name: 'Archer Push-ups', muscle: 'Chest + Core', reason: 'Unilateral strength, progression to one-arm', video: 'https://www.youtube.com/results?search_query=archer+push+up' },
-            { name: 'Decline Push-ups', muscle: 'Upper Chest', reason: 'Feet elevated, more challenging', video: 'https://www.youtube.com/results?search_query=decline+push+ups' },
-            { name: 'Diamond Push-ups', muscle: 'Inner Chest + Triceps', reason: 'Hands together, intense tricep activation', video: 'https://www.youtube.com/results?search_query=diamond+push+ups' },
-            { name: 'Plyometric Push-ups', muscle: 'Explosive Power', reason: 'Builds speed and power', video: 'https://www.youtube.com/results?search_query=clap+push+ups' }
-        ],
-
-        // ========== BACK EXERCISES ==========
-        'Pull-ups': [
-            { name: 'Weighted Pull-ups', muscle: 'Lats + Biceps', reason: 'Progressive overload for strength', video: 'https://www.youtube.com/results?search_query=weighted+pull+ups' },
-            { name: 'Wide Grip Pull-ups', muscle: 'Lat Width', reason: 'Wider grip emphasizes lats', video: 'https://www.youtube.com/results?search_query=wide+grip+pull+ups' },
-            { name: 'Neutral Grip Pull-ups', muscle: 'Lat Thickness', reason: 'Easier on shoulders, mid-back focus', video: 'https://www.youtube.com/results?search_query=neutral+grip+pull+ups' },
-            { name: 'Australian Pull-ups', muscle: 'Mid Back', reason: 'Horizontal pulling, easier progression', video: 'https://www.youtube.com/results?search_query=inverted+rows' }
-        ],
-        'Lat Pulldown': [
-            { name: 'Close Grip Pulldown', muscle: 'Lower Lats', reason: 'Emphasizes lower lat fibers', video: 'https://www.youtube.com/results?search_query=close+grip+lat+pulldown' },
-            { name: 'Straight Arm Pulldown', muscle: 'Lat Isolation', reason: 'Removes biceps, pure lat contraction', video: 'https://www.youtube.com/results?search_query=straight+arm+pulldown' },
-            { name: 'Single Arm Pulldown', muscle: 'Lat Symmetry', reason: 'Fixes strength imbalances', video: 'https://www.youtube.com/results?search_query=single+arm+lat+pulldown' },
-            { name: 'Behind Neck Pulldown', muscle: 'Upper Lats', reason: 'Different muscle recruitment (be careful with form)', video: 'https://www.youtube.com/results?search_query=behind+neck+pulldown' }
-        ],
-        'Barbell Row': [
-            { name: 'Pendlay Row', muscle: 'Upper Back Power', reason: 'Explosive from floor, builds thickness', video: 'https://www.youtube.com/results?search_query=pendlay+row' },
-            { name: 'T-Bar Row', muscle: 'Mid Back Thickness', reason: 'Supported, heavy loads possible', video: 'https://www.youtube.com/results?search_query=t+bar+row' },
-            { name: 'Chest-Supported Row', muscle: 'Clean Reps', reason: 'Eliminates cheating, pure back work', video: 'https://www.youtube.com/results?search_query=chest+supported+row' },
-            { name: 'Kroc Rows', muscle: 'Lat + Grip Strength', reason: 'Heavy single arm rows', video: 'https://www.youtube.com/results?search_query=kroc+rows' },
-            { name: 'Yates Row', muscle: 'Lower Lats', reason: 'Underhand grip, more bicep involvement', video: 'https://www.youtube.com/results?search_query=yates+row' }
-        ],
-        'Deadlift': [
-            { name: 'Romanian Deadlift', muscle: 'Hamstrings + Lower Back', reason: 'Hip hinge pattern, less knee bend', video: 'https://www.youtube.com/results?search_query=romanian+deadlift+form' },
-            { name: 'Sumo Deadlift', muscle: 'Quads + Inner Thighs', reason: 'Wider stance, different biomechanics', video: 'https://www.youtube.com/results?search_query=sumo+deadlift' },
-            { name: 'Trap Bar Deadlift', muscle: 'Full Body', reason: 'More quad-dominant, easier on lower back', video: 'https://www.youtube.com/results?search_query=trap+bar+deadlift' },
-            { name: 'Deficit Deadlift', muscle: 'Off-Floor Strength', reason: 'Standing on platform, increased range', video: 'https://www.youtube.com/results?search_query=deficit+deadlift' }
-        ],
-
-        // ========== SHOULDER EXERCISES ==========
-        'Shoulder Press': [
-            { name: 'Arnold Press', muscle: 'All 3 Deltoid Heads', reason: 'Rotation targets front/side/rear delts', video: 'https://www.youtube.com/results?search_query=arnold+press' },
-            { name: 'Push Press', muscle: 'Explosive Delts', reason: 'Leg drive allows heavier loads', video: 'https://www.youtube.com/results?search_query=push+press' },
-            { name: 'Z-Press', muscle: 'Strict Shoulder Strength', reason: 'Seated on floor, no leg drive', video: 'https://www.youtube.com/results?search_query=z+press' },
-            { name: 'Landmine Press', muscle: 'Front Delts', reason: 'Unique angle, shoulder-friendly', video: 'https://www.youtube.com/results?search_query=landmine+shoulder+press' }
-        ],
-        'Lateral Raise': [
-            { name: 'Cable Lateral Raise', muscle: 'Side Delts', reason: 'Constant tension throughout movement', video: 'https://www.youtube.com/results?search_query=cable+lateral+raise' },
-            { name: 'Lu Raises', muscle: 'Side + Rear Delts', reason: 'Overhead finish, unique stimulus', video: 'https://www.youtube.com/results?search_query=lu+raises' },
-            { name: 'Y-Raises', muscle: 'Side + Rotator Cuff', reason: 'Thumbs up, shoulder health', video: 'https://www.youtube.com/results?search_query=y+raises' },
-            { name: 'Plate Front Raise', muscle: 'Front Delts', reason: 'Simple equipment, good mind-muscle connection', video: 'https://www.youtube.com/results?search_query=plate+front+raise' }
-        ],
-        'Face Pull': [
-            { name: 'Reverse Pec Deck', muscle: 'Rear Delts', reason: 'Isolation, constant tension', video: 'https://www.youtube.com/results?search_query=reverse+pec+deck' },
-            { name: 'Bent Over Dumbbell Flys', muscle: 'Rear Delts + Upper Back', reason: 'Free weight, stabilizer activation', video: 'https://www.youtube.com/results?search_query=bent+over+rear+delt+fly' },
-            { name: 'Wide Grip Cable Row', muscle: 'Rear Delts + Mid Traps', reason: 'Pull to upper chest', video: 'https://www.youtube.com/results?search_query=wide+grip+cable+row' },
-            { name: 'Band Pull-Apart', muscle: 'Rear Delts + Scapular', reason: 'Great warm-up, shoulder health', video: 'https://www.youtube.com/results?search_query=band+pull+aparts' }
-        ],
-
-        // ========== LEG EXERCISES ==========
-        'Squat': [
-            { name: 'Front Squat', muscle: 'Quads + Core', reason: 'More upright, quad-dominant', video: 'https://www.youtube.com/results?search_query=front+squat+form' },
-            { name: 'Bulgarian Split Squat', muscle: 'Quads + Glutes + Balance', reason: 'Single leg, fixes imbalances', video: 'https://www.youtube.com/results?search_query=bulgarian+split+squat' },
-            { name: 'Goblet Squat', muscle: 'Quads + Mobility', reason: 'Easy to learn, builds squat pattern', video: 'https://www.youtube.com/results?search_query=goblet+squat' },
-            { name: 'Hack Squat', muscle: 'Quads', reason: 'Machine-based, safe for solo training', video: 'https://www.youtube.com/results?search_query=hack+squat' },
-            { name: 'Box Squat', muscle: 'Posterior Chain', reason: 'Sit back, powerlifting staple', video: 'https://www.youtube.com/results?search_query=box+squat' }
-        ],
-        'Leg Press': [
-            { name: 'High Foot Placement Press', muscle: 'Glutes + Hamstrings', reason: 'Feet high on platform', video: 'https://www.youtube.com/results?search_query=leg+press+foot+placement' },
-            { name: 'Low Foot Placement Press', muscle: 'Quads', reason: 'Feet low, more knee bend', video: 'https://www.youtube.com/results?search_query=leg+press+quad+focus' },
-            { name: 'Single Leg Press', muscle: 'Unilateral Strength', reason: 'Fix imbalances, better control', video: 'https://www.youtube.com/results?search_query=single+leg+press' },
-            { name: 'Walking Lunges', muscle: 'Functional Legs', reason: 'Dynamic movement, real-world strength', video: 'https://www.youtube.com/results?search_query=walking+lunges' }
-        ],
-        'Leg Extension': [
-            { name: 'Sissy Squats', muscle: 'Quad Isolation', reason: 'Bodyweight quad killer, old-school', video: 'https://www.youtube.com/results?search_query=sissy+squat' },
-            { name: 'Spanish Squats', muscle: 'Quad Burn', reason: 'Band behind knees, constant tension', video: 'https://www.youtube.com/results?search_query=spanish+squat' },
-            { name: 'Terminal Knee Extension', muscle: 'VMO Development', reason: 'Knee health, teardrop muscle', video: 'https://www.youtube.com/results?search_query=terminal+knee+extension' },
-            { name: 'Cyclist Squats', muscle: 'Deep Quad Stretch', reason: 'Heels elevated, deep ROM', video: 'https://www.youtube.com/results?search_query=cyclist+squat' }
-        ],
-        'Leg Curl': [
-            { name: 'Nordic Curls', muscle: 'Eccentric Hamstring', reason: 'Bodyweight hamstring destroyer', video: 'https://www.youtube.com/results?search_query=nordic+curl' },
-            { name: 'Glute-Ham Raise', muscle: 'Full Posterior Chain', reason: 'Hamstrings + glutes + lower back', video: 'https://www.youtube.com/results?search_query=glute+ham+raise' },
-            { name: 'Swiss Ball Curls', muscle: 'Hamstrings + Core', reason: 'Unstable surface, extra core work', video: 'https://www.youtube.com/results?search_query=swiss+ball+leg+curl' },
-            { name: 'Single Leg Romanian Deadlift', muscle: 'Hamstrings + Balance', reason: 'Unilateral strength, functional', video: 'https://www.youtube.com/results?search_query=single+leg+romanian+deadlift' }
-        ],
-
-        // ========== ARM EXERCISES ==========
-        'Bicep Curl': [
-            { name: '21s Bicep Curls', muscle: 'Complete Bicep Development', reason: '7 bottom + 7 top + 7 full reps', video: 'https://www.youtube.com/results?search_query=21s+bicep+curls' },
-            { name: 'Spider Curls', muscle: 'Peak Contraction', reason: 'Chest on bench, no momentum', video: 'https://www.youtube.com/results?search_query=spider+curls' },
-            { name: 'Drag Curls', muscle: 'Long Head Bicep', reason: 'Bar drags up torso, unique angle', video: 'https://www.youtube.com/results?search_query=drag+curls' },
-            { name: 'Zottman Curls', muscle: 'Biceps + Forearms', reason: 'Curl up, reverse down', video: 'https://www.youtube.com/results?search_query=zottman+curls' },
-            { name: 'Incline Dumbbell Curl', muscle: 'Bicep Stretch', reason: 'Arms behind body, deep stretch', video: 'https://www.youtube.com/results?search_query=incline+dumbbell+curl' }
-        ],
-        'Hammer Curl': [
-            { name: 'Cross-Body Hammer Curl', muscle: 'Brachialis', reason: 'Curl across body, better contraction', video: 'https://www.youtube.com/results?search_query=cross+body+hammer+curl' },
-            { name: 'Rope Hammer Curl', muscle: 'Forearms + Biceps', reason: 'Cable provides constant tension', video: 'https://www.youtube.com/results?search_query=rope+hammer+curl' },
-            { name: 'Preacher Hammer Curl', muscle: 'Isolated Brachialis', reason: 'Prevents momentum, strict form', video: 'https://www.youtube.com/results?search_query=preacher+hammer+curl' }
-        ],
-        'Tricep Extension': [
-            { name: 'JM Press', muscle: 'Tricep Mass', reason: 'Hybrid between close grip and skull crusher', video: 'https://www.youtube.com/results?search_query=jm+press' },
-            { name: 'Tate Press', muscle: 'Lateral/Medial Head', reason: 'Unique elbow position, constant tension', video: 'https://www.youtube.com/results?search_query=tate+press' },
-            { name: 'Overhead Cable Extension', muscle: 'Long Head', reason: 'Arms overhead stretches long head', video: 'https://www.youtube.com/results?search_query=overhead+cable+tricep+extension' },
-            { name: 'Board Press', muscle: 'Lockout Strength', reason: 'Partial ROM, heavy loads', video: 'https://www.youtube.com/results?search_query=board+press' },
-            { name: 'Close Grip Floor Press', muscle: 'Tricep + Chest', reason: 'Shoulder-friendly compound', video: 'https://www.youtube.com/results?search_query=close+grip+floor+press' }
-        ],
-        'Skull Crusher': [
-            { name: 'French Press', muscle: 'Long Head', reason: 'Overhead position, deep stretch', video: 'https://www.youtube.com/results?search_query=french+press+triceps' },
-            { name: 'Decline Skull Crusher', muscle: 'Constant Tension', reason: 'Decline keeps tension throughout', video: 'https://www.youtube.com/results?search_query=decline+skull+crusher' },
-            { name: 'Cable Skull Crusher', muscle: 'Smooth Resistance', reason: 'Cable provides smooth tension curve', video: 'https://www.youtube.com/results?search_query=cable+skull+crusher' }
-        ]
-    };
-    
-    // Try to find specific exercise match (case-insensitive, partial match)
-    let alternatives = [];
-    const exerciseNameLower = exercise.name.toLowerCase();
-    
-    for (const [key, alts] of Object.entries(exerciseDatabase)) {
-        if (exerciseNameLower.includes(key.toLowerCase()) || key.toLowerCase().includes(exerciseNameLower)) {
-            alternatives = alts;
-            break;
-        }
-    }
-    
-    // If no specific match, use muscle/category-based alternatives
-    if (alternatives.length === 0) {
-        const muscleLower = exercise.muscle?.toLowerCase() || '';
-        
-        if (muscleLower.includes('chest')) {
-            alternatives = [
-                { name: 'Incline Dumbbell Press', muscle: 'Upper Chest', reason: 'Best for upper chest development', video: 'https://www.youtube.com/results?search_query=incline+dumbbell+press' },
-                { name: 'Cable Crossovers', muscle: 'Inner Chest', reason: 'Constant tension, various angles', video: 'https://www.youtube.com/results?search_query=cable+crossover' },
-                { name: 'Weighted Dips', muscle: 'Lower Chest', reason: 'Compound movement, lean forward', video: 'https://www.youtube.com/results?search_query=chest+dips' },
-                { name: 'Landmine Press', muscle: 'Front Delts + Chest', reason: 'Unique angle, shoulder-friendly', video: 'https://www.youtube.com/results?search_query=landmine+press' }
-            ];
-        } else if (muscleLower.includes('back') || muscleLower.includes('lat')) {
-            alternatives = [
-                { name: 'Pendlay Rows', muscle: 'Upper Back', reason: 'Explosive power, thick back', video: 'https://www.youtube.com/results?search_query=pendlay+row' },
-                { name: 'Weighted Pull-ups', muscle: 'Lats', reason: 'King of back width exercises', video: 'https://www.youtube.com/results?search_query=weighted+pull+ups' },
-                { name: 'T-Bar Rows', muscle: 'Mid Back', reason: 'Heavy loads, supported position', video: 'https://www.youtube.com/results?search_query=t+bar+row' },
-                { name: 'Face Pulls', muscle: 'Rear Delts + Upper Back', reason: 'Shoulder health and posture', video: 'https://www.youtube.com/results?search_query=face+pulls' }
-            ];
-        } else if (muscleLower.includes('shoulder') || muscleLower.includes('delt')) {
-            alternatives = [
-                { name: 'Arnold Press', muscle: 'All Deltoids', reason: 'Rotation hits all 3 heads', video: 'https://www.youtube.com/results?search_query=arnold+press' },
-                { name: 'Cable Lateral Raises', muscle: 'Side Delts', reason: 'Constant tension, width builder', video: 'https://www.youtube.com/results?search_query=cable+lateral+raise' },
-                { name: 'Face Pulls', muscle: 'Rear Delts', reason: 'Shoulder health essential', video: 'https://www.youtube.com/results?search_query=face+pulls' },
-                { name: 'Lu Raises', muscle: 'Side Delts', reason: 'Unique overhead finish', video: 'https://www.youtube.com/results?search_query=lu+raises' }
-            ];
-        } else if (muscleLower.includes('leg') || muscleLower.includes('quad') || muscleLower.includes('hamstring')) {
-            alternatives = [
-                { name: 'Bulgarian Split Squats', muscle: 'Quads + Glutes', reason: 'Best single-leg exercise', video: 'https://www.youtube.com/results?search_query=bulgarian+split+squat' },
-                { name: 'Nordic Curls', muscle: 'Hamstrings', reason: 'Eccentric strength, injury prevention', video: 'https://www.youtube.com/results?search_query=nordic+curl' },
-                { name: 'Front Squats', muscle: 'Quads', reason: 'More upright, quad emphasis', video: 'https://www.youtube.com/results?search_query=front+squat' },
-                { name: 'Romanian Deadlifts', muscle: 'Hamstrings', reason: 'Best posterior chain builder', video: 'https://www.youtube.com/results?search_query=romanian+deadlift' }
-            ];
-        } else if (muscleLower.includes('bicep') || muscleLower.includes('arm')) {
-            alternatives = [
-                { name: 'Spider Curls', muscle: 'Bicep Peak', reason: 'Strict form, peak contraction', video: 'https://www.youtube.com/results?search_query=spider+curls' },
-                { name: 'Incline Dumbbell Curls', muscle: 'Bicep Stretch', reason: 'Deep stretch, long head emphasis', video: 'https://www.youtube.com/results?search_query=incline+dumbbell+curl' },
-                { name: 'Hammer Curls', muscle: 'Brachialis', reason: 'Arm thickness, forearm size', video: 'https://www.youtube.com/results?search_query=hammer+curls' },
-                { name: '21s', muscle: 'Complete Bicep', reason: 'Time under tension, pump', video: 'https://www.youtube.com/results?search_query=21s+bicep' }
-            ];
-        } else if (muscleLower.includes('tricep')) {
-            alternatives = [
-                { name: 'JM Press', muscle: 'Tricep Mass', reason: 'Unique angle, mass builder', video: 'https://www.youtube.com/results?search_query=jm+press' },
-                { name: 'Overhead Cable Extension', muscle: 'Long Head', reason: 'Stretch position, full development', video: 'https://www.youtube.com/results?search_query=overhead+cable+tricep' },
-                { name: 'Close Grip Bench', muscle: 'Compound Tricep', reason: 'Heavy loads, full arm development', video: 'https://www.youtube.com/results?search_query=close+grip+bench+press' },
-                { name: 'Diamond Push-ups', muscle: 'Triceps', reason: 'Bodyweight, can do anywhere', video: 'https://www.youtube.com/results?search_query=diamond+push+ups' }
-            ];
-        } else {
-            // Generic fallback
-            alternatives = [
-                { name: 'Progressive Overload', muscle: 'All', reason: 'Gradually increase weight/reps/sets', video: 'https://www.youtube.com/results?search_query=progressive+overload+explained' },
-                { name: 'Compound Movements', muscle: 'Multiple Groups', reason: 'Multi-joint exercises for efficiency', video: 'https://www.youtube.com/results?search_query=compound+exercises' },
-                { name: 'Bodyweight Variations', muscle: 'Functional Strength', reason: 'Master your bodyweight first', video: 'https://www.youtube.com/results?search_query=bodyweight+exercises' }
-            ];
-        }
-    }
-    
-    // Handle injury/pain - prioritize recovery
-    const lowerReason = reason.toLowerCase();
-    if (lowerReason.includes('pain') || lowerReason.includes('injury') || lowerReason.includes('hurt')) {
-        return [
-            { name: '⚕️ See a Doctor/PT', muscle: 'Recovery', reason: 'Professional diagnosis for persistent pain', video: 'https://www.youtube.com/results?search_query=when+to+see+doctor+gym+injury' },
-            { name: 'Rest & Ice', muscle: 'Recovery', reason: '48-72 hours for acute injuries, RICE protocol', video: 'https://www.youtube.com/results?search_query=RICE+protocol+injury' },
-            { name: 'Mobility Work', muscle: 'Recovery', reason: 'Gentle movements to maintain range of motion', video: 'https://www.youtube.com/results?search_query=injury+mobility+exercises' },
-            { name: 'Light Antagonist Training', muscle: 'Active Recovery', reason: 'Train opposite muscle groups while healing', video: 'https://www.youtube.com/results?search_query=training+around+injury' },
-            ...alternatives.slice(0, 1).map(alt => ({...alt, reason: `${alt.reason} - USE 50% WEIGHT INITIALLY`}))
-        ];
-    }
-    
-    // Handle equipment issues - prioritize bodyweight/alternatives
-    if (lowerReason.includes('broken') || lowerReason.includes('busy') || lowerReason.includes('occupied') || lowerReason.includes('no equipment')) {
-        const bodyweightFirst = alternatives.filter(alt => 
-            alt.name.toLowerCase().includes('push') || 
-            alt.name.toLowerCase().includes('pull-up') ||
-            alt.name.toLowerCase().includes('dip') ||
-            alt.name.toLowerCase().includes('squat')
-        );
-        
-        return [...bodyweightFirst, ...alternatives.filter(alt => !bodyweightFirst.includes(alt))].slice(0, 5);
-    }
-    
-    // Return top 5 alternatives with videos
-    return alternatives.slice(0, 5);
-}
-        // Chest exercises
-        'Bench Press': [
-            { name: 'Dumbbell Bench Press', reason: 'Greater range of motion, unilateral training' },
-            { name: 'Push-ups', reason: 'Bodyweight alternative, can do anywhere' },
-            { name: 'Cable Press', reason: 'Constant tension, adjustable angles' },
-            { name: 'Machine Chest Press', reason: 'Safer for solo training, guided movement' },
-            { name: 'Incline Dumbbell Press', reason: 'Emphasizes upper chest development' }
 // ==================== COMPARE MODE ====================
 
 function analyzeProgress() {

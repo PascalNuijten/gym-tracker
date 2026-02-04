@@ -514,6 +514,10 @@ function populateExistingExercises() {
     // Get all exercises that current user hasn't done yet
     // This includes exercises done by other users OR exercises with no history at all
     const availableExercises = exercises.filter(ex => {
+        // Safety check: ensure users object exists
+        if (!ex.users) {
+            ex.users = {};
+        }
         const currentUserHistory = ex.users[currentUser]?.history || [];
         const available = currentUserHistory.length === 0;
         if (available) {
@@ -1411,6 +1415,10 @@ function generateWeeklyRoutine() {
     
     // Get user's exercises with history
     const userExercises = exercises.filter(ex => {
+        // Safety check: ensure users object exists
+        if (!ex.users) {
+            ex.users = {};
+        }
         const userData = ex.users[currentUser];
         return userData && userData.history && userData.history.length > 0;
     });
@@ -1445,6 +1453,10 @@ function generateWeeklyRoutine() {
             // Find most recent workout in this category
             let mostRecentWorkoutTime = 0;
             categoryExercises.forEach(ex => {
+                // Safety check: ensure users object exists
+                if (!ex.users) {
+                    ex.users = {};
+                }
                 const userData = ex.users[currentUser];
                 if (userData && userData.history && userData.history.length > 0) {
                     const lastSession = userData.history[userData.history.length - 1];
@@ -1457,6 +1469,10 @@ function generateWeeklyRoutine() {
             
             // Check if any exercise from this category was trained after generation
             const anyTrained = categoryExercises.some(ex => {
+                // Safety check: ensure users object exists
+                if (!ex.users || !ex.users[currentUser] || !ex.users[currentUser].history) {
+                    return false;
+                }
                 const recentWorkouts = ex.users[currentUser].history.filter(h => 
                     new Date(h.date) > lastGeneratedDate
                 );
@@ -1486,10 +1502,14 @@ function generateWeeklyRoutine() {
         // Generate NEW routine for this category
         // Score all exercises: prioritize longest time + slowest progress
         const scoredExercises = categoryExercises.map(ex => {
+            // Safety check: ensure users object exists
+            if (!ex.users) {
+                ex.users = {};
+            }
             const userData = ex.users[currentUser];
-            const history = userData.history || [];
+            const history = userData?.history || [];
             const lastSession = history[history.length - 1];
-            const lastDate = new Date(lastSession.date);
+            const lastDate = new Date(lastSession?.date);
             const daysSinceLastTrained = (Date.now() - lastDate.getTime()) / (1000 * 60 * 60 * 24);
             
             // Calculate progress score

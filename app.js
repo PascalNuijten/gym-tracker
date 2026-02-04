@@ -593,6 +593,11 @@ function saveExercise() {
             return;
         }
         
+        // Ensure users object exists
+        if (!exercise.users) {
+            exercise.users = {};
+        }
+        
         // Ensure current user has an entry (but no history yet)
         if (!exercise.users[currentUser]) {
             exercise.users[currentUser] = { history: [] };
@@ -1870,6 +1875,49 @@ function deleteHistory(exerciseId, historyIndex) {
     }
 }
 
+// Edit Set in History
+function editSet(exerciseId, historyIndex, setIndex) {
+    const exercise = exercises.find(ex => ex.id === exerciseId);
+    if (!exercise || !exercise.users[currentUser]) return;
+    
+    const session = exercise.users[currentUser].history[historyIndex];
+    if (!session || !session.sets[setIndex]) return;
+    
+    const currentSet = session.sets[setIndex];
+    const newReps = prompt(`Edit reps for Set ${setIndex + 1}:`, currentSet.reps);
+    
+    if (newReps === null) return; // User cancelled
+    
+    const reps = parseInt(newReps);
+    if (isNaN(reps) || reps < 0) {
+        alert('Please enter a valid number of reps');
+        return;
+    }
+    
+    const newWeight = prompt(`Edit weight for Set ${setIndex + 1}:`, currentSet.weight);
+    
+    if (newWeight === null) return; // User cancelled
+    
+    const weight = parseFloat(newWeight);
+    if (isNaN(weight) || weight < 0) {
+        alert('Please enter a valid weight');
+        return;
+    }
+    
+    // Update the set
+    session.sets[setIndex] = { reps, weight };
+    
+    saveToFirebase();
+    
+    // Close and reopen details modal to refresh
+    document.querySelectorAll('.modal').forEach(m => {
+        if (m.style.display === 'block' && m.querySelector('.history-section')) {
+            m.remove();
+        }
+    });
+    showExerciseDetails(exerciseId);
+}
+
 // Show Exercise Details Modal
 function showExerciseDetails(id) {
     const exercise = exercises.find(ex => ex.id === id);
@@ -1932,7 +1980,10 @@ function showExerciseDetails(id) {
                             </div>
                             <div class="history-sets">
                                 ${session.sets.map((set, i) => `
-                                    <span class="set-badge">Set ${i+1}: ${set.reps} reps @ ${formatWeight(set.weight)}</span>
+                                    <span class="set-badge">
+                                        Set ${i+1}: ${set.reps} reps @ ${formatWeight(set.weight)}
+                                        <button class="btn-edit-set" onclick="editSet(${exercise.id}, ${history.length - 1 - idx}, ${i})" title="Edit this set">✏️</button>
+                                    </span>
                                 `).join('')}
                             </div>
                             ${session.notes ? `<div class="history-notes">💭 ${session.notes}</div>` : ''}

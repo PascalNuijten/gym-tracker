@@ -692,6 +692,22 @@ textarea {
     transform: scale(1.05);
 }
 
+.btn-edit-set {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 0.85rem;
+    margin-left: 4px;
+    padding: 2px 4px;
+    opacity: 0.6;
+    transition: all 0.2s ease;
+}
+
+.btn-edit-set:hover {
+    opacity: 1;
+    transform: scale(1.2);
+}
+
 .history-sets {
     display: flex;
     flex-wrap: wrap;

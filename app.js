@@ -300,13 +300,6 @@ function restoreData() {
     } else {
         backupInfo = '<p style="color: #f44336;">⚠️ No automatic backups found in browser storage.</p>';
     }
-                </div>
-            `;
-            hasBackup = true;
-        } catch (e) {
-            console.error('Error parsing backup:', e);
-        }
-    }
     
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 600px;">

@@ -2047,11 +2047,14 @@ function renderExercises() {
                           exercise.muscle.toLowerCase().includes(searchValue) ||
                           exercise.category.toLowerCase().includes(searchValue);
         
-        // Only show exercises that the current user has done (has history)
-        const userData = exercise.users?.[currentUser];
-        const hasHistory = userData && userData.history && Array.isArray(userData.history) && userData.history.length > 0;
+        // Show exercises that the current user has access to (has a user entry)
+        // Safety check: ensure users object exists
+        if (!exercise.users) {
+            exercise.users = {};
+        }
+        const hasUserEntry = exercise.users.hasOwnProperty(currentUser);
         
-        return matchCategory && matchMuscle && matchSearch && hasHistory;
+        return matchCategory && matchMuscle && matchSearch && hasUserEntry;
     });
 
     if (filtered.length === 0) {

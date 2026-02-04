@@ -2718,32 +2718,28 @@ function setupFirebaseListeners() {
                             const backupValidation = validateDataIntegrity(backup.exercises);
                             
                             if (backupValidation.isValid) {
-                                const useBackup = confirm(`⚠️ DATA CORRUPTION DETECTED\n\nFirebase data appears corrupted:\n${validationResult.errors.join('\n')}\n\nYour localStorage backup from ${new Date(backup.timestamp).toLocaleString()} is valid.\n\nUse backup instead of corrupted Firebase data?`);
-                                
-                                if (useBackup) {
-                                    exercises = backup.exercises;
-                                    console.log('✅ Using validated backup instead of corrupted Firebase data');
-                                    saveToFirebase(); // Overwrite corrupted Firebase data
-                                    renderExercises();
-                                    return;
-                                }
+                                // Auto-use valid backup without prompting
+                                exercises = backup.exercises;
+                                console.log('✅ Auto-restored from valid backup (Firebase data was corrupted)');
+                                saveToFirebase(); // Overwrite corrupted Firebase data
+                                renderExercises();
+                                alert(`✅ Data automatically restored from backup\n\nFirebase data had issues, so we used your backup from ${new Date(backup.timestamp).toLocaleString()}`);
+                                return;
                             }
                         } catch (e) {
                             console.error('Error checking backup:', e);
                         }
                     }
                     
-                    // If user declined backup or no backup available, warn but continue
-                    const proceed = confirm(`⚠️ WARNING\n\nLoaded data has validation issues:\n${validationResult.errors.join('\n')}\n\nContinue loading this data?\n\n(Cancel to prevent loading)`);
-                    
-                    if (!proceed) {
-                        console.log('User cancelled loading corrupted data');
-                        alert('Data load cancelled. Please use the Restore button to load a backup.');
-                        return;
-                    }
+                    // No valid backup - load the data anyway with a warning
+                    console.warn('⚠️ Loading data despite validation warnings (no valid backup available)');
+                    exercises = data;
+                    console.log(`⚠️ Loaded ${exercises.length} exercises (with warnings)`);
+                    renderExercises();
+                    return;
                 }
                 
-                // Data validated or user accepted warnings - load it
+                // Data validated - load it
                 exercises = data;
                 console.log(`✅ Loaded ${exercises.length} exercises from Firebase`);
             } else {

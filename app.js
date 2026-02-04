@@ -4140,13 +4140,7 @@ function getAIExerciseAlternatives(exercise, reason) {
     
     return enhancedAlternatives;
 }
-        // ========== CHEST EXERCISES ==========
-        'Bench Press': [
-            { name: 'Dumbbell Bench Press', muscle: 'Full Chest', reason: 'Greater range of motion, fixes strength imbalances', video: 'https://www.youtube.com/results?search_query=dumbbell+bench+press+form' },
-            { name: 'Incline Barbell Press', muscle: 'Upper Chest', reason: '30-45° angle emphasizes clavicular head', video: 'https://www.youtube.com/results?search_query=incline+bench+press+form' },
-            { name: 'Decline Press', muscle: 'Lower Chest', reason: 'Targets lower sternocostal fibers', video: 'https://www.youtube.com/results?search_query=decline+bench+press' },
-            { name: 'Floor Press', muscle: 'Mid Chest', reason: 'Reduces shoulder stress, builds lockout strength', video: 'https://www.youtube.com/results?search_query=floor+press+technique' },
-            { name: 'Weighted Dips', muscle: 'Lower Chest + Triceps', reason: 'Compound movement, lean forward for chest focus', video: 'https://www.youtube.com/results?search_query=chest+dips+form' }
+
 // ==================== COMPARE MODE ====================
 
 function analyzeProgress() {

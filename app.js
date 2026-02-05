@@ -179,38 +179,7 @@ function setupEventListeners() {
     // Form Submit
     exerciseForm.addEventListener('submit', (e) => {
         e.preventDefault();
-        
-        // Check if user is selecting existing exercise
-        const existingExerciseBtn = document.getElementById('existingExerciseBtn');
-        const isSelectingExisting = existingExerciseBtn && existingExerciseBtn.classList.contains('active');
-        
-        if (isSelectingExisting) {
-            // Temporarily remove required attributes to bypass HTML5 validation
-            const nameField = document.getElementById('exerciseName');
-            const categoryField = document.getElementById('exerciseCategory');
-            const muscleField = document.getElementById('exerciseMuscle');
-            
-            const hadRequired = {
-                name: nameField.hasAttribute('required'),
-                category: categoryField.hasAttribute('required'),
-                muscle: muscleField.hasAttribute('required')
-            };
-            
-            nameField.removeAttribute('required');
-            categoryField.removeAttribute('required');
-            muscleField.removeAttribute('required');
-            
-            // Call save function
-            saveExercise();
-            
-            // Restore required attributes if they were there
-            if (hadRequired.name) nameField.setAttribute('required', 'required');
-            if (hadRequired.category) categoryField.setAttribute('required', 'required');
-            if (hadRequired.muscle) muscleField.setAttribute('required', 'required');
-        } else {
-            // Normal new exercise creation
-            saveExercise();
-        }
+        saveExercise();
     });
 
     // Workout Modal Handlers

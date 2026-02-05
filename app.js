@@ -130,10 +130,10 @@ function setupEventListeners() {
         document.getElementById('existingExerciseBtn').classList.add('active');
         document.getElementById('newExerciseBtn').classList.remove('active');
         
-        // Make exercise name not required when selecting existing
-        document.getElementById('exerciseName').required = false;
-        document.getElementById('exerciseCategory').required = false;
-        document.getElementById('exerciseMuscle').required = false;
+        // Remove all required attributes when selecting existing exercise
+        document.getElementById('exerciseName').removeAttribute('required');
+        document.getElementById('exerciseCategory').removeAttribute('required');
+        document.getElementById('exerciseMuscle').removeAttribute('required');
     });
 
     document.getElementById('newExerciseBtn').addEventListener('click', () => {
@@ -142,10 +142,10 @@ function setupEventListeners() {
         document.getElementById('newExerciseBtn').classList.add('active');
         document.getElementById('existingExerciseBtn').classList.remove('active');
         
-        // Make exercise name required when creating new
-        document.getElementById('exerciseName').required = true;
-        document.getElementById('exerciseCategory').required = true;
-        document.getElementById('exerciseMuscle').required = true;
+        // Set required attributes when creating new exercise
+        document.getElementById('exerciseName').setAttribute('required', 'required');
+        document.getElementById('exerciseCategory').setAttribute('required', 'required');
+        document.getElementById('exerciseMuscle').setAttribute('required', 'required');
     });
 
     // When selecting an existing exercise, update the form
@@ -598,16 +598,16 @@ function saveExercise() {
             exercise.users = {};
         }
         
-        // Ensure current user has an entry (but no history yet)
+        // Ensure current user has an entry
         if (!exercise.users[currentUser]) {
             exercise.users[currentUser] = { history: [] };
         }
         
-        saveToFirebase();
-        alert(`Exercise "${exercise.name}" added! Scroll down and click "Log Workout" to add your first session.`);
+        // Immediately open workout modal so exercise appears in list after first workout
         modal.style.display = 'none';
         exerciseForm.reset();
-        renderExercises();
+        alert(`Exercise "${exercise.name}" selected! Now log your first workout to add it to your list.`);
+        editExercise(exercise.id); // Open workout modal
         return;
     }
     
@@ -2095,20 +2095,19 @@ function renderExercises() {
         const matchCategory = categoryValue === 'all' || exercise.category === categoryValue;
         const matchMuscle = muscleValue === 'all' || exercise.muscle === muscleValue;
         const matchSearch = exercise.name.toLowerCase().includes(searchValue) ||
-                          exercise.muscle.toLowerCase().includes(searchValue) ||
-                          exercise.category.toLowerCase().includes(searchValue);
+                         exercise.muscle.toLowerCase().includes(searchValue) ||
+                         exercise.category.toLowerCase().includes(searchValue);
         
-        // Show exercises that the current user has access to (has a user entry)
+        // Show exercises only if the current user has workout history for them
         // Safety check: ensure users object exists
         if (!exercise.users) {
             exercise.users = {};
         }
-        const hasUserEntry = exercise.users.hasOwnProperty(currentUser);
+        const userData = exercise.users[currentUser];
+        const hasHistory = userData && userData.history && userData.history.length > 0;
         
-        return matchCategory && matchMuscle && matchSearch && hasUserEntry;
-    });
-
-    if (filtered.length === 0) {
+        return matchCategory && matchMuscle && matchSearch && hasHistory;
+    });    if (filtered.length === 0) {
         exerciseList.innerHTML = `
             <div class="empty-state">
                 <h2>No exercises found</h2>

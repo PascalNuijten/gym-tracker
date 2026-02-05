@@ -578,12 +578,12 @@ function saveExercise() {
     const isSelectingExisting = existingExerciseBtn && existingExerciseBtn.classList.contains('active');
     
     if (isSelectingExisting) {
-        // User is selecting an existing exercise
+        // User is selecting an existing exercise - NO field validation needed
         const existingExerciseSelect = document.getElementById('existingExerciseSelect');
         const selectedId = parseInt(existingExerciseSelect.value);
         
         if (!selectedId) {
-            alert('Please select an exercise from the list.');
+            alert('Please select an exercise from the dropdown list.');
             return;
         }
         
@@ -1884,7 +1884,7 @@ function editSet(exerciseId, historyIndex, setIndex) {
     if (!session || !session.sets[setIndex]) return;
     
     const currentSet = session.sets[setIndex];
-    const newReps = prompt(`Edit reps for Set ${setIndex + 1}:`, currentSet.reps);
+    const newReps = prompt(`Edit Set ${setIndex + 1}\n\nCurrent: ${currentSet.reps} reps @ ${currentSet.weight}kg\n\nEnter new REPS:`, currentSet.reps);
     
     if (newReps === null) return; // User cancelled
     
@@ -1894,7 +1894,7 @@ function editSet(exerciseId, historyIndex, setIndex) {
         return;
     }
     
-    const newWeight = prompt(`Edit weight for Set ${setIndex + 1}:`, currentSet.weight);
+    const newWeight = prompt(`Edit Set ${setIndex + 1}\n\nCurrent: ${currentSet.reps} reps @ ${currentSet.weight}kg\nNew: ${reps} reps @ ?\n\nEnter new WEIGHT (kg):`, currentSet.weight);
     
     if (newWeight === null) return; // User cancelled
     

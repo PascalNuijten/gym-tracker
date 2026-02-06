@@ -170,11 +170,7 @@ function setupEventListeners() {
         modal.style.display = 'none';
     });
 
-    window.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            modal.style.display = 'none';
-        }
-    });
+    // Removed outside-click-to-close to prevent accidental modal closing
 
     // Form Submit
     exerciseForm.addEventListener('submit', (e) => {
@@ -191,11 +187,7 @@ function setupEventListeners() {
         handleWorkoutModalClose();
     });
 
-    window.addEventListener('click', (e) => {
-        if (e.target === workoutModal) {
-            handleWorkoutModalClose();
-        }
-    });
+    // Removed outside-click-to-close to prevent accidental modal closing
 
     workoutForm.addEventListener('submit', (e) => {
         e.preventDefault();
@@ -586,9 +578,12 @@ function saveExercise() {
         // Immediately open workout modal so exercise appears in list after first workout
         modal.style.display = 'none';
         exerciseForm.reset();
-        editingExerciseId = null; // Clear this
+        // Don't clear editingExerciseId here - let editExercise handle it
         alert(`Exercise "${exercise.name}" selected! Now log your first workout to add it to your list.`);
-        editExercise(exercise.id); // Open workout modal
+        setTimeout(() => {
+            editingExerciseId = null; // Clear BEFORE opening workout modal
+            editExercise(exercise.id);
+        }, 100);
         return;
     }
     
@@ -777,7 +772,7 @@ function resetWorkoutSetsContainer() {
                 </div>
                 <div class="form-group">
                     <label for="workout_set1_weight">Weight (kg)</label>
-                    <input type="number" id="workout_set1_weight" class="workout-set-weight" min="0" step="0.5" placeholder="50" required>
+                    <input type="number" id="workout_set1_weight" class="workout-set-weight" min="0" step="0.25" placeholder="50" required>
                 </div>
             </div>
         </div>
@@ -810,7 +805,7 @@ function addWorkoutSet() {
             </div>
             <div class="form-group">
                 <label for="workout_set${workoutSetCounter}_weight">Weight (kg)</label>
-                <input type="number" id="workout_set${workoutSetCounter}_weight" class="workout-set-weight" min="0" step="0.5" placeholder="50" value="${prevWeight}" required>
+                <input type="number" id="workout_set${workoutSetCounter}_weight" class="workout-set-weight" min="0" step="0.25" placeholder="50" value="${prevWeight}" required>
             </div>
         </div>
     `;
@@ -2975,13 +2970,7 @@ function setupAIEventListeners() {
         stopCamera();
     });
     
-    // Close on outside click
-    window.addEventListener('click', (e) => {
-        if (e.target === aiModal) {
-            aiModal.style.display = 'none';
-            stopCamera();
-        }
-    });
+    // Removed outside-click-to-close to prevent accidental modal closing
     
     // Mode buttons
     aiModeButtons.forEach(btn => {
@@ -3618,7 +3607,7 @@ function openWorkoutModalForExercise(exerciseId, isFromCamera = false) {
             setDiv.className = 'set-input-group';
             setDiv.innerHTML = `
                 <span class="set-number">Set ${workoutSetCounter}</span>
-                <input type="number" class="workout-set-weight" placeholder="Weight (kg)" value="${set.weight}" step="0.5" min="0">
+                <input type="number" class="workout-set-weight" placeholder="Weight (kg)" value="${set.weight}" step="0.25" min="0">
                 <input type="number" class="workout-set-reps" placeholder="Reps" value="${set.reps}" step="1" min="1">
                 <button type="button" class="remove-set-btn" onclick="removeWorkoutSet(this)">✕</button>
             `;

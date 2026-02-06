@@ -548,39 +548,19 @@ function populateExistingExercises() {
 
 // Save Exercise (simplified - no workout logging, only creation/selection)
 function saveExercise() {
-    // Check if we're editing an existing exercise
-    if (editingExerciseId) {
-        const exercise = exercises.find(ex => ex.id === editingExerciseId);
-        if (exercise) {
-            // Update exercise details
-            exercise.name = document.getElementById('exerciseName').value.trim();
-            exercise.category = document.getElementById('exerciseCategory').value;
-            exercise.muscle = document.getElementById('exerciseMuscle').value;
-            exercise.image = document.getElementById('exerciseImage').value || '';
-            exercise.machineInfo = document.getElementById('machineInfo').value.trim();
-            
-            if (!exercise.name || !exercise.category || !exercise.muscle) {
-                alert('Please fill in all required fields!');
-                return;
-            }
-            
-            saveToFirebase();
-            alert(`Exercise "${exercise.name}" updated successfully!`);
-            modal.style.display = 'none';
-            editingExerciseId = null;
-            exerciseForm.reset();
-            renderExercises();
-            return;
-        }
-    }
-    
     const existingExerciseBtn = document.getElementById('existingExerciseBtn');
     const isSelectingExisting = existingExerciseBtn && existingExerciseBtn.classList.contains('active');
     
+    console.log('DEBUG: isSelectingExisting =', isSelectingExisting);
+    console.log('DEBUG: editingExerciseId =', editingExerciseId);
+    
+    // PRIORITY 1: Check if selecting existing exercise (regardless of editingExerciseId)
     if (isSelectingExisting) {
         // User is selecting an existing exercise - NO field validation needed
         const existingExerciseSelect = document.getElementById('existingExerciseSelect');
         const selectedId = parseInt(existingExerciseSelect.value);
+        
+        console.log('DEBUG: selectedId =', selectedId);
         
         if (!selectedId) {
             alert('Please select an exercise from the dropdown list.');
@@ -606,12 +586,39 @@ function saveExercise() {
         // Immediately open workout modal so exercise appears in list after first workout
         modal.style.display = 'none';
         exerciseForm.reset();
+        editingExerciseId = null; // Clear this
         alert(`Exercise "${exercise.name}" selected! Now log your first workout to add it to your list.`);
         editExercise(exercise.id); // Open workout modal
         return;
     }
     
-    // User is creating a new exercise
+    // PRIORITY 2: Check if we're editing an existing exercise
+    if (editingExerciseId) {
+        const exercise = exercises.find(ex => ex.id === editingExerciseId);
+        if (exercise) {
+            // Update exercise details
+            exercise.name = document.getElementById('exerciseName').value.trim();
+            exercise.category = document.getElementById('exerciseCategory').value;
+            exercise.muscle = document.getElementById('exerciseMuscle').value;
+            exercise.image = document.getElementById('exerciseImage').value || '';
+            exercise.machineInfo = document.getElementById('machineInfo').value.trim();
+            
+            if (!exercise.name || !exercise.category || !exercise.muscle) {
+                alert('Please fill in all required fields!');
+                return;
+            }
+            
+            saveToFirebase();
+            alert(`Exercise "${exercise.name}" updated successfully!`);
+            modal.style.display = 'none';
+            editingExerciseId = null;
+            exerciseForm.reset();
+            renderExercises();
+            return;
+        }
+    }
+    
+    // PRIORITY 3: User is creating a new exercise
     const name = document.getElementById('exerciseName').value.trim();
     const category = document.getElementById('exerciseCategory').value;
     const muscle = document.getElementById('exerciseMuscle').value;

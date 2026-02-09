@@ -2,7 +2,7 @@
 
 // AI CONFIGURATION
 const GEMINI_API_KEY = 'AIzaSyBnOgY0u9eaxZ1gDlwoXF0YCAn6mL035pU';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 let useRealAI = true; // Toggle this to switch between real AI and pattern matching
 
 // Firebase Configuration
@@ -39,14 +39,20 @@ let userProfiles = JSON.parse(localStorage.getItem('gymTrackerUserProfiles') || 
 
 // USER PROFILE HELPERS
 function saveUserProfile(username, profileData) {
+    // Always reload from localStorage first to ensure we have latest data
+    userProfiles = JSON.parse(localStorage.getItem('gymTrackerUserProfiles') || '{}');
+    
     userProfiles[username] = {
         ...profileData,
         lastUpdated: new Date().toISOString()
     };
     localStorage.setItem('gymTrackerUserProfiles', JSON.stringify(userProfiles));
+    console.log('✅ User profile saved for', username, profileData);
 }
 
 function getUserProfile(username) {
+    // Always reload from localStorage to get fresh data
+    userProfiles = JSON.parse(localStorage.getItem('gymTrackerUserProfiles') || '{}');
     return userProfiles[username] || null;
 }
 
@@ -148,19 +154,32 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
         });
         
         if (!response.ok) {
-            const error = await response.json();
-            console.error('Gemini API error:', error);
-            return null;
+            const errorText = await response.text();
+            console.error('Gemini API error response:', errorText);
+            try {
+                const error = JSON.parse(errorText);
+                console.error('Gemini API error:', error);
+                throw new Error(`API Error: ${error.error?.message || response.statusText}`);
+            } catch (e) {
+                throw new Error(`API Error: ${response.status} ${response.statusText}`);
+            }
         }
         
         const data = await response.json();
+        console.log('Full Gemini API response:', data);
+        
+        if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+            console.error('Unexpected API response structure:', data);
+            throw new Error('Invalid API response structure');
+        }
+        
         const aiResponse = data.candidates[0].content.parts[0].text;
         console.log('AI response:', aiResponse);
         return aiResponse;
         
     } catch (error) {
         console.error('Error calling AI:', error);
-        return null;
+        throw error; // Re-throw the error instead of returning null
     }
 }
 
@@ -1147,6 +1166,7 @@ function editExercise(id) {
             </div>
         </div>
         ${exercise.machineInfo ? `<div style="margin-top: 10px; font-style: italic; color: #666;">${exercise.machineInfo}</div>` : ''}
+        <div id="aiWeightRecommendation" style="margin-top: 10px;"></div>
     `;
     
     // Reset workout sets
@@ -1154,6 +1174,9 @@ function editExercise(id) {
     document.getElementById('workoutNotes').value = '';
 
     workoutModal.style.display = 'block';
+    
+    // Get AI weight recommendation
+    getAIWeightRecommendation(exercise);
 }
 
 // Edit Exercise Details (name, category, etc.) - DEPRECATED, keeping for compatibility
@@ -1271,6 +1294,179 @@ function removeWorkoutSet(setNumber) {
         workoutSetCounter--;
     }
 }
+
+// Get AI Weight Recommendation
+async function getAIWeightRecommendation(exercise) {
+    const recommendationDiv = document.getElementById('aiWeightRecommendation');
+    if (!recommendationDiv) return;
+    
+    // Don't show for bodyweight exercises
+    if (exercise.equipment === 'bodyweight' || exercise.equipment === 'none') {
+        return;
+    }
+    
+    if (!useRealAI) {
+        recommendationDiv.innerHTML = `<div style="padding: 10px; background: #f0f0f0; border-radius: 5px; font-size: 0.9em; color: #666;">💡 Enable AI for smart weight recommendations</div>`;
+        return;
+    }
+    
+    recommendationDiv.innerHTML = `<div style="padding: 10px; background: #e3f2fd; border-radius: 5px; font-size: 0.9em;">
+        <div class="loading-spinner" style="width: 16px; height: 16px; border-width: 2px; display: inline-block; vertical-align: middle;"></div> 
+        <span style="margin-left: 5px;">AI is analyzing your training data...</span>
+    </div>`;
+    
+    try {
+        // Get user's workout history for this exercise
+        const userData = exercise.users?.[currentUser];
+        const history = userData?.history || [];
+        
+        // Get user profile
+        const userProfile = getUserProfile(currentUser);
+        const profileContext = userProfile ? getUserContext(currentUser) : '';
+        
+        // Get ALL user's exercises with history to find related movements
+        const userExercises = exercises.filter(ex => ex.users && ex.users[currentUser]);
+        const relatedExercises = userExercises
+            .filter(ex => {
+                const exHistory = ex.users[currentUser]?.history || [];
+                return exHistory.length > 0 && (
+                    ex.muscle === exercise.muscle || // Same muscle group
+                    ex.category === exercise.category || // Same category
+                    ex.id !== exercise.id // Not the same exercise
+                );
+            })
+            .map(ex => {
+                const exHistory = ex.users[currentUser].history;
+                const recent = exHistory.slice(-3);
+                const avgWeight = recent.reduce((sum, s) => 
+                    sum + s.sets.reduce((s2, set) => s2 + set.weight, 0) / s.sets.length, 0
+                ) / recent.length;
+                const maxWeight = Math.max(...recent.flatMap(s => s.sets.map(set => set.weight)));
+                
+                return {
+                    name: ex.name,
+                    category: ex.category,
+                    muscle: ex.muscle,
+                    equipment: ex.equipment,
+                    avgWeight: avgWeight.toFixed(1),
+                    maxWeight: maxWeight.toFixed(1)
+                };
+            })
+            .slice(0, 10); // Top 10 most relevant
+        
+        let historyContext = '';
+        if (history.length > 0) {
+            const recent = history.slice(-5); // Last 5 sessions
+            historyContext = recent.map((session, idx) => {
+                const avgWeight = session.sets.reduce((sum, s) => sum + s.weight, 0) / session.sets.length;
+                const avgReps = session.sets.reduce((sum, s) => sum + s.reps, 0) / session.sets.length;
+                const maxWeight = Math.max(...session.sets.map(s => s.weight));
+                return `Session ${idx + 1} (${new Date(session.date).toLocaleDateString()}): ${session.sets.length} sets, avg ${avgWeight.toFixed(1)}kg × ${avgReps.toFixed(0)} reps, max ${maxWeight}kg`;
+            }).join('\n');
+        }
+        
+        let relatedExercisesContext = '';
+        if (relatedExercises.length > 0) {
+            relatedExercisesContext = '\nRELATED EXERCISES (for strength correlation):\n' + 
+                relatedExercises.map(ex => 
+                    `${ex.name} (${ex.muscle}, ${ex.equipment || 'unknown'}): avg ${ex.avgWeight}kg, max ${ex.maxWeight}kg`
+                ).join('\n');
+        }
+        
+        const prompt = `You are an expert strength coach. Recommend a starting weight for ${currentUser}'s next workout session.
+
+EXERCISE: ${exercise.name}
+- Category: ${exercise.category}
+- Muscle Group: ${exercise.muscle}
+- Equipment: ${exercise.equipment || 'unknown'}
+
+${profileContext ? `USER PROFILE:\n${profileContext}\n\n` : ''}${historyContext ? `WORKOUT HISTORY FOR THIS EXERCISE (Last 5 sessions):\n${historyContext}\n\n` : 'NO PREVIOUS HISTORY for this exercise\n\n'}${relatedExercisesContext}
+
+Recommend a weight in kg for their next session. Consider:
+${history.length > 0 ? `- Progressive overload: suggest slightly more than previous sessions if they're progressing well
+- Fatigue management: if they've been consistent, they might need a deload
+- Rep range: assume they'll do 8-12 reps` : `- STRENGTH CORRELATIONS: Use their performance on similar exercises to predict capacity
+  Example: If they squat 100kg, they might hack squat 80-90kg (mechanical advantage difference)
+  Example: If they bench 80kg, they might dumbbell press 28-32kg per hand (stability requirement)
+  Example: If they barbell row 70kg, they might cable row 60-65kg (different resistance curve)
+- Their experience level and bodyweight
+- Exercise-specific mechanics and difficulty
+- Safe, conservative recommendation for first attempt`}
+${userProfile?.injuries ? `- Their injuries/limitations: ${userProfile.injuries}\n` : ''}- Be specific and realistic based on ALL available data
+
+Respond in this EXACT format:
+WEIGHT: [number]
+REASONING: [one sentence explaining why, referencing related exercises if used]
+
+Example:
+WEIGHT: 85
+REASONING: Based on your 100kg squat, hack squat typically allows 80-90% of back squat weight.`;
+
+        const aiResponse = await callGeminiAI(prompt, null, false);
+        
+        if (aiResponse) {
+            // Parse AI response
+            const weightMatch = aiResponse.match(/WEIGHT:\s*([\d.]+)/i);
+            const reasoningMatch = aiResponse.match(/REASONING:\s*(.+)/i);
+            
+            if (weightMatch) {
+                const recommendedWeight = parseFloat(weightMatch[1]);
+                const reasoning = reasoningMatch ? reasoningMatch[1].trim() : 'AI recommendation based on your profile and history';
+                
+                recommendationDiv.innerHTML = `<div style="padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; font-size: 0.9em; box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);">
+                    <div style="font-weight: bold; margin-bottom: 5px;">🤖 AI Recommendation</div>
+                    <div style="font-size: 1.3em; font-weight: bold; margin: 8px 0;">${recommendedWeight}kg</div>
+                    <div style="font-size: 0.85em; opacity: 0.95;">${reasoning}</div>
+                    <button onclick="applyRecommendedWeight(${recommendedWeight})" class="secondary-btn" style="margin-top: 8px; font-size: 0.85em; padding: 6px 12px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white;">
+                        Apply ${recommendedWeight}kg
+                    </button>
+                </div>`;
+                
+                console.log('✅ AI weight recommendation:', recommendedWeight, 'kg');
+            } else {
+                throw new Error('Could not parse AI response');
+            }
+        } else {
+            throw new Error('No AI response');
+        }
+        
+    } catch (error) {
+        console.error('AI weight recommendation failed:', error);
+        
+        // Fallback to previous session weight if available
+        const userData = exercise.users?.[currentUser];
+        const history = userData?.history || [];
+        
+        if (history.length > 0) {
+            const lastSession = history[history.length - 1];
+            const lastWeight = lastSession.sets.length > 0 ? lastSession.sets[0].weight : null;
+            
+            if (lastWeight && lastWeight > 0) {
+                recommendationDiv.innerHTML = `<div style="padding: 10px; background: #fff3cd; border-radius: 5px; font-size: 0.9em;">
+                    <strong>💡 Last session:</strong> ${lastWeight}kg
+                    <button onclick="applyRecommendedWeight(${lastWeight})" class="secondary-btn" style="margin-left: 10px; font-size: 0.85em; padding: 4px 10px;">Use ${lastWeight}kg</button>
+                </div>`;
+            }
+        } else {
+            recommendationDiv.innerHTML = `<div style="padding: 10px; background: #f0f0f0; border-radius: 5px; font-size: 0.9em; color: #666;">💡 First time with this exercise? Start light and focus on form!</div>`;
+        }
+    }
+}
+
+// Apply recommended weight to first set
+window.applyRecommendedWeight = function(weight) {
+    const weightInput = document.getElementById('workout_set1_weight');
+    if (weightInput) {
+        weightInput.value = weight;
+        weightInput.focus();
+        
+        // Visual feedback
+        weightInput.style.background = '#e3f2fd';
+        setTimeout(() => {
+            weightInput.style.background = '';
+        }, 1000);
+    }
+};
 
 // Save Workout
 function saveWorkout() {
@@ -2691,16 +2887,13 @@ function validateDataIntegrity(data) {
         }
     });
     
-    if (allDates.length > 5) {
-        // Check if more than 80% of dates are within 1 minute of each other
-        const sortedDates = allDates.sort((a, b) => a - b);
-        const median = sortedDates[Math.floor(sortedDates.length / 2)];
-        const oneMinute = 60 * 1000;
-        const nearMedian = allDates.filter(d => Math.abs(d - median) < oneMinute);
+    if (allDates.length > 20) {
+        // Check if ALL dates are identical (true corruption, not just quick workouts)
+        const uniqueDates = new Set(allDates.map(d => Math.floor(d / 1000))); // Group by second
         
-        if (nearMedian.length > allDates.length * 0.8) {
-            errors.push(`⚠️ ${Math.round(nearMedian.length / allDates.length * 100)}% of workout dates are suspiciously similar (within 1 minute)`);
-            errors.push(`This suggests data corruption. Median date: ${new Date(median).toLocaleString()}`);
+        if (uniqueDates.size === 1) {
+            errors.push(`⚠️ ALL ${allDates.length} workout dates are identical - clear data corruption`);
+            errors.push(`Date: ${new Date(allDates[0]).toLocaleString()}`);
         }
     }
     
@@ -3280,10 +3473,14 @@ function setupFirebaseListeners() {
                             if (backupValidation.isValid) {
                                 // Auto-use valid backup without prompting
                                 exercises = backup.exercises;
-                                console.log('✅ Auto-restored from valid backup (Firebase data was corrupted)');
-                                saveToFirebase(); // Overwrite corrupted Firebase data
+                                console.log('✅ Auto-restored from valid backup (Firebase data had validation issues)');
+                                saveToFirebase(); // Overwrite Firebase data
                                 renderExercises();
-                                alert(`✅ Data automatically restored from backup\n\nFirebase data had issues, so we used your backup from ${new Date(backup.timestamp).toLocaleString()}`);
+                                
+                                // Show detailed info in console, simple message to user
+                                console.warn('Firebase validation errors:', validationResult.errors);
+                                console.log('Backup timestamp:', backup.timestamp);
+                                alert(`🔄 Data synced from local backup\n\n${validationResult.errors.length} issue(s) detected in cloud data, so we used your most recent local backup to ensure data quality.\n\nYour data is safe!`);
                                 return;
                             }
                         } catch (e) {
@@ -3642,9 +3839,16 @@ function generateCombinedAnalysis(period) {
             feedback += `<div class="loading-spinner"></div> <p>AI is analyzing your complete training data...</p>`;
             resultBox.innerHTML = feedback;
             
+            // Get user profile for personalized analysis
+            const userProfile = getUserProfile(currentUser);
+            const profileContext = userProfile ? getUserContext(currentUser) : '';
+            
             const prompt = `You are an expert personal trainer analyzing ${currentUser}'s workout data for ${periodName.toLowerCase()}.
 
-WORKOUT DATA SUMMARY:
+${profileContext ? `USER PROFILE:
+${profileContext}
+
+` : ''}WORKOUT DATA SUMMARY:
 - Training Days: ${uniqueDays} days
 - Different Exercises: ${uniqueExercises} exercises
 - Total Sets: ${totalSets} sets
@@ -3655,15 +3859,15 @@ DETAILED WORKOUTS:
 ${workoutSummary}
 
 Provide a comprehensive analysis (200-300 words) covering:
-1. **Overall Performance**: Comment on training frequency, volume, and consistency
+1. **Overall Performance**: Comment on training frequency, volume, and consistency RELATIVE to their profile
 2. **Muscle Group Balance**: Analyze if training is balanced (push/pull/legs ratio)
 3. **Specific Insights**: Identify strengths and weaknesses based on actual data
-4. **Actionable Recommendations**: 2-3 specific things to improve (exercises to add, volume adjustments, etc.)
-5. **Progress Indicators**: Are they on track for their goals?
+4. **Actionable Recommendations**: 2-3 specific things to improve considering their experience level, goals, and any injuries
+5. **Progress Indicators**: Are they on track for their specific fitness goals?
 
-Consider their personal profile (height, weight, experience, goals, injuries) in your analysis.
+${userProfile?.injuries ? `IMPORTANT: Consider their reported injuries: ${userProfile.injuries}. Suggest safe alternatives if needed.
 
-Format with HTML: Use <strong> for emphasis, <ul><li> for lists, keep it encouraging but honest.`;
+` : ''}Format with HTML: Use <strong> for emphasis, <ul><li> for lists, keep it encouraging but honest.`;
 
             console.log('Calling AI for performance analysis...');
             const aiAnalysis = await callGeminiAI(prompt); // includeUserContext=true by default
@@ -3817,9 +4021,16 @@ async function askAIQuestion(question) {
                 return sum + w.sets.reduce((s, set) => s + (set.weight * set.reps), 0);
             }, 0);
             
+            // Get user profile for personalized coaching
+            const userProfile = getUserProfile(currentUser);
+            const profileContext = userProfile ? getUserContext(currentUser) : '';
+            
             const prompt = `You are an expert personal trainer analyzing workout data for ${currentUser}.
 
-Question: "${question}"
+${profileContext ? `USER PROFILE:
+${profileContext}
+
+` : ''}Question: "${question}"
 
 RECENT TRAINING DATA:
 - Last 7 days: ${last7Days.length} workouts, ${weeklyVolume.toLocaleString()}kg total volume
@@ -3830,8 +4041,9 @@ ${workoutSummary}
 Provide a specific, actionable answer (100-150 words):
 - Reference actual exercises and numbers from their data
 - Give concrete recommendations based on their training history
-- Consider their personal profile (height, weight, experience, goals, injuries) in your answer
-- Be encouraging but honest
+- CRITICALLY IMPORTANT: Tailor advice to their experience level, goals, and physical profile
+${userProfile?.injuries ? `- Account for their injuries/limitations: ${userProfile.injuries}
+` : ''}- Be encouraging but honest
 - Use fitness expertise
 
 Format as HTML with <strong> tags for emphasis.`;
@@ -4013,22 +4225,33 @@ async function generateFunFact(totalVolume, totalSets, period) {
         return `<div class="fun-fact-box"><h5>🎉 Fun Fact</h5><p>Enable AI for personalized fun facts! 🤖</p></div>`;
     }
     
-    const prompt = `You are an enthusiastic fitness coach. Generate ONE unique, creative fun fact about this workout achievement:
+    // Get user profile for personalized fun facts
+    const userProfile = getUserProfile(currentUser);
+    const profileContext = userProfile ? `
 
-Stats:
+User Profile:
+- ${userProfile.gender || 'Unknown gender'}, ${userProfile.age || 'Unknown age'}
+- ${userProfile.weight || 'Unknown'}kg bodyweight
+- ${userProfile.experience || 'Unknown'} experience level
+- Goal: ${userProfile.goal || 'General fitness'}` : '';
+    
+    const prompt = `You are an enthusiastic fitness coach. Generate ONE unique, creative fun fact about this workout achievement:${profileContext}
+
+Workout Stats:
 - Total volume: ${totalVolume.toLocaleString()}kg
 - Total sets: ${totalSets}
 - Period: ${period}
 
-Create a fun, UNIQUE comparison or insight (30-50 words). Be creative and avoid clichés. Ideas:
-- Compare volume to unusual real-world objects or animals
+Create a fun, UNIQUE comparison or insight (30-50 words) PERSONALIZED to their profile. Be creative and avoid clichés. Ideas:
+- Compare volume to their bodyweight (e.g., "lifted 50x your bodyweight!")
+- Compare to unusual real-world objects or animals
 - Historical or pop culture references
 - Scientific physiological facts
-- Percentile rankings with specific contexts
+- Percentile rankings for their experience level
 - Athletic achievements comparisons
 
 Requirements:
-- Must be specific to their actual numbers
+- Must be specific to their actual numbers AND profile
 - Use emojis
 - Be encouraging and fun
 - NO generic statements

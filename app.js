@@ -302,15 +302,15 @@ Respond with ONLY a JSON object in this exact format:
 {
   "category": "Chest/Upper Back/Lower Back/Laterals/Shoulders/Biceps/Triceps/Abdominals/Legs",
   "muscles": ["Primary Muscle 1", "Primary Muscle 2"],
-  "imageUrl": "https://example.com/image.jpg",
   "equipment": "Equipment description"
 }
 
 Rules:
 - category: Must be ONE of the listed categories
 - muscles: Array of 1-3 primary muscles from this list: [Chest, Upper Chest, Lower Chest, Back, Lats, Traps, Lower Back, Shoulders, Front Delts, Side Delts, Rear Delts, Biceps, Triceps, Forearms, Quads, Hamstrings, Glutes, Calves, Abs, Obliques, Core]
-- imageUrl: Search for a real demonstration image URL or use a placeholder
-- equipment: Brief description (e.g., "Barbell", "Dumbbells", "Cable Machine")`;
+- equipment: Brief description (e.g., "Barbell", "Dumbbells", "Cable Machine", "Bodyweight")
+
+Be concise and respond immediately with only the JSON.`;
 
         // Race between AI response and timeout
         const aiResponse = await Promise.race([
@@ -348,12 +348,6 @@ Rules:
                 );
             });
             console.log('Muscles selected:', data.muscles);
-        }
-        
-        // Auto-fill image URL
-        if (data.imageUrl && data.imageUrl.startsWith('http')) {
-            imageInput.value = data.imageUrl;
-            console.log('Image URL set');
         }
         
         // Auto-fill equipment info

@@ -99,7 +99,7 @@ function setupEventListeners() {
 
     // Add Exercise Button
     addExerciseBtn.addEventListener('click', () => {
-        editingExerciseId = null;
+        editingExerciseId = null; // Clear any previous editing state
         document.getElementById('modalTitle').textContent = 'Add Exercise';
         exerciseForm.reset();
         
@@ -113,6 +113,9 @@ function setupEventListeners() {
         document.getElementById('existingExerciseSection').style.display = 'none';
         document.getElementById('newExerciseBtn').classList.add('active');
         document.getElementById('existingExerciseBtn').classList.remove('active');
+        
+        // Clear search filter
+        document.getElementById('existingExerciseSearch').value = '';
         
         // Show option toggle
         document.querySelector('.exercise-option-toggle').parentElement.style.display = 'block';
@@ -158,6 +161,23 @@ function setupEventListeners() {
             }
         } else {
             editingExerciseId = null;
+        }
+    });
+
+    // Add search filter for existing exercises
+    document.getElementById('existingExerciseSearch').addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        const select = document.getElementById('existingExerciseSelect');
+        const options = select.getElementsByTagName('option');
+        
+        for (let i = 0; i < options.length; i++) {
+            const option = options[i];
+            const text = option.textContent.toLowerCase();
+            if (text.includes(searchTerm) || option.value === '') {
+                option.style.display = '';
+            } else {
+                option.style.display = 'none';
+            }
         }
     });
 
@@ -616,11 +636,13 @@ function saveExercise() {
     // PRIORITY 3: User is creating a new exercise
     const name = document.getElementById('exerciseName').value.trim();
     const category = document.getElementById('exerciseCategory').value;
-    const muscle = document.getElementById('exerciseMuscle').value;
+    const muscleSelect = document.getElementById('exerciseMuscle');
+    const selectedMuscles = Array.from(muscleSelect.selectedOptions).map(opt => opt.value);
+    const muscle = selectedMuscles.join(', '); // Join multiple muscles with comma
     const machineInfo = document.getElementById('machineInfo').value.trim();
     
-    if (!name || !category || !muscle) {
-        alert('Please fill in all required fields!');
+    if (!name || !category || selectedMuscles.length === 0) {
+        alert('Please fill in all required fields (including at least one muscle)!');
         return;
     }
     

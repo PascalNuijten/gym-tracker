@@ -1,6 +1,6 @@
 // Gym Tracker v2.0 - Separate Exercise Creation & Workout Logging
 
-// GOOGLE GEMINI AI CONFIGURATION
+// AI CONFIGURATION
 const GEMINI_API_KEY = 'AIzaSyBnOgY0u9eaxZ1gDlwoXF0YCAn6mL035pU';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 let useRealAI = true; // Toggle this to switch between real AI and pattern matching
@@ -101,7 +101,7 @@ function loadUserProfileIntoForm() {
     }
 }
 
-// GEMINI AI HELPER FUNCTIONS
+// AI HELPER FUNCTIONS
 async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = true) {
     if (!useRealAI || !GEMINI_API_KEY) {
         console.log('Real AI disabled or no API key, using fallback');
@@ -155,11 +155,11 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
         
         const data = await response.json();
         const aiResponse = data.candidates[0].content.parts[0].text;
-        console.log('Gemini AI response:', aiResponse);
+        console.log('AI response:', aiResponse);
         return aiResponse;
         
     } catch (error) {
-        console.error('Error calling Gemini AI:', error);
+        console.error('Error calling AI:', error);
         return null;
     }
 }
@@ -244,6 +244,94 @@ function init() {
     
     setupEventListeners();
     setupFirebaseListeners();
+}
+
+// AI Auto-fill Exercise Data
+async function aiSuggestExerciseData(exerciseName) {
+    const statusEl = document.getElementById('aiSuggestionStatus');
+    const categorySelect = document.getElementById('exerciseCategory');
+    const muscleSelect = document.getElementById('exerciseMuscle');
+    const imageInput = document.getElementById('exerciseImage');
+    const aiBtn = document.getElementById('aiSuggestBtn');
+    
+    // Show loading state
+    aiBtn.disabled = true;
+    aiBtn.textContent = '⏳ Analyzing...';
+    statusEl.style.display = 'block';
+    statusEl.style.color = '#666';
+    statusEl.textContent = '🤖 AI is analyzing the exercise...';
+    
+    try {
+        if (useRealAI) {
+            const prompt = `You are a fitness expert. Analyze the exercise: "${exerciseName}"
+
+Respond with ONLY a JSON object in this exact format:
+{
+  "category": "Chest/Upper Back/Lower Back/Laterals/Shoulders/Biceps/Triceps/Abdominals/Legs",
+  "muscles": ["Primary Muscle 1", "Primary Muscle 2"],
+  "imageUrl": "https://example.com/image.jpg",
+  "equipment": "Equipment description"
+}
+
+Rules:
+- category: Must be ONE of the listed categories
+- muscles: Array of 1-3 primary muscles from this list: [Chest, Upper Chest, Lower Chest, Back, Lats, Traps, Lower Back, Shoulders, Front Delts, Side Delts, Rear Delts, Biceps, Triceps, Forearms, Quads, Hamstrings, Glutes, Calves, Abs, Obliques, Core]
+- imageUrl: Search for a real demonstration image URL or use a placeholder
+- equipment: Brief description (e.g., "Barbell", "Dumbbells", "Cable Machine")`;
+
+            const aiResponse = await callGeminiAI(prompt, null, false); // Don't include user context for exercise data
+            
+            if (aiResponse) {
+                const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const data = JSON.parse(jsonMatch[0]);
+                    
+                    // Auto-fill category
+                    if (data.category && categorySelect.querySelector(`option[value="${data.category}"]`)) {
+                        categorySelect.value = data.category;
+                    }
+                    
+                    // Auto-select muscles
+                    if (data.muscles && Array.isArray(data.muscles)) {
+                        Array.from(muscleSelect.options).forEach(option => {
+                            option.selected = data.muscles.some(m => 
+                                option.value.toLowerCase().includes(m.toLowerCase()) || 
+                                m.toLowerCase().includes(option.value.toLowerCase())
+                            );
+                        });
+                    }
+                    
+                    // Auto-fill image URL
+                    if (data.imageUrl && data.imageUrl.startsWith('http')) {
+                        imageInput.value = data.imageUrl;
+                    }
+                    
+                    // Auto-fill equipment info
+                    if (data.equipment) {
+                        document.getElementById('machineInfo').value = data.equipment;
+                    }
+                    
+                    statusEl.style.color = '#4CAF50';
+                    statusEl.textContent = `✅ AI suggested: ${data.category} targeting ${data.muscles.join(', ')}. Review and modify if needed.`;
+                    
+                    console.log('✅ AI auto-filled exercise data:', data);
+                } else {
+                    throw new Error('Invalid AI response format');
+                }
+            } else {
+                throw new Error('No AI response');
+            }
+        } else {
+            throw new Error('AI is disabled');
+        }
+    } catch (error) {
+        console.error('AI auto-fill failed:', error);
+        statusEl.style.color = '#ff9800';
+        statusEl.textContent = '⚠️ AI auto-fill unavailable. Please fill in manually.';
+    } finally {
+        aiBtn.disabled = false;
+        aiBtn.textContent = '🤖 Auto-fill';
+    }
 }
 
 // Event Listeners
@@ -441,7 +529,7 @@ function setupEventListeners() {
                     }
                 }
                 
-                const aiLabel = useRealAI ? '🤖 Gemini AI detected' : '🤖 Pattern match';
+                const aiLabel = useRealAI ? '🤖 Auto-detected' : '🤖 Pattern match';
                 muscleSuggestionsDiv.innerHTML = `${aiLabel}: <strong>${detectedMuscles.join(', ')}</strong>`;
             } else {
                 muscleSuggestionsDiv.textContent = '';
@@ -537,6 +625,17 @@ function setupEventListeners() {
     // Settings Modal Export/Restore Buttons
     document.getElementById('exportBtnSettings').addEventListener('click', exportData);
     document.getElementById('restoreBtnSettings').addEventListener('click', restoreData);
+    
+    // AI Auto-fill Button for Create Exercise
+    document.getElementById('aiSuggestBtn').addEventListener('click', async () => {
+        const exerciseName = document.getElementById('exerciseName').value.trim();
+        if (!exerciseName) {
+            alert('⚠️ Please enter an exercise name first');
+            return;
+        }
+        
+        await aiSuggestExerciseData(exerciseName);
+    });
     
     // Personal Info Form
     document.getElementById('personalInfoForm').addEventListener('submit', (e) => {
@@ -2344,7 +2443,7 @@ async function showExerciseDetails(id) {
             </div>
 
             <div class="suggestion-box">
-                <h3>💡 ${useRealAI ? 'Gemini AI' : 'Smart'} Improvement Suggestion</h3>
+                <h3>💡 Improvement Suggestion</h3>
                 <p>${suggestion}</p>
             </div>
 
@@ -3438,7 +3537,7 @@ function showAIMode(mode) {
 function generateCombinedAnalysis(period) {
     const resultBox = document.getElementById('aiAnalysisResult');
     resultBox.classList.add('show');
-    resultBox.innerHTML = '<div class="loading-spinner"></div> Gemini AI is analyzing your performance...';
+    resultBox.innerHTML = '<div class="loading-spinner"></div> Analyzing your performance...';
     
     setTimeout(async () => {
         const userExercises = exercises.filter(ex => ex.users && ex.users[currentUser]);
@@ -3596,10 +3695,10 @@ function generateCombinedAnalysis(period) {
         feedback += funFact;
         
         // Add AI-powered follow-up questions
-        if (useRealAI && totalWorkouts > 0) {
+        if (useRealAI && periodWorkouts.length > 0) {
             feedback += `<div style="margin-top: 20px; padding: 15px; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1)); border-radius: 8px; border-left: 3px solid #667eea;">
                 <h4 style="margin: 0 0 10px 0;">💬 Want Deeper AI Analysis?</h4>
-                <p style="margin: 0 0 10px 0; color: #666;">Ask Gemini AI any question about your training:</p>
+                <p style="margin: 0 0 10px 0; color: #666;">Ask any question about your training:</p>
                 <div style="display: flex; gap: 5px; flex-wrap: wrap;">
                     <button onclick="askAIQuestion('Why am I not progressing on bench press?')" class="secondary-btn" style="font-size: 0.85em;">Why no progress?</button>
                     <button onclick="askAIQuestion('Am I training enough?')" class="secondary-btn" style="font-size: 0.85em;">Training enough?</button>
@@ -3628,7 +3727,7 @@ async function askAIQuestion(question) {
     
     const box = document.getElementById('aiAnalysisQuestionResult');
     box.classList.add('show');
-    box.innerHTML = `<div class="loading-spinner"></div> Gemini AI is thinking about: "${question}"`;
+    box.innerHTML = `<div class="loading-spinner"></div> Analyzing: "${question}"`;
     
     setTimeout(async () => {
         const userExercises = exercises.filter(ex => ex.users && ex.users[currentUser]);
@@ -3648,26 +3747,48 @@ async function askAIQuestion(question) {
         let answer = '';
         
         if (useRealAI && workoutSummary) {
-            const prompt = `You are an expert personal trainer analyzing workout data for a client.
+            // Get comprehensive workout statistics
+            const totalWorkouts = userExercises.reduce((sum, ex) => sum + (ex.users[currentUser]?.history?.length || 0), 0);
+            const last7Days = userExercises.flatMap(ex => {
+                const history = ex.users[currentUser]?.history || [];
+                const recentDate = new Date();
+                recentDate.setDate(recentDate.getDate() - 7);
+                return history.filter(h => new Date(h.date) >= recentDate)
+                    .map(h => ({
+                        exercise: ex.name,
+                        date: h.date,
+                        sets: h.sets
+                    }));
+            });
+            
+            const weeklyVolume = last7Days.reduce((sum, w) => {
+                return sum + w.sets.reduce((s, set) => s + (set.weight * set.reps), 0);
+            }, 0);
+            
+            const prompt = `You are an expert personal trainer analyzing workout data for ${currentUser}.
 
 Question: "${question}"
 
-Client's Training Data (last 10 exercises, recent 3 sessions avg):
+RECENT TRAINING DATA:
+- Last 7 days: ${last7Days.length} workouts, ${weeklyVolume.toLocaleString()}kg total volume
+- Total sessions all-time: ${totalWorkouts}
+- Recent exercises (avg of last 3 sessions):
 ${workoutSummary}
 
 Provide a specific, actionable answer (100-150 words):
 - Reference actual exercises and numbers from their data
-- Give concrete recommendations
+- Give concrete recommendations based on their training history
+- Consider their personal profile (height, weight, experience, goals, injuries) in your answer
 - Be encouraging but honest
 - Use fitness expertise
 
 Format as HTML with <strong> tags for emphasis.`;
 
-            const aiResponse = await callGeminiAI(prompt);
+            const aiResponse = await callGeminiAI(prompt); // includeUserContext=true by default
             
             if (aiResponse) {
                 answer = aiResponse.replace(/```html/g, '').replace(/```/g, '').trim();
-                console.log('✅ Real AI answered question');
+                console.log('✅ AI answered question with full context');
             }
         }
         
@@ -3686,7 +3807,7 @@ Format as HTML with <strong> tags for emphasis.`;
             </div>
             <div style="margin-top: 15px;">
                 <input type="text" id="customAIQuestion" placeholder="Ask your own question..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
-                <button onclick="askAIQuestion(document.getElementById('customAIQuestion').value)" class="primary-btn" style="margin-top: 10px; width: 100%;">Ask Gemini AI</button>
+                <button onclick="askAIQuestion(document.getElementById('customAIQuestion').value)" class="primary-btn" style="margin-top: 10px; width: 100%;">Ask Coach</button>
             </div>
         `;
     }, 1000);
@@ -3857,7 +3978,7 @@ Be specific, use emojis, and be encouraging! Just return the fact text, no forma
         if (aiResponse) {
             console.log('✅ Real AI fun fact');
             const cleanFact = aiResponse.replace(/```html/g, '').replace(/```/g, '').trim();
-            return `<div class="fun-fact-box"><h5>🎉 Gemini AI Fun Fact</h5><p>${cleanFact}</p></div>`;
+            return `<div class="fun-fact-box"><h5>🎉 Fun Fact</h5><p>${cleanFact}</p></div>`;
         }
     }
     
@@ -4075,28 +4196,47 @@ Be honest about confidence (0-100). If you're not sure, give lower confidence.`;
 function processDetectedExercise(detectedExercise, resultBox) {
     console.log('Detected exercise:', detectedExercise);
     
+    // Show detected exercise name and confidence first
+    const confidenceColor = detectedExercise.confidence >= 85 ? '#4caf50' : 
+                           detectedExercise.confidence >= 70 ? '#ff9800' : '#f44336';
+    
+    const confidenceIcon = detectedExercise.confidence >= 85 ? '✓' : 
+                          detectedExercise.confidence >= 70 ? '⚠' : '⚠';
+    
+    resultBox.innerHTML = `
+        <h4>📸 Camera Detection Result</h4>
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0;">
+            <h3 style="margin: 0 0 10px 0; color: #333;">${detectedExercise.name}</h3>
+            <p style="color: ${confidenceColor}; font-weight: 600; margin: 5px 0;">
+                ${confidenceIcon} ${detectedExercise.confidence}% confidence
+            </p>
+            <p style="color: #666; font-size: 0.9em; margin: 5px 0;">
+                Category: <strong>${detectedExercise.category}</strong> | 
+                Muscle: <strong>${detectedExercise.muscle}</strong>
+            </p>
+        </div>
+        <p style="color: #666; font-style: italic;">Checking your exercise library...</p>
+    `;
+    
     // Check confidence level
-    if (detectedExercise.confidence < 70) {
-        resultBox.innerHTML = `
-            <h4>⚠️ Low Confidence Detection</h4>
-            <p>I'm only ${detectedExercise.confidence}% confident this is <strong>${detectedExercise.name}</strong>.</p>
-            <p><strong>Suggestions:</strong></p>
-            <ul>
-                <li>Try getting closer to the equipment</li>
-                <li>Ensure better lighting</li>
-                <li>Center the equipment in the frame</li>
-                <li>Or manually add the exercise instead</li>
-            </ul>
-            <button class="primary-btn" onclick="retryCamera()">📷 Try Again</button>
-            <button class="secondary-btn" onclick="aiModal.style.display='none'; stopCamera(); modal.style.display='block';">➕ Add Manually</button>
+    if (detectedExercise.confidence < 60) {
+        resultBox.innerHTML += `
+            <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin-top: 15px;">
+                <p style="margin: 0 0 10px 0;"><strong>⚠️ Low Confidence</strong></p>
+                <p style="margin: 5px 0;">The detection accuracy is low. Try:</p>
+                <ul style="margin: 10px 0; padding-left: 20px;">
+                    <li>Getting closer to the equipment</li>
+                    <li>Better lighting</li>
+                    <li>Centering equipment in frame</li>
+                </ul>
+            </div>
+            <div style="margin-top: 15px; display: flex; gap: 10px;">
+                <button class="primary-btn" onclick="retryCamera()" style="flex: 1;">📷 Try Again</button>
+                <button class="secondary-btn" onclick="aiModal.style.display='none'; stopCamera(); modal.style.display='block';" style="flex: 1;">➕ Add Manually</button>
+            </div>
         `;
         return;
     }
-    
-    // Show confidence in result
-    const confidenceText = detectedExercise.confidence >= 85 ? 
-        `<p style="color: #4caf50; font-weight: 600;">✓ ${detectedExercise.confidence}% confidence - High accuracy!</p>` :
-        `<p style="color: #ff9800; font-weight: 600;">⚠ ${detectedExercise.confidence}% confidence - Moderate accuracy</p>`;
     
     // Step 1: Check if user already has this exercise
     const userExercise = exercises.find(ex => 
@@ -4107,10 +4247,17 @@ function processDetectedExercise(detectedExercise, resultBox) {
     if (userExercise) {
         // User already has this exercise - open workout modal
         resultBox.innerHTML = `
-            <h4>✅ Exercise Found in Your Library!</h4>
-            ${confidenceText}
-            <p><strong>${detectedExercise.name}</strong> is already in your exercises.</p>
-            <p>Opening workout logging...</p>
+            <h4>📸 Camera Detection Result</h4>
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h3 style="margin: 0 0 10px 0; color: #333;">${detectedExercise.name}</h3>
+                <p style="color: ${confidenceColor}; font-weight: 600; margin: 5px 0;">
+                    ${confidenceIcon} ${detectedExercise.confidence}% confidence
+                </p>
+            </div>
+            <div style="background: #d4edda; padding: 15px; border-radius: 8px; border-left: 4px solid #28a745;">
+                <p style="margin: 0; color: #155724;"><strong>✅ Exercise Found in Your Library!</strong></p>
+                <p style="margin: 10px 0 0 0; color: #155724;">Opening workout logging...</p>
+            </div>
         `;
         
         setTimeout(() => {
@@ -4130,10 +4277,17 @@ function processDetectedExercise(detectedExercise, resultBox) {
     if (globalExercise) {
         // Exercise exists but not for current user - add it automatically
         resultBox.innerHTML = `
-            <h4>📋 Exercise Found in Database!</h4>
-            ${confidenceText}
-            <p><strong>${detectedExercise.name}</strong> exists in the app.</p>
-            <p>Adding to your exercises and opening workout logging...</p>
+            <h4>📸 Camera Detection Result</h4>
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h3 style="margin: 0 0 10px 0; color: #333;">${detectedExercise.name}</h3>
+                <p style="color: ${confidenceColor}; font-weight: 600; margin: 5px 0;">
+                    ${confidenceIcon} ${detectedExercise.confidence}% confidence
+                </p>
+            </div>
+            <div style="background: #cfe2ff; padding: 15px; border-radius: 8px; border-left: 4px solid #0d6efd;">
+                <p style="margin: 0; color: #084298;"><strong>📋 Exercise Found in Database!</strong></p>
+                <p style="margin: 10px 0 0 0; color: #084298;">Adding to your exercises and opening workout logging...</p>
+            </div>
         `;
         
         setTimeout(() => {
@@ -4145,10 +4299,21 @@ function processDetectedExercise(detectedExercise, resultBox) {
     
     // Step 3: Exercise doesn't exist anywhere - open creation modal with pre-filled data
     resultBox.innerHTML = `
-        <h4>🆕 New Exercise Detected!</h4>
-        ${confidenceText}
-        <p><strong>${detectedExercise.name}</strong> is not in the database yet.</p>
-        <p>Opening exercise creation form with detected details...</p>
+        <h4>📸 Camera Detection Result</h4>
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0;">
+            <h3 style="margin: 0 0 10px 0; color: #333;">${detectedExercise.name}</h3>
+            <p style="color: ${confidenceColor}; font-weight: 600; margin: 5px 0;">
+                ${confidenceIcon} ${detectedExercise.confidence}% confidence
+            </p>
+            <p style="color: #666; font-size: 0.9em; margin: 5px 0;">
+                Category: <strong>${detectedExercise.category}</strong> | 
+                Muscle: <strong>${detectedExercise.muscle}</strong>
+            </p>
+        </div>
+        <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107;">
+            <p style="margin: 0; color: #856404;"><strong>🆕 New Exercise Detected!</strong></p>
+            <p style="margin: 10px 0 0 0; color: #856404;">This exercise is not in the database. Opening creation form with auto-filled details...</p>
+        </div>
     `;
     
     setTimeout(() => {
@@ -4228,38 +4393,141 @@ function addExerciseFromTemplate(templateExercise) {
     }, 500);
 }
 
-function openExerciseModalWithDetectedData(detectedExercise) {
+async function openExerciseModalWithDetectedData(detectedExercise) {
     // Reset form
     document.getElementById('exerciseForm').reset();
     editingExerciseId = null;
     
-    // Set to "new" mode
-    document.getElementById('newExerciseOption').click();
+    // Show new exercise section
+    document.getElementById('newExerciseSection').style.display = 'block';
+    document.getElementById('existingExerciseSection').style.display = 'none';
+    document.getElementById('newExerciseBtn').classList.add('active');
+    document.getElementById('existingExerciseBtn').classList.remove('active');
     
     // Pre-fill detected data
     document.getElementById('exerciseName').value = detectedExercise.name;
-    document.getElementById('exerciseCategory').value = detectedExercise.category;
-    
-    // Trigger category change to load muscle options
-    const categoryEvent = new Event('change');
-    document.getElementById('exerciseCategory').dispatchEvent(categoryEvent);
-    
-    // Wait a bit for muscle options to load, then set muscle
-    setTimeout(() => {
-        const muscleSelect = document.getElementById('exerciseMuscle');
-        // Try to find matching muscle option
-        for (let i = 0; i < muscleSelect.options.length; i++) {
-            if (muscleSelect.options[i].value === detectedExercise.muscle) {
-                muscleSelect.value = detectedExercise.muscle;
-                break;
-            }
-        }
-    }, 100);
     
     // Update modal title
     document.getElementById('modalTitle').textContent = '📸 Add Detected Exercise';
     
+    // Open modal first
     modal.style.display = 'block';
+    
+    // Auto-fill with AI in background
+    const statusEl = document.getElementById('aiSuggestionStatus');
+    statusEl.style.display = 'block';
+    statusEl.style.color = '#666';
+    statusEl.textContent = '🤖 AI is analyzing exercise details...';
+    
+    // Use the detected data or call AI for more details
+    try {
+        if (useRealAI) {
+            const prompt = `You are a fitness expert. Analyze the exercise: "${detectedExercise.name}"
+
+Respond with ONLY a JSON object in this exact format:
+{
+  "category": "Chest/Upper Back/Lower Back/Laterals/Shoulders/Biceps/Triceps/Abdominals/Legs",
+  "muscles": ["Primary Muscle 1", "Primary Muscle 2"],
+  "imageUrl": "https://example.com/image.jpg",
+  "equipment": "Equipment description"
+}
+
+Rules:
+- category: Must be ONE of the listed categories
+- muscles: Array of 1-3 primary muscles from this list: [Chest, Upper Chest, Lower Chest, Back, Lats, Traps, Lower Back, Shoulders, Front Delts, Side Delts, Rear Delts, Biceps, Triceps, Forearms, Quads, Hamstrings, Glutes, Calves, Abs, Obliques, Core]
+- imageUrl: Search for a real demonstration image URL
+- equipment: Brief description`;
+
+            const aiResponse = await callGeminiAI(prompt, null, false);
+            
+            if (aiResponse) {
+                const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const data = JSON.parse(jsonMatch[0]);
+                    
+                    // Auto-fill category
+                    const categorySelect = document.getElementById('exerciseCategory');
+                    if (data.category && categorySelect.querySelector(`option[value="${data.category}"]`)) {
+                        categorySelect.value = data.category;
+                    } else if (detectedExercise.category) {
+                        categorySelect.value = detectedExercise.category;
+                    }
+                    
+                    // Auto-select muscles
+                    const muscleSelect = document.getElementById('exerciseMuscle');
+                    if (data.muscles && Array.isArray(data.muscles)) {
+                        Array.from(muscleSelect.options).forEach(option => {
+                            option.selected = data.muscles.some(m => 
+                                option.value.toLowerCase().includes(m.toLowerCase()) || 
+                                m.toLowerCase().includes(option.value.toLowerCase())
+                            );
+                        });
+                    } else if (detectedExercise.muscle) {
+                        // Fallback to detected muscle
+                        Array.from(muscleSelect.options).forEach(option => {
+                            if (option.value === detectedExercise.muscle) {
+                                option.selected = true;
+                            }
+                        });
+                    }
+                    
+                    // Auto-fill image URL
+                    if (data.imageUrl && data.imageUrl.startsWith('http')) {
+                        document.getElementById('exerciseImage').value = data.imageUrl;
+                    }
+                    
+                    // Auto-fill equipment info
+                    if (data.equipment) {
+                        document.getElementById('machineInfo').value = data.equipment;
+                    } else if (detectedExercise.equipment) {
+                        document.getElementById('machineInfo').value = detectedExercise.equipment;
+                    }
+                    
+                    statusEl.style.color = '#4CAF50';
+                    statusEl.textContent = `✅ Exercise details auto-filled. Review and save!`;
+                }
+            }
+        } else {
+            // Fallback to detected data
+            if (detectedExercise.category) {
+                document.getElementById('exerciseCategory').value = detectedExercise.category;
+            }
+            if (detectedExercise.muscle) {
+                const muscleSelect = document.getElementById('exerciseMuscle');
+                Array.from(muscleSelect.options).forEach(option => {
+                    if (option.value === detectedExercise.muscle) {
+                        option.selected = true;
+                    }
+                });
+            }
+            if (detectedExercise.equipment) {
+                document.getElementById('machineInfo').value = detectedExercise.equipment;
+            }
+            
+            statusEl.style.color = '#4CAF50';
+            statusEl.textContent = `✅ Exercise details filled from camera detection. Review and save!`;
+        }
+    } catch (error) {
+        console.error('Failed to auto-fill exercise data:', error);
+        statusEl.style.color = '#ff9800';
+        statusEl.textContent = '⚠️ Using detected data. Review and modify if needed.';
+        
+        // Still fill what we have from detection
+        if (detectedExercise.category) {
+            document.getElementById('exerciseCategory').value = detectedExercise.category;
+        }
+        if (detectedExercise.muscle) {
+            const muscleSelect = document.getElementById('exerciseMuscle');
+            Array.from(muscleSelect.options).forEach(option => {
+                if (option.value === detectedExercise.muscle) {
+                    option.selected = true;
+                }
+            });
+        }
+        if (detectedExercise.equipment) {
+            document.getElementById('machineInfo').value = detectedExercise.equipment;
+        }
+    }
 }
 
 function analyzeEquipment() {
@@ -4599,7 +4867,7 @@ function findSubstitutes() {
         const exercise = exercises.find(ex => ex.id === exerciseId);
         const alternatives = await getAIExerciseAlternatives(exercise, reason);
         
-        let html = `<h4>🔄 ${useRealAI ? 'Gemini AI' : 'Smart'} Alternatives for ${exercise.name}</h4>`;
+        let html = `<h4>🔄 Alternative Exercises for ${exercise.name}</h4>`;
         
         if (reason) {
             html += `<p><em>Considering: ${reason}</em></p>`;
@@ -4610,6 +4878,20 @@ function findSubstitutes() {
         alternatives.forEach((alt, idx) => {
             const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '💪';
             
+            // Equipment icon mapping
+            const equipmentIcons = {
+                'barbell': '🏋️',
+                'dumbbell': '💪',
+                'machine': '⚙️',
+                'cable': '🔗',
+                'bodyweight': '🧍',
+                'mat': '🧘',
+                'bench': '🪑',
+                'none': '❌'
+            };
+            
+            const equipmentIcon = alt.equipment ? equipmentIcons[alt.equipment.toLowerCase()] || '🏋️' : '';
+            
             html += `<div style="background: ${idx < 3 ? '#f0f9ff' : '#f9f9f9'}; padding: 12px; margin-bottom: 10px; border-radius: 8px; border-left: 3px solid ${idx === 0 ? '#4CAF50' : idx === 1 ? '#2196F3' : idx === 2 ? '#FF9800' : '#ddd'};">`;
             html += `<div style="display: flex; justify-content: space-between; align-items: start;">`;
             html += `<div style="flex: 1;">`;
@@ -4617,6 +4899,10 @@ function findSubstitutes() {
             
             if (alt.muscle) {
                 html += `<div style="color: #666; font-size: 0.85rem; margin-bottom: 4px;">🎯 <strong>Targets:</strong> ${alt.muscle}</div>`;
+            }
+            
+            if (alt.equipment) {
+                html += `<div style="color: #666; font-size: 0.85rem; margin-bottom: 4px;">${equipmentIcon} <strong>Equipment:</strong> ${alt.equipment}</div>`;
             }
             
             if (alt.difficulty) {
@@ -4643,7 +4929,7 @@ function findSubstitutes() {
 
 async function getAIExerciseAlternatives(exercise, reason) {
     // REAL AI-POWERED DYNAMIC RECOMMENDATIONS
-    // Uses Gemini AI to generate intelligent alternatives
+    // Generate intelligent alternatives
     
     const lowerReason = reason.toLowerCase();
     const exerciseName = exercise.name.toLowerCase();
@@ -4665,6 +4951,7 @@ Respond with ONLY a JSON array of 5 exercises in this exact format:
   {
     "name": "Exercise Name",
     "muscle": "Primary Muscle",
+    "equipment": "Barbell/Dumbbell/Machine/Cable/Bodyweight/Mat/Bench/None",
     "reason": "Why this is a good alternative (1 sentence)",
     "difficulty": "Beginner/Intermediate/Advanced"
   }
@@ -4710,22 +4997,22 @@ ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), 
     // INJURY MODE: Add recovery options first, then safer alternatives
     if (hasInjury) {
         alternatives.push(
-            { name: '⚕️ See a Doctor/PT', muscle: 'Recovery', reason: 'Professional diagnosis recommended for persistent pain', difficulty: 'N/A' },
-            { name: 'Rest & Ice (RICE)', muscle: 'Recovery', reason: '48-72 hours for acute injuries', difficulty: 'N/A' }
+            { name: '⚕️ See a Doctor/PT', muscle: 'Recovery', equipment: 'None', reason: 'Professional diagnosis recommended for persistent pain', difficulty: 'N/A' },
+            { name: 'Rest & Ice (RICE)', muscle: 'Recovery', equipment: 'None', reason: '48-72 hours for acute injuries', difficulty: 'N/A' }
         );
     }
     
     // CHEST EXERCISES
     if (muscle.includes('chest') || exerciseName.includes('bench') || exerciseName.includes('press') && muscle.includes('chest')) {
         const chestAlts = [
-            { name: 'Dumbbell Bench Press', muscle: 'Full Chest', reason: 'Greater range of motion, fixes imbalances', difficulty: 'Intermediate' },
-            { name: 'Incline Barbell Press', muscle: 'Upper Chest', reason: '30-45° targets clavicular head', difficulty: 'Intermediate' },
-            { name: 'Decline Press', muscle: 'Lower Chest', reason: 'Emphasizes lower pec fibers', difficulty: 'Intermediate' },
-            { name: 'Cable Crossovers', muscle: 'Inner Chest', reason: 'Constant tension, peak contraction', difficulty: 'Beginner' },
-            { name: 'Weighted Dips', muscle: 'Lower Chest + Triceps', reason: 'Compound movement, lean forward', difficulty: 'Advanced' },
-            { name: 'Landmine Press', muscle: 'Upper Chest', reason: 'Shoulder-friendly angle', difficulty: 'Intermediate' },
-            { name: 'Push-ups (Diamond/Decline)', muscle: 'Chest Variations', reason: 'Bodyweight progression', difficulty: 'Beginner' },
-            { name: 'Pec Deck Machine', muscle: 'Chest Isolation', reason: 'Easy to control, constant tension', difficulty: 'Beginner' }
+            { name: 'Dumbbell Bench Press', muscle: 'Full Chest', equipment: 'Dumbbell', reason: 'Greater range of motion, fixes imbalances', difficulty: 'Intermediate' },
+            { name: 'Incline Barbell Press', muscle: 'Upper Chest', equipment: 'Barbell', reason: '30-45° targets clavicular head', difficulty: 'Intermediate' },
+            { name: 'Decline Press', muscle: 'Lower Chest', equipment: 'Barbell', reason: 'Emphasizes lower pec fibers', difficulty: 'Intermediate' },
+            { name: 'Cable Crossovers', muscle: 'Inner Chest', equipment: 'Cable', reason: 'Constant tension, peak contraction', difficulty: 'Beginner' },
+            { name: 'Weighted Dips', muscle: 'Lower Chest + Triceps', equipment: 'Bodyweight', reason: 'Compound movement, lean forward', difficulty: 'Advanced' },
+            { name: 'Landmine Press', muscle: 'Upper Chest', equipment: 'Barbell', reason: 'Shoulder-friendly angle', difficulty: 'Intermediate' },
+            { name: 'Push-ups (Diamond/Decline)', muscle: 'Chest Variations', equipment: 'Bodyweight', reason: 'Bodyweight progression', difficulty: 'Beginner' },
+            { name: 'Pec Deck Machine', muscle: 'Chest Isolation', equipment: 'Machine', reason: 'Easy to control, constant tension', difficulty: 'Beginner' }
         ];
         
         // If injury, prioritize safer options (machine, cable, lighter variations)
@@ -4747,14 +5034,14 @@ ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), 
     // BACK EXERCISES
     else if (muscle.includes('back') || muscle.includes('lat') || exerciseName.includes('row') || exerciseName.includes('pull')) {
         const backAlts = [
-            { name: 'Weighted Pull-ups', muscle: 'Lats + Biceps', reason: 'King of back width', difficulty: 'Advanced' },
-            { name: 'Pendlay Rows', muscle: 'Upper Back', reason: 'Explosive power from floor', difficulty: 'Advanced' },
-            { name: 'T-Bar Rows', muscle: 'Mid Back Thickness', reason: 'Supported, heavy loads', difficulty: 'Intermediate' },
-            { name: 'Lat Pulldown (Close Grip)', muscle: 'Lower Lats', reason: 'Targets lower lat fibers', difficulty: 'Beginner' },
-            { name: 'Face Pulls', muscle: 'Rear Delts + Upper Back', reason: 'Shoulder health essential', difficulty: 'Beginner' },
-            { name: 'Straight Arm Pulldown', muscle: 'Lat Isolation', reason: 'Removes biceps, pure lat', difficulty: 'Intermediate' },
-            { name: 'Inverted Rows', muscle: 'Mid Back', reason: 'Bodyweight horizontal pull', difficulty: 'Beginner' },
-            { name: 'Chest-Supported Row', muscle: 'Clean Reps', reason: 'Eliminates cheating', difficulty: 'Intermediate' }
+            { name: 'Weighted Pull-ups', muscle: 'Lats + Biceps', equipment: 'Bodyweight', reason: 'King of back width', difficulty: 'Advanced' },
+            { name: 'Pendlay Rows', muscle: 'Upper Back', equipment: 'Barbell', reason: 'Explosive power from floor', difficulty: 'Advanced' },
+            { name: 'T-Bar Rows', muscle: 'Mid Back Thickness', equipment: 'Barbell', reason: 'Supported, heavy loads', difficulty: 'Intermediate' },
+            { name: 'Lat Pulldown (Close Grip)', muscle: 'Lower Lats', equipment: 'Cable', reason: 'Targets lower lat fibers', difficulty: 'Beginner' },
+            { name: 'Face Pulls', muscle: 'Rear Delts + Upper Back', equipment: 'Cable', reason: 'Shoulder health essential', difficulty: 'Beginner' },
+            { name: 'Straight Arm Pulldown', muscle: 'Lat Isolation', equipment: 'Cable', reason: 'Removes biceps, pure lat', difficulty: 'Intermediate' },
+            { name: 'Inverted Rows', muscle: 'Mid Back', equipment: 'Bodyweight', reason: 'Bodyweight horizontal pull', difficulty: 'Beginner' },
+            { name: 'Chest-Supported Row', muscle: 'Clean Reps', equipment: 'Machine', reason: 'Eliminates cheating', difficulty: 'Intermediate' }
         ];
         
         if (hasInjury) {
@@ -4768,13 +5055,13 @@ ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), 
     else if (muscle.includes('shoulder') || muscle.includes('delt') || exerciseName.includes('shoulder') || 
              (exerciseName.includes('press') && !muscle.includes('chest') && !muscle.includes('leg'))) {
         const shoulderAlts = [
-            { name: 'Arnold Press', muscle: 'All 3 Deltoid Heads', reason: 'Rotation hits front/side/rear', difficulty: 'Intermediate' },
-            { name: 'Cable Lateral Raises', muscle: 'Side Delts', reason: 'Constant tension, width builder', difficulty: 'Beginner' },
-            { name: 'Face Pulls', muscle: 'Rear Delts', reason: 'Shoulder health and posture', difficulty: 'Beginner' },
-            { name: 'Lu Raises', muscle: 'Side + Rear Delts', reason: 'Overhead finish, unique stimulus', difficulty: 'Advanced' },
-            { name: 'Landmine Press', muscle: 'Front Delts', reason: 'Joint-friendly angle', difficulty: 'Intermediate' },
-            { name: 'Pike Push-ups', muscle: 'Shoulders', reason: 'Bodyweight shoulder builder', difficulty: 'Beginner' },
-            { name: 'Reverse Pec Deck', muscle: 'Rear Delts', reason: 'Isolation, constant tension', difficulty: 'Beginner' }
+            { name: 'Arnold Press', muscle: 'All 3 Deltoid Heads', equipment: 'Dumbbell', reason: 'Rotation hits front/side/rear', difficulty: 'Intermediate' },
+            { name: 'Cable Lateral Raises', muscle: 'Side Delts', equipment: 'Cable', reason: 'Constant tension, width builder', difficulty: 'Beginner' },
+            { name: 'Face Pulls', muscle: 'Rear Delts', equipment: 'Cable', reason: 'Shoulder health and posture', difficulty: 'Beginner' },
+            { name: 'Lu Raises', muscle: 'Side + Rear Delts', equipment: 'Dumbbell', reason: 'Overhead finish, unique stimulus', difficulty: 'Advanced' },
+            { name: 'Landmine Press', muscle: 'Front Delts', equipment: 'Barbell', reason: 'Joint-friendly angle', difficulty: 'Intermediate' },
+            { name: 'Pike Push-ups', muscle: 'Shoulders', equipment: 'Bodyweight', reason: 'Bodyweight shoulder builder', difficulty: 'Beginner' },
+            { name: 'Reverse Pec Deck', muscle: 'Rear Delts', equipment: 'Machine', reason: 'Isolation, constant tension', difficulty: 'Beginner' }
         ];
         
         if (hasInjury) {
@@ -4788,13 +5075,13 @@ ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), 
     else if (muscle.includes('leg') || muscle.includes('quad') || muscle.includes('hamstring') || 
              exerciseName.includes('squat') || exerciseName.includes('leg') || exerciseName.includes('deadlift')) {
         const legAlts = [
-            { name: 'Bulgarian Split Squats', muscle: 'Quads + Glutes', reason: 'Best single-leg exercise', difficulty: 'Intermediate' },
-            { name: 'Front Squats', muscle: 'Quads', reason: 'More upright, quad emphasis', difficulty: 'Advanced' },
-            { name: 'Romanian Deadlifts', muscle: 'Hamstrings', reason: 'Hip hinge, posterior chain', difficulty: 'Intermediate' },
-            { name: 'Nordic Curls', muscle: 'Hamstrings', reason: 'Eccentric strength, injury prevention', difficulty: 'Advanced' },
-            { name: 'Goblet Squats', muscle: 'Quads', reason: 'Easy to learn, mobility', difficulty: 'Beginner' },
-            { name: 'Walking Lunges', muscle: 'Functional Legs', reason: 'Dynamic, real-world strength', difficulty: 'Beginner' },
-            { name: 'Sissy Squats', muscle: 'Quad Isolation', reason: 'Bodyweight quad killer', difficulty: 'Advanced' }
+            { name: 'Bulgarian Split Squats', muscle: 'Quads + Glutes', equipment: 'Dumbbell', reason: 'Best single-leg exercise', difficulty: 'Intermediate' },
+            { name: 'Front Squats', muscle: 'Quads', equipment: 'Barbell', reason: 'More upright, quad emphasis', difficulty: 'Advanced' },
+            { name: 'Romanian Deadlifts', muscle: 'Hamstrings', equipment: 'Barbell', reason: 'Hip hinge, posterior chain', difficulty: 'Intermediate' },
+            { name: 'Nordic Curls', muscle: 'Hamstrings', equipment: 'Bodyweight', reason: 'Eccentric strength, injury prevention', difficulty: 'Advanced' },
+            { name: 'Goblet Squats', muscle: 'Quads', equipment: 'Dumbbell', reason: 'Easy to learn, mobility', difficulty: 'Beginner' },
+            { name: 'Walking Lunges', muscle: 'Functional Legs', equipment: 'Dumbbell', reason: 'Dynamic, real-world strength', difficulty: 'Beginner' },
+            { name: 'Sissy Squats', muscle: 'Quad Isolation', equipment: 'Bodyweight', reason: 'Bodyweight quad killer', difficulty: 'Advanced' }
         ];
         
         if (hasInjury) {
@@ -4807,12 +5094,12 @@ ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), 
     // BICEP EXERCISES
     else if (muscle.includes('bicep') || exerciseName.includes('curl')) {
         const bicepAlts = [
-            { name: 'Spider Curls', muscle: 'Bicep Peak', reason: 'Strict form, peak contraction', difficulty: 'Intermediate' },
-            { name: 'Incline Dumbbell Curls', muscle: 'Bicep Stretch', reason: 'Deep stretch, long head', difficulty: 'Beginner' },
-            { name: 'Hammer Curls', muscle: 'Brachialis', reason: 'Arm thickness, forearm size', difficulty: 'Beginner' },
-            { name: '21s (7+7+7 Reps)', muscle: 'Complete Bicep', reason: 'Time under tension, extreme pump', difficulty: 'Advanced' },
-            { name: 'Drag Curls', muscle: 'Long Head Bicep', reason: 'Bar drags up torso, unique angle', difficulty: 'Intermediate' },
-            { name: 'Chin-ups', muscle: 'Biceps + Back', reason: 'Compound bodyweight movement', difficulty: 'Intermediate' }
+            { name: 'Spider Curls', muscle: 'Bicep Peak', equipment: 'Dumbbell', reason: 'Strict form, peak contraction', difficulty: 'Intermediate' },
+            { name: 'Incline Dumbbell Curls', muscle: 'Bicep Stretch', equipment: 'Dumbbell', reason: 'Deep stretch, long head', difficulty: 'Beginner' },
+            { name: 'Hammer Curls', muscle: 'Brachialis', equipment: 'Dumbbell', reason: 'Arm thickness, forearm size', difficulty: 'Beginner' },
+            { name: '21s (7+7+7 Reps)', muscle: 'Complete Bicep', equipment: 'Barbell', reason: 'Time under tension, extreme pump', difficulty: 'Advanced' },
+            { name: 'Drag Curls', muscle: 'Long Head Bicep', equipment: 'Barbell', reason: 'Bar drags up torso, unique angle', difficulty: 'Intermediate' },
+            { name: 'Chin-ups', muscle: 'Biceps + Back', equipment: 'Bodyweight', reason: 'Compound bodyweight movement', difficulty: 'Intermediate' }
         ];
         alternatives.push(...bicepAlts.slice(0, 5));
     }
@@ -4821,12 +5108,12 @@ ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), 
     else if (muscle.includes('tricep') || exerciseName.includes('tricep') || 
              (exerciseName.includes('extension') && !exerciseName.includes('leg'))) {
         const tricepAlts = [
-            { name: 'JM Press', muscle: 'Tricep Mass', reason: 'Hybrid skull crusher + close grip', difficulty: 'Advanced' },
-            { name: 'Overhead Cable Extension', muscle: 'Long Head', reason: 'Overhead stretches long head', difficulty: 'Beginner' },
-            { name: 'Close Grip Bench Press', muscle: 'Compound Tricep', reason: 'Heavy loads, full arm', difficulty: 'Intermediate' },
-            { name: 'Diamond Push-ups', muscle: 'Triceps', reason: 'Bodyweight, anywhere', difficulty: 'Beginner' },
-            { name: 'Tate Press', muscle: 'Lateral/Medial Head', reason: 'Unique elbow position', difficulty: 'Advanced' },
-            { name: 'Tricep Dips', muscle: 'Triceps + Chest', reason: 'Compound bodyweight', difficulty: 'Intermediate' }
+            { name: 'JM Press', muscle: 'Tricep Mass', equipment: 'Barbell', reason: 'Hybrid skull crusher + close grip', difficulty: 'Advanced' },
+            { name: 'Overhead Cable Extension', muscle: 'Long Head', equipment: 'Cable', reason: 'Overhead stretches long head', difficulty: 'Beginner' },
+            { name: 'Close Grip Bench Press', muscle: 'Compound Tricep', equipment: 'Barbell', reason: 'Heavy loads, full arm', difficulty: 'Intermediate' },
+            { name: 'Diamond Push-ups', muscle: 'Triceps', equipment: 'Bodyweight', reason: 'Bodyweight, anywhere', difficulty: 'Beginner' },
+            { name: 'Tate Press', muscle: 'Lateral/Medial Head', equipment: 'Dumbbell', reason: 'Unique elbow position', difficulty: 'Advanced' },
+            { name: 'Tricep Dips', muscle: 'Triceps + Chest', equipment: 'Bodyweight', reason: 'Compound bodyweight', difficulty: 'Intermediate' }
         ];
         alternatives.push(...tricepAlts.slice(0, 5));
     }
@@ -4834,10 +5121,10 @@ ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), 
     // GENERIC FALLBACK for uncommon exercises
     else {
         alternatives.push(
-            { name: 'Progressive Overload', muscle: 'All Muscles', reason: 'Gradually increase weight/reps/sets', difficulty: 'All Levels' },
-            { name: 'Compound Movements', muscle: 'Multiple Groups', reason: 'Multi-joint efficiency', difficulty: 'All Levels' },
-            { name: 'Bodyweight Variations', muscle: 'Functional', reason: 'Master bodyweight first', difficulty: 'Beginner' },
-            { name: 'Consult a Trainer', muscle: 'Personalized', reason: 'Get exercise-specific recommendations', difficulty: 'All Levels' }
+            { name: 'Progressive Overload', muscle: 'All Muscles', equipment: 'None', reason: 'Gradually increase weight/reps/sets', difficulty: 'All Levels' },
+            { name: 'Compound Movements', muscle: 'Multiple Groups', equipment: 'Barbell', reason: 'Multi-joint efficiency', difficulty: 'All Levels' },
+            { name: 'Bodyweight Variations', muscle: 'Functional', equipment: 'Bodyweight', reason: 'Master bodyweight first', difficulty: 'Beginner' },
+            { name: 'Consult a Trainer', muscle: 'Personalized', equipment: 'None', reason: 'Get exercise-specific recommendations', difficulty: 'All Levels' }
         );
     }
     

@@ -327,13 +327,24 @@ Be concise and respond immediately with only the JSON.`;
             throw new Error('No AI response received');
         }
         
-        // Extract JSON - handle both raw JSON and markdown code blocks
+        // Extract JSON - be very lenient with partial responses
         let jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
-            // Try to find JSON in markdown code block
-            const codeBlockMatch = aiResponse.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+            // Try to find JSON in markdown code block (even incomplete)
+            const codeBlockMatch = aiResponse.match(/```(?:json)?\s*(\{[\s\S]*)/);
             if (codeBlockMatch) {
-                jsonMatch = [codeBlockMatch[1]];
+                // Try to complete the JSON if it's cut off
+                let jsonStr = codeBlockMatch[1].trim();
+                // Remove trailing backticks if present
+                jsonStr = jsonStr.replace(/```\s*$/, '');
+                // If no closing brace, try to find where it was cut off and complete it
+                const openBraces = (jsonStr.match(/\{/g) || []).length;
+                const closeBraces = (jsonStr.match(/\}/g) || []).length;
+                if (openBraces > closeBraces) {
+                    // Add missing closing braces
+                    jsonStr += '\n}';
+                }
+                jsonMatch = [jsonStr];
             }
         }
         
@@ -342,7 +353,27 @@ Be concise and respond immediately with only the JSON.`;
             throw new Error('Invalid AI response format - no JSON found');
         }
         
-        const data = JSON.parse(jsonMatch[0]);
+        let data;
+        try {
+            data = JSON.parse(jsonMatch[0]);
+        } catch (parseError) {
+            // If parsing fails, try to extract partial data
+            console.error('JSON parse error, attempting partial extraction:', parseError);
+            const categoryMatch = jsonMatch[0].match(/"category"\s*:\s*"([^"]+)"/);
+            const musclesMatch = jsonMatch[0].match(/"muscles"\s*:\s*\[(.*?)\]/s);
+            const equipmentMatch = jsonMatch[0].match(/"equipment"\s*:\s*"([^"]+)"/);
+            
+            if (categoryMatch) {
+                data = {
+                    category: categoryMatch[1],
+                    muscles: musclesMatch ? musclesMatch[1].split(',').map(m => m.replace(/["\s]/g, '')) : [],
+                    equipment: equipmentMatch ? equipmentMatch[1] : ''
+                };
+                console.log('Extracted partial data:', data);
+            } else {
+                throw new Error('Could not extract any valid data from response');
+            }
+        }
         console.log('Parsed AI data:', data);
         
         // Auto-fill category

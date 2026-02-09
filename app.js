@@ -35,15 +35,89 @@ let setCounter = 1;
 let currentChart = null;
 let users = ['Fran', 'Pascal', 'Cicci']; // Track all users
 let isNewlyAddedFromCamera = false; // Track if exercise was just added from camera
+let userProfiles = JSON.parse(localStorage.getItem('gymTrackerUserProfiles') || '{}'); // Store personal data per user
+
+// USER PROFILE HELPERS
+function saveUserProfile(username, profileData) {
+    userProfiles[username] = {
+        ...profileData,
+        lastUpdated: new Date().toISOString()
+    };
+    localStorage.setItem('gymTrackerUserProfiles', JSON.stringify(userProfiles));
+}
+
+function getUserProfile(username) {
+    return userProfiles[username] || null;
+}
+
+function hasCompleteProfile(username) {
+    const profile = getUserProfile(username);
+    return profile && profile.height && profile.weight && profile.gender;
+}
+
+function getUserContext(username) {
+    const profile = getUserProfile(username);
+    if (!profile) return '';
+    
+    let context = `\n\nUSER CONTEXT (${username}):\n`;
+    if (profile.height && profile.weight) {
+        const bmi = (profile.weight / ((profile.height / 100) ** 2)).toFixed(1);
+        context += `- Physical: ${profile.height}cm, ${profile.weight}kg (BMI: ${bmi})`;
+        if (profile.gender) context += `, ${profile.gender}`;
+        if (profile.age) context += `, ${profile.age} years old`;
+        context += `\n`;
+    }
+    if (profile.experience) context += `- Experience: ${profile.experience}\n`;
+    if (profile.goal) context += `- Goal: ${profile.goal}\n`;
+    if (profile.frequency) context += `- Training Frequency: ${profile.frequency} days/week\n`;
+    if (profile.injuries) context += `- Injuries/Limitations: ${profile.injuries}\n`;
+    
+    return context;
+}
+
+function promptUserProfileSetup() {
+    const profile = getUserProfile(currentUser);
+    if (!hasCompleteProfile(currentUser)) {
+        setTimeout(() => {
+            document.getElementById('settingsModal').style.display = 'block';
+            document.getElementById('settingsUserName').textContent = currentUser;
+            loadUserProfileIntoForm();
+            alert(`👋 Welcome ${currentUser}! Please fill in your personal information to get AI-powered personalized training advice.`);
+        }, 500);
+    }
+}
+
+function loadUserProfileIntoForm() {
+    const profile = getUserProfile(currentUser);
+    if (profile) {
+        document.getElementById('userHeight').value = profile.height || '';
+        document.getElementById('userWeight').value = profile.weight || '';
+        document.getElementById('userGender').value = profile.gender || '';
+        document.getElementById('userAge').value = profile.age || '';
+        document.getElementById('userExperience').value = profile.experience || '';
+        document.getElementById('userGoal').value = profile.goal || '';
+        document.getElementById('userFrequency').value = profile.frequency || '';
+        document.getElementById('userInjuries').value = profile.injuries || '';
+    }
+}
 
 // GEMINI AI HELPER FUNCTIONS
-async function callGeminiAI(prompt, imageBase64 = null) {
+async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = true) {
     if (!useRealAI || !GEMINI_API_KEY) {
         console.log('Real AI disabled or no API key, using fallback');
         return null;
     }
     
     try {
+        // Add user context to prompt if available and requested
+        let enhancedPrompt = prompt;
+        if (includeUserContext) {
+            const userContext = getUserContext(currentUser);
+            if (userContext) {
+                enhancedPrompt = prompt + userContext;
+            }
+        }
+        
         const requestBody = {
             contents: [{
                 parts: []
@@ -62,7 +136,7 @@ async function callGeminiAI(prompt, imageBase64 = null) {
         
         // Add text prompt
         requestBody.contents[0].parts.push({
-            text: prompt
+            text: enhancedPrompt
         });
         
         const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
@@ -182,6 +256,9 @@ function setupEventListeners() {
             currentUser = btn.dataset.user;
             localStorage.setItem('gymTrackerCurrentUser', currentUser);
             renderExercises();
+            
+            // Check if new user needs profile setup
+            promptUserProfileSetup();
         });
     });
 
@@ -450,11 +527,36 @@ function setupEventListeners() {
     // Weekly Summary Button
     document.getElementById('weeklySummaryBtn').addEventListener('click', showWeeklySummary);
     
-    // Export Button
-    document.getElementById('exportBtn').addEventListener('click', exportData);
+    // Settings Button
+    document.getElementById('settingsBtn').addEventListener('click', () => {
+        document.getElementById('settingsModal').style.display = 'block';
+        document.getElementById('settingsUserName').textContent = currentUser;
+        loadUserProfileIntoForm();
+    });
     
-    // Restore Button
-    document.getElementById('restoreBtn').addEventListener('click', restoreData);
+    // Settings Modal Export/Restore Buttons
+    document.getElementById('exportBtnSettings').addEventListener('click', exportData);
+    document.getElementById('restoreBtnSettings').addEventListener('click', restoreData);
+    
+    // Personal Info Form
+    document.getElementById('personalInfoForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        
+        const profileData = {
+            height: parseFloat(document.getElementById('userHeight').value),
+            weight: parseFloat(document.getElementById('userWeight').value),
+            gender: document.getElementById('userGender').value,
+            age: document.getElementById('userAge').value ? parseInt(document.getElementById('userAge').value) : null,
+            experience: document.getElementById('userExperience').value || null,
+            goal: document.getElementById('userGoal').value || null,
+            frequency: document.getElementById('userFrequency').value || null,
+            injuries: document.getElementById('userInjuries').value.trim() || null
+        };
+        
+        saveUserProfile(currentUser, profileData);
+        alert('✅ Personal information saved! AI features are now personalized for you.');
+        document.getElementById('settingsModal').style.display = 'none';
+    });
 }
 
 // Export Data
@@ -4867,6 +4969,11 @@ function analyzeProgress() {
 document.addEventListener('DOMContentLoaded', () => {
     // Wait a bit for main init to complete
     setTimeout(initAI, 100);
+    
+    // Check if user needs to complete profile
+    setTimeout(() => {
+        promptUserProfileSetup();
+    }, 500);
 });
 
 // Initialize when DOM is loaded

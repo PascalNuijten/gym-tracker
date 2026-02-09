@@ -5,7 +5,7 @@
 // To set up: https://console.cloud.google.com/apis/credentials
 // Add HTTP referrer restrictions: https://pascalnuijten.github.io/*
 const GEMINI_API_KEY = 'AIzaSyCy8L-GZkUhNfaoG3JQ3d26IBN1s8M12lU';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 let useRealAI = true; // AI enabled by default
 
 // Firebase Configuration
@@ -370,52 +370,21 @@ async function aiSuggestExerciseData(exerciseName) {
     aiBtn.textContent = '⏳ Analyzing...';
     statusEl.style.display = 'block';
     statusEl.style.color = '#666';
-    statusEl.textContent = '🔍 Searching exercise database...';
+    statusEl.textContent = '🤖 AI is analyzing the exercise...';
     
     try {
         console.log('Auto-fill starting for:', exerciseName);
         
-        // FIRST: Try database match (instant, no API calls)
-        const dbMatch = findExerciseMatch(exerciseName);
-        if (dbMatch) {
-            console.log('✅ Found in database:', dbMatch);
-            statusEl.style.color = '#28a745';
-            statusEl.textContent = '✅ Found in exercise database!';
+        // FIRST: Try AI (fast and smart)
+        if (useRealAI) {
+            console.log('Trying AI first...');
             
-            // Auto-fill the form
-            if (dbMatch.category) {
-                categorySelect.value = dbMatch.category;
-                categorySelect.dispatchEvent(new Event('change'));
-            }
-            
-            if (dbMatch.muscles && dbMatch.muscles.length > 0) {
-                muscleSelect.value = dbMatch.muscles[0];
-            }
-            
-            // Show success message
-            aiBtn.textContent = '✨ Auto-fill';
-            setTimeout(() => {
-                statusEl.style.display = 'none';
-                aiBtn.disabled = false;
-            }, 2000);
-            
-            return;
-        }
+            // Set timeout for AI response
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('AI request timed out after 30 seconds')), 30000)
+            );
         
-        // SECOND: No database match - try AI (if not quota exceeded)
-        console.log('Not in database, trying AI...');
-        statusEl.textContent = '🤖 AI is analyzing (this may take 30+ seconds)...';
-        
-        // Set timeout for AI response
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('AI request timed out after 45 seconds')), 45000)
-        );
-        
-        if (!useRealAI) {
-            throw new Error('AI is disabled - set useRealAI = true');
-        }
-        
-        const prompt = `You are a fitness expert. Analyze the exercise: "${exerciseName}"
+            const prompt = `You are a fitness expert. Analyze the exercise: "${exerciseName}"
 
 Respond with ONLY a JSON object in this exact format:
 {
@@ -431,9 +400,9 @@ Rules:
 
 Be concise and respond immediately with only the JSON.`;
 
-        // Race between AI response and timeout
-        const aiResponse = await Promise.race([
-            callGeminiAI(prompt, null, false),
+            // Race between AI response and timeout
+            const aiResponse = await Promise.race([
+                callGeminiAI(prompt, null, false),
             timeoutPromise
         ]);
         
@@ -523,8 +492,34 @@ Be concise and respond immediately with only the JSON.`;
     } catch (error) {
         console.error('AI auto-fill failed:', error);
         console.error('Error details:', error.message, error.stack);
-        statusEl.style.color = '#f44336';
-        statusEl.textContent = `❌ AI auto-fill failed: ${error.message}. Please fill in manually.`;
+        
+        // FALLBACK: Try database match if AI fails
+        console.log('AI failed, trying database fallback...');
+        const dbMatch = findExerciseMatch(exerciseName);
+        
+        if (dbMatch) {
+            console.log('✅ Found in database fallback:', dbMatch);
+            statusEl.style.color = '#28a745';
+            statusEl.textContent = '✅ AI unavailable, used exercise database instead!';
+            
+            // Auto-fill the form
+            if (dbMatch.category) {
+                categorySelect.value = dbMatch.category;
+                categorySelect.dispatchEvent(new Event('change'));
+            }
+            
+            if (dbMatch.muscles && dbMatch.muscles.length > 0) {
+                muscleSelect.value = dbMatch.muscles[0];
+            }
+            
+            if (dbMatch.equipment) {
+                document.getElementById('machineInfo').value = dbMatch.equipment;
+            }
+        } else {
+            // No database match either
+            statusEl.style.color = '#f44336';
+            statusEl.textContent = `❌ AI auto-fill failed: ${error.message}. Please fill in manually.`;
+        }
     } finally {
         aiBtn.disabled = false;
         aiBtn.textContent = '🤖 Auto-fill';

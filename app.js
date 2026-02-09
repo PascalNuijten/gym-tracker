@@ -1,9 +1,9 @@
 // Gym Tracker v2.0 - Separate Exercise Creation & Workout Logging
 
 // AI CONFIGURATION
-const GEMINI_API_KEY = 'AIzaSyBnOgY0u9eaxZ1gDlwoXF0YCAn6mL035pU';
+const GEMINI_API_KEY = 'AIzaSyBnOgY0u9eaxZ1gDlwoXF0YCAn6mL035pU'; // ⚠️ Replace with valid key from https://aistudio.google.com/app/apikey
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
-let useRealAI = true; // Toggle this to switch between real AI and pattern matching
+let useRealAI = false; // Set to false until you get a valid API key
 
 // Firebase Configuration
 const firebaseConfig = {

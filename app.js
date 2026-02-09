@@ -4133,7 +4133,11 @@ function generateCombinedAnalysis(period) {
             if (userProfile?.frequency) {
                 const targetDays = parseInt(userProfile.frequency);
                 if (!isNaN(targetDays)) {
-                    frequencyGuidance = `They planned to train ${targetDays} days/week but actually trained ${uniqueDays} days in ${periodName.toLowerCase()}. ${uniqueDays >= targetDays ? 'GREAT consistency! Praise this.' : `They're UNDER their target by ${targetDays - uniqueDays} days. Encourage them to hit their planned frequency.`}`;
+                    const underTarget = targetDays - uniqueDays;
+                    const statusMsg = uniqueDays >= targetDays 
+                        ? 'GREAT consistency! Praise this.' 
+                        : `They are UNDER their target by ${underTarget} days. Encourage them to hit their planned frequency.`;
+                    frequencyGuidance = `They planned to train ${targetDays} days/week but actually trained ${uniqueDays} days in ${periodName.toLowerCase()}. ${statusMsg}`;
                 }
             }
             

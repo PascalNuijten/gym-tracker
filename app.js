@@ -240,6 +240,36 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
             try {
                 const error = JSON.parse(errorText);
                 console.error('Gemini API error:', error);
+                
+                // If 429 quota exceeded, try next model automatically
+                if (error.error?.code === 429) {
+                    console.warn('⚠️ Model quota exceeded, trying next model...');
+                    // Try up to 2 more models
+                    for (let i = 0; i < 2; i++) {
+                        try {
+                            const nextModelUrl = getNextModel();
+                            console.log(`🔄 Retrying with different model...`);
+                            const retryResponse = await fetch(`${nextModelUrl}?key=${GEMINI_API_KEY}`, {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify(requestBody)
+                            });
+                            
+                            if (retryResponse.ok) {
+                                const retryData = await retryResponse.json();
+                                if (retryData.candidates?.[0]?.content) {
+                                    const aiResponse = retryData.candidates[0].content.parts[0].text;
+                                    console.log('✅ Retry successful with different model');
+                                    setCachedAIResponse(promptHash, aiResponse);
+                                    return aiResponse;
+                                }
+                            }
+                        } catch (retryError) {
+                            console.warn(`Retry ${i + 1} failed:`, retryError);
+                        }
+                    }
+                }
+                
                 throw new Error(`API Error: ${error.error?.message || response.statusText}`);
             } catch (e) {
                 throw new Error(`API Error: ${response.status} ${response.statusText}`);

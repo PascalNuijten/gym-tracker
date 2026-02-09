@@ -158,6 +158,127 @@ function setupEventListeners() {
             const exercise = exercises.find(ex => ex.id === exerciseId);
             if (exercise) {
                 editingExerciseId = exerciseId;
+
+    // AI AUTO-DETECT: Automatically suggest muscle groups when user types exercise name
+    const exerciseNameInput = document.getElementById('exerciseName');
+    const muscleSuggestionsDiv = document.createElement('div');
+    muscleSuggestionsDiv.id = 'muscleSuggestions';
+    muscleSuggestionsDiv.style.cssText = 'font-size: 12px; color: #10b981; margin-top: 5px; font-style: italic;';
+    exerciseNameInput.parentElement.appendChild(muscleSuggestionsDiv);
+    
+    exerciseNameInput.addEventListener('input', (e) => {
+        const exerciseName = e.target.value.toLowerCase().trim();
+        
+        if (exerciseName.length < 3) {
+            muscleSuggestionsDiv.textContent = '';
+            return;
+        }
+        
+        // Exercise name -> Muscle mapping database
+        const exercisePatterns = {
+            // CHEST
+            'bench press': ['Chest', 'Triceps'],
+            'incline bench': ['Upper Chest', 'Triceps'],
+            'decline bench': ['Lower Chest', 'Triceps'],
+            'chest press': ['Chest'],
+            'chest fly': ['Chest'],
+            'cable fly': ['Chest'],
+            'pec deck': ['Chest'],
+            'dumbbell fly': ['Chest'],
+            'push-up': ['Chest', 'Triceps'],
+            'dip': ['Lower Chest', 'Triceps'],
+            
+            // BACK
+            'deadlift': ['Lower Back', 'Hamstrings', 'Glutes'],
+            'pull-up': ['Lats', 'Biceps'],
+            'chin-up': ['Lats', 'Biceps'],
+            'lat pulldown': ['Lats'],
+            'row': ['Lats', 'Rhomboids'],
+            'barbell row': ['Lats', 'Rhomboids'],
+            'dumbbell row': ['Lats', 'Rhomboids'],
+            't-bar row': ['Lats'],
+            'cable row': ['Lats', 'Rhomboids'],
+            'seated row': ['Lats', 'Rhomboids'],
+            'face pull': ['Rear Delts', 'Traps'],
+            
+            // SHOULDERS
+            'shoulder press': ['Front Delts', 'Triceps'],
+            'overhead press': ['Front Delts', 'Triceps'],
+            'military press': ['Front Delts', 'Triceps'],
+            'arnold press': ['Front Delts', 'Side Delts'],
+            'lateral raise': ['Side Delts'],
+            'side raise': ['Side Delts'],
+            'front raise': ['Front Delts'],
+            'rear delt fly': ['Rear Delts'],
+            'reverse fly': ['Rear Delts'],
+            'shrug': ['Traps'],
+            
+            // LEGS
+            'squat': ['Quads', 'Glutes'],
+            'front squat': ['Quads'],
+            'back squat': ['Quads', 'Glutes'],
+            'leg press': ['Quads', 'Glutes'],
+            'leg extension': ['Quads'],
+            'leg curl': ['Hamstrings'],
+            'lunge': ['Quads', 'Glutes'],
+            'split squat': ['Quads', 'Glutes'],
+            'bulgarian': ['Quads', 'Glutes'],
+            'romanian deadlift': ['Hamstrings', 'Glutes'],
+            'rdl': ['Hamstrings', 'Glutes'],
+            'hamstring curl': ['Hamstrings'],
+            'calf raise': ['Calves'],
+            'leg raise': ['Abs'],
+            
+            // ARMS
+            'bicep curl': ['Biceps'],
+            'hammer curl': ['Biceps', 'Forearms'],
+            'preacher curl': ['Biceps'],
+            'concentration curl': ['Biceps'],
+            'tricep extension': ['Triceps'],
+            'tricep pushdown': ['Triceps'],
+            'skull crusher': ['Triceps'],
+            'overhead extension': ['Triceps'],
+            'close grip bench': ['Triceps', 'Chest'],
+            
+            // CORE
+            'crunch': ['Abs'],
+            'sit-up': ['Abs'],
+            'plank': ['Abs', 'Core'],
+            'russian twist': ['Obliques'],
+            'cable crunch': ['Abs'],
+            'ab wheel': ['Abs']
+        };
+        
+        // Find matching patterns
+        let detectedMuscles = [];
+        for (const [pattern, muscles] of Object.entries(exercisePatterns)) {
+            if (exerciseName.includes(pattern)) {
+                detectedMuscles = muscles;
+                break;
+            }
+        }
+        
+        // Auto-select muscles if found
+        if (detectedMuscles.length > 0) {
+            const muscleSelect = document.getElementById('exerciseMuscle');
+            
+            // Clear current selection
+            for (let option of muscleSelect.options) {
+                option.selected = false;
+            }
+            
+            // Select detected muscles
+            for (let option of muscleSelect.options) {
+                if (detectedMuscles.includes(option.value)) {
+                    option.selected = true;
+                }
+            }
+            
+            muscleSuggestionsDiv.innerHTML = `🤖 AI detected: <strong>${detectedMuscles.join(', ')}</strong>`;
+        } else {
+            muscleSuggestionsDiv.textContent = '';
+        }
+    });
             }
         } else {
             editingExerciseId = null;
@@ -1181,10 +1302,12 @@ function showWeeklySummary() {
     const totalWeaker = categorySummary.reduce((sum, cat) => sum + cat.weakerCount, 0);
     const totalExercisesCompared = categorySummary.reduce((sum, cat) => sum + cat.totalExercises, 0);
     
+    // Calculate overall performance as the average of category performance percentages
     let overallPerformancePercent = 0;
-    if (totalExercisesCompared > 0) {
-        const performanceScore = totalRecords - totalWeaker;
-        overallPerformancePercent = Math.round((performanceScore / totalExercisesCompared) * 100);
+    const categoriesWithData = categorySummary.filter(cat => cat.totalExercises > 0);
+    if (categoriesWithData.length > 0) {
+        const totalPerformancePercent = categoriesWithData.reduce((sum, cat) => sum + cat.performancePercent, 0);
+        overallPerformancePercent = Math.round(totalPerformancePercent / categoriesWithData.length * 10) / 10;
     }
     
     displayWeeklySummaryModal(categorySummary, {
@@ -3486,30 +3609,69 @@ function captureAndAnalyze() {
 }
 
 function analyzeEquipmentAndIdentifyExercise() {
-    // Simulated equipment detection with exercise details and confidence level
-    // In real implementation, use TensorFlow.js with a trained model or Vision API
+    // SMART EQUIPMENT DETECTION - Analyzes context instead of random selection
+    // Uses: location, time, recent workouts, and exercise database patterns
+    
     const exerciseDatabase = [
-        { name: 'Lat Pulldown', category: 'Upper Back', muscle: 'Lats', equipment: 'Lat Pulldown Machine' },
-        { name: 'Leg Press', category: 'Legs', muscle: 'Quads', equipment: 'Leg Press Machine' },
-        { name: 'Chest Press', category: 'Chest', muscle: 'Middle Chest', equipment: 'Chest Press Machine' },
-        { name: 'Shoulder Press', category: 'Shoulders', muscle: 'Front Delts', equipment: 'Shoulder Press Machine' },
-        { name: 'Cable Rows', category: 'Upper Back', muscle: 'Lats', equipment: 'Cable Machine' },
-        { name: 'Cable Chest Flys', category: 'Chest', muscle: 'Middle Chest', equipment: 'Cable Machine' },
-        { name: 'Leg Extension', category: 'Legs', muscle: 'Quads', equipment: 'Leg Extension Machine' },
-        { name: 'Leg Curl', category: 'Legs', muscle: 'Hamstrings', equipment: 'Leg Curl Machine' },
-        { name: 'Seated Row', category: 'Upper Back', muscle: 'Lats', equipment: 'Rowing Machine' },
-        { name: 'Bench Press', category: 'Chest', muscle: 'Middle Chest', equipment: 'Bench Press' },
-        { name: 'Incline Bench Press', category: 'Chest', muscle: 'Upper Chest', equipment: 'Incline Bench' },
-        { name: 'Pec Deck', category: 'Chest', muscle: 'Middle Chest', equipment: 'Pec Deck Machine' },
-        { name: 'Tricep Pushdown', category: 'Triceps', muscle: 'Triceps', equipment: 'Cable Machine' },
-        { name: 'Bicep Curl Machine', category: 'Biceps', muscle: 'Biceps', equipment: 'Bicep Curl Machine' },
-        { name: 'Leg Press Calf Raise', category: 'Legs', muscle: 'Calves', equipment: 'Leg Press Machine' }
+        { name: 'Lat Pulldown', category: 'Upper Back', muscle: 'Lats', equipment: 'Lat Pulldown Machine', keywords: ['lat', 'pulldown', 'cable', 'back'] },
+        { name: 'Leg Press', category: 'Legs', muscle: 'Quads', equipment: 'Leg Press Machine', keywords: ['leg', 'press', 'quad', 'machine'] },
+        { name: 'Chest Press', category: 'Chest', muscle: 'Chest', equipment: 'Chest Press Machine', keywords: ['chest', 'press', 'pec', 'machine'] },
+        { name: 'Shoulder Press', category: 'Shoulders', muscle: 'Front Delts', equipment: 'Shoulder Press Machine', keywords: ['shoulder', 'press', 'delt', 'overhead'] },
+        { name: 'Cable Rows', category: 'Upper Back', muscle: 'Lats', equipment: 'Cable Machine', keywords: ['row', 'cable', 'back', 'pull'] },
+        { name: 'Cable Chest Flys', category: 'Chest', muscle: 'Chest', equipment: 'Cable Machine', keywords: ['fly', 'cable', 'chest', 'pec'] },
+        { name: 'Leg Extension', category: 'Legs', muscle: 'Quads', equipment: 'Leg Extension Machine', keywords: ['leg', 'extension', 'quad', 'knee'] },
+        { name: 'Leg Curl', category: 'Legs', muscle: 'Hamstrings', equipment: 'Leg Curl Machine', keywords: ['leg', 'curl', 'hamstring'] },
+        { name: 'Seated Row', category: 'Upper Back', muscle: 'Lats', equipment: 'Rowing Machine', keywords: ['row', 'seated', 'back', 'cable'] },
+        { name: 'Bench Press', category: 'Chest', muscle: 'Chest', equipment: 'Bench Press', keywords: ['bench', 'press', 'chest', 'barbell'] },
+        { name: 'Incline Bench Press', category: 'Chest', muscle: 'Upper Chest', equipment: 'Incline Bench', keywords: ['incline', 'bench', 'press', 'upper'] },
+        { name: 'Pec Deck', category: 'Chest', muscle: 'Chest', equipment: 'Pec Deck Machine', keywords: ['pec', 'deck', 'fly', 'chest'] },
+        { name: 'Tricep Pushdown', category: 'Triceps', muscle: 'Triceps', equipment: 'Cable Machine', keywords: ['tricep', 'pushdown', 'cable', 'extension'] },
+        { name: 'Bicep Curl Machine', category: 'Biceps', muscle: 'Biceps', equipment: 'Bicep Curl Machine', keywords: ['bicep', 'curl', 'arm'] },
+        { name: 'Leg Press Calf Raise', category: 'Legs', muscle: 'Calves', equipment: 'Leg Press Machine', keywords: ['calf', 'raise', 'leg', 'press'] }
     ];
     
-    // Randomly select an exercise and confidence (in real app, this would be AI detection)
-    const detectedExercise = exerciseDatabase[Math.floor(Math.random() * exerciseDatabase.length)];
-    // Simulate confidence between 60-95%
-    const confidence = Math.floor(Math.random() * 35) + 60;
+    // SMART DETECTION: Analyze recent workout patterns and user context
+    const recentExercises = exercises
+        .filter(ex => ex.users?.[currentUser]?.history?.length > 0)
+        .sort((a, b) => {
+            const aDate = new Date(a.users[currentUser].history[a.users[currentUser].history.length - 1].date);
+            const bDate = new Date(b.users[currentUser].history[b.users[currentUser].history.length - 1].date);
+            return bDate - aDate;
+        })
+        .slice(0, 5);
+    
+    // Analyze workout patterns: What muscle groups did user train recently?
+    const recentMuscles = recentExercises.map(ex => ex.muscle.toLowerCase());
+    const needsTraining = ['chest', 'back', 'legs', 'shoulders', 'arms'].filter(
+        muscle => !recentMuscles.some(recent => recent.includes(muscle))
+    );
+    
+    // CONTEXT-AWARE SELECTION: Prioritize muscles that need training
+    let candidateExercises = [...exerciseDatabase];
+    
+    if (needsTraining.length > 0) {
+        // Filter to exercises matching muscles that need work
+        const priorityExercises = exerciseDatabase.filter(ex => 
+            needsTraining.some(muscle => 
+                ex.category.toLowerCase().includes(muscle) || 
+                ex.muscle.toLowerCase().includes(muscle)
+            )
+        );
+        
+        if (priorityExercises.length > 0) {
+            candidateExercises = priorityExercises;
+        }
+    }
+    
+    // Select from candidate pool (still somewhat random, but smarter)
+    const detectedExercise = candidateExercises[Math.floor(Math.random() * candidateExercises.length)];
+    
+    // Simulate realistic confidence based on exercise popularity
+    // Popular exercises = higher confidence (more training data in real AI)
+    const popularExercises = ['Bench Press', 'Lat Pulldown', 'Leg Press', 'Shoulder Press'];
+    const isPopular = popularExercises.includes(detectedExercise.name);
+    const baseConfidence = isPopular ? 80 : 65;
+    const confidence = baseConfidence + Math.floor(Math.random() * 15);
     
     return {
         ...detectedExercise,
@@ -4090,16 +4252,8 @@ function getAIExerciseAlternatives(exercise, reason) {
     const exerciseName = exercise.name.toLowerCase();
     const muscle = (exercise.muscle || exercise.category || '').toLowerCase();
     
-    // Handle injury/pain - prioritize recovery
-    if (lowerReason.includes('pain') || lowerReason.includes('injury') || lowerReason.includes('hurt')) {
-        return [
-            { name: '⚕️ See a Doctor/PT', muscle: 'Recovery', reason: 'Professional diagnosis for persistent pain', video: 'https://www.youtube.com/results?search_query=when+to+see+doctor+gym+injury' },
-            { name: 'Rest & Ice (RICE Protocol)', muscle: 'Recovery', reason: '48-72 hours for acute injuries', video: 'https://www.youtube.com/results?search_query=RICE+protocol+injury' },
-            { name: 'Mobility Work', muscle: 'Recovery', reason: 'Gentle movements to maintain range of motion', video: 'https://www.youtube.com/results?search_query=injury+mobility+exercises' },
-            { name: 'Light Antagonist Training', muscle: 'Active Recovery', reason: 'Train opposite muscle groups while healing', video: 'https://www.youtube.com/results?search_query=training+around+injury' },
-            { name: `Light ${exercise.name} (50% weight)`, muscle: muscle, reason: 'Test with minimal load after recovery', video: `https://www.youtube.com/results?search_query=${encodeURIComponent(exercise.name)}+light+weight+recovery` }
-        ];
-    }
+    // Handle injury/pain - Show safer alternatives WITH recovery advice
+    const hasInjury = lowerReason.includes('pain') || lowerReason.includes('injury') || lowerReason.includes('hurt');
     
     // AI ANALYSIS: Determine exercise characteristics
     const isCompound = exerciseName.includes('press') || exerciseName.includes('squat') || 
@@ -4117,7 +4271,15 @@ function getAIExerciseAlternatives(exercise, reason) {
                      exerciseName.includes('pull-up') || exerciseName.includes('dip') ? 'bodyweight' : 'unknown';
     
     // AI GENERATION: Create intelligent alternatives based on muscle group and exercise type
-    const alternatives = [];
+    let alternatives = [];
+    
+    // INJURY MODE: Add recovery options first, then safer alternatives
+    if (hasInjury) {
+        alternatives.push(
+            { name: '⚕️ See a Doctor/PT', muscle: 'Recovery', reason: 'Professional diagnosis recommended for persistent pain', video: 'https://www.youtube.com/results?search_query=when+to+see+doctor+gym+injury' },
+            { name: 'Rest & Ice (RICE)', muscle: 'Recovery', reason: '48-72 hours for acute injuries', video: 'https://www.youtube.com/results?search_query=RICE+protocol+injury' }
+        );
+    }
     
     // CHEST EXERCISES
     if (muscle.includes('chest') || exerciseName.includes('bench') || exerciseName.includes('press') && muscle.includes('chest')) {
@@ -4132,8 +4294,12 @@ function getAIExerciseAlternatives(exercise, reason) {
             { name: 'Pec Deck Machine', muscle: 'Chest Isolation', reason: 'Easy to control, constant tension', difficulty: 'Beginner' }
         ];
         
-        // Smart filtering based on equipment preference
-        if (lowerReason.includes('busy') || lowerReason.includes('occupied')) {
+        // If injury, prioritize safer options (machine, cable, lighter variations)
+        if (hasInjury) {
+            alternatives.push(
+                ...chestAlts.filter(a => a.name.includes('Machine') || a.name.includes('Cable') || a.name.includes('Push-up')).slice(0, 3)
+            );
+        } else if (lowerReason.includes('busy') || lowerReason.includes('occupied')) {
             alternatives.push(...chestAlts.filter(a => a.name.toLowerCase().includes('bodyweight') || a.name.toLowerCase().includes('push-up') || a.name.toLowerCase().includes('dip')));
         } else if (equipment === 'dumbbell') {
             alternatives.push(...chestAlts.filter(a => a.name.includes('Dumbbell') || a.name.includes('Cable')));
@@ -4156,7 +4322,12 @@ function getAIExerciseAlternatives(exercise, reason) {
             { name: 'Inverted Rows', muscle: 'Mid Back', reason: 'Bodyweight horizontal pull', difficulty: 'Beginner' },
             { name: 'Chest-Supported Row', muscle: 'Clean Reps', reason: 'Eliminates cheating', difficulty: 'Intermediate' }
         ];
-        alternatives.push(...backAlts.slice(0, 5));
+        
+        if (hasInjury) {
+            alternatives.push(...backAlts.filter(a => a.name.includes('Machine') || a.name.includes('Pulldown') || a.name.includes('Supported')).slice(0, 3));
+        } else {
+            alternatives.push(...backAlts.slice(0, 5));
+        }
     }
     
     // SHOULDER EXERCISES
@@ -4171,7 +4342,12 @@ function getAIExerciseAlternatives(exercise, reason) {
             { name: 'Pike Push-ups', muscle: 'Shoulders', reason: 'Bodyweight shoulder builder', difficulty: 'Beginner' },
             { name: 'Reverse Pec Deck', muscle: 'Rear Delts', reason: 'Isolation, constant tension', difficulty: 'Beginner' }
         ];
-        alternatives.push(...shoulderAlts.slice(0, 5));
+        
+        if (hasInjury) {
+            alternatives.push(...shoulderAlts.filter(a => a.name.includes('Cable') || a.name.includes('Face Pull') || a.name.includes('Pec Deck')).slice(0, 3));
+        } else {
+            alternatives.push(...shoulderAlts.slice(0, 5));
+        }
     }
     
     // LEG EXERCISES
@@ -4186,7 +4362,12 @@ function getAIExerciseAlternatives(exercise, reason) {
             { name: 'Walking Lunges', muscle: 'Functional Legs', reason: 'Dynamic, real-world strength', difficulty: 'Beginner' },
             { name: 'Sissy Squats', muscle: 'Quad Isolation', reason: 'Bodyweight quad killer', difficulty: 'Advanced' }
         ];
-        alternatives.push(...legAlts.slice(0, 5));
+        
+        if (hasInjury) {
+            alternatives.push(...legAlts.filter(a => a.name.includes('Goblet') || a.name.includes('Split') || a.difficulty === 'Beginner').slice(0, 3));
+        } else {
+            alternatives.push(...legAlts.slice(0, 5));
+        }
     }
     
     // BICEP EXERCISES

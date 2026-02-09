@@ -4032,20 +4032,26 @@ ${userProfile?.injuries ? `IMPORTANT: Consider their reported injuries: ${userPr
 ` : ''}Format with HTML: Use <strong> for emphasis, <ul><li> for lists, keep it encouraging but honest.`;
 
             console.log('Calling AI for performance analysis...');
+            console.log('Prompt length:', prompt.length, 'characters');
             
             // Add timeout
             const timeoutPromise = new Promise((_, reject) => 
                 setTimeout(() => reject(new Error('AI analysis timed out after 45 seconds')), 45000)
             );
             
+            const analysisStart = Date.now();
             const aiAnalysis = await Promise.race([
-                callGeminiAI(prompt, null, true, 2000), // 2000 tokens for detailed analysis
+                callGeminiAI(prompt, null, true, 3000), // Increased to 3000 tokens for detailed analysis
                 timeoutPromise
             ]);
+            const analysisTime = ((Date.now() - analysisStart) / 1000).toFixed(1);
+            console.log(`✅ AI response received in ${analysisTime}s`);
             
             if (!aiAnalysis) {
                 throw new Error('No AI response received');
             }
+            
+            console.log('AI analysis length:', aiAnalysis.length, 'characters');
             
             feedback = `<h4>📊 ${periodName}'s Complete AI Analysis</h4>`;
             feedback += `<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea; margin: 15px 0;">`;

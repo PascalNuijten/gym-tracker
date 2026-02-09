@@ -9,8 +9,8 @@ const GEMINI_API_KEY = 'AIzaSyCy8L-GZkUhNfaoG3JQ3d26IBN1s8M12lU';
 // Model rotation: Use 3 different models to get 60 requests/day total
 const GEMINI_MODELS = [
     'gemini-2.5-flash',           // 20 RPD
-    'gemini-2.5-flash-lite',      // 20 RPD
-    'gemini-1.5-flash'            // 20 RPD (stable model)
+    'gemini-2.5-flash-lite',      // 20 RPD  
+    'gemini-1.5-flash-002'        // 20 RPD (stable production model)
 ];
 let currentModelIndex = parseInt(localStorage.getItem('gymTrackerModelIndex') || '0');
 
@@ -5578,7 +5578,10 @@ function quickAddExercise(altDataEncoded) {
     document.getElementById('logWorkoutSection').style.display = 'none';
     
     // Open modal
-    exerciseModal.style.display = 'block';
+    const modal = document.getElementById('exerciseModal');
+    if (modal) {
+        modal.style.display = 'block';
+    }
     
     // Show success message
     const statusEl = document.getElementById('aiSuggestionStatus');

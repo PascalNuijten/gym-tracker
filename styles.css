@@ -334,7 +334,7 @@ h1 {
 .modal {
     display: none;
     position: fixed;
-    z-index: 1000;
+    z-index: 10000;  /* Increased to ensure it's above AI coach */
     left: 0;
     top: 0;
     width: 100%;
@@ -422,6 +422,16 @@ textarea {
     font-size: 1rem;
     font-family: inherit;
     transition: border-color 0.3s ease;
+    color: #333;  /* Ensure text is visible on iPhone */
+    background-color: #fff;  /* Ensure background is white */
+    -webkit-appearance: none;  /* Remove default iOS styling */
+    appearance: none;
+}
+
+/* Fix for iPhone select dropdown visibility */
+select option {
+    color: #333;
+    background-color: #fff;
 }
 
 input:focus,

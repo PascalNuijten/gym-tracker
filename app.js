@@ -1383,6 +1383,9 @@ function saveExercise() {
     exercises.push(newExercise);
     saveToFirebase();
     
+    // Refresh the existing exercises dropdown
+    populateExistingExercises();
+    
     alert(`Exercise "${name}" created! Scroll down and click "Log Workout" to add your first session.`);
     modal.style.display = 'none';
     exerciseForm.reset();
@@ -5764,8 +5767,27 @@ Respond with ONLY a JSON array of strings (one per exercise):
         console.error('Rep recommendation failed:', error);
     }
     
-    // Fallback: return null for all
-    return alternatives.map(() => null);
+    // Fallback: Generate basic recommendations based on exercise type
+    return alternatives.map(alt => {
+        if (!alt || alt.name === '⚕️ See a Doctor/PT' || alt.name === 'Rest & Ice (RICE)') {
+            return null;
+        }
+        
+        // Smart fallback based on equipment and difficulty
+        if (alt.equipment?.toLowerCase() === 'bodyweight') {
+            return "12-15 reps (bodyweight exercises typically use higher reps)";
+        } else if (alt.equipment?.toLowerCase() === 'barbell') {
+            return "6-10 reps (compound barbell movements for strength)";
+        } else if (alt.equipment?.toLowerCase() === 'machine') {
+            return "10-12 reps (controlled machine work for hypertrophy)";
+        } else if (alt.equipment?.toLowerCase() === 'cable') {
+            return "12-15 reps (constant tension with cables)";
+        } else if (alt.equipment?.toLowerCase() === 'dumbbell') {
+            return "8-12 reps (dumbbell work for balanced strength)";
+        } else {
+            return "8-12 reps (standard hypertrophy range)";
+        }
+    });
 }
 
 async function getAIExerciseAlternatives(exercise, reason) {

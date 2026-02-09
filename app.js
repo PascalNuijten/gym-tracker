@@ -111,7 +111,7 @@ function loadUserProfileIntoForm() {
 }
 
 // AI HELPER FUNCTIONS
-async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = true) {
+async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = true, maxTokens = 500) {
     if (!useRealAI || !GEMINI_API_KEY) {
         console.log('Real AI disabled or no API key, using fallback');
         return null;
@@ -135,7 +135,7 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
             }],
             generationConfig: {
                 temperature: 0.1,
-                maxOutputTokens: 500,
+                maxOutputTokens: maxTokens,
                 topP: 0.8,
                 topK: 10
             }
@@ -4039,7 +4039,7 @@ ${userProfile?.injuries ? `IMPORTANT: Consider their reported injuries: ${userPr
             );
             
             const aiAnalysis = await Promise.race([
-                callGeminiAI(prompt), // includeUserContext=true by default
+                callGeminiAI(prompt, null, true, 2000), // 2000 tokens for detailed analysis
                 timeoutPromise
             ]);
             
@@ -4437,7 +4437,7 @@ Just return the fact text, no formatting or quotes.`;
         );
         
         const aiResponse = await Promise.race([
-            callGeminiAI(prompt),
+            callGeminiAI(prompt, null, true, 200), // 200 tokens for fun facts
             timeoutPromise
         ]);
         

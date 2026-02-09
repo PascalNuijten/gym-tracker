@@ -1,4 +1,10 @@
 // Gym Tracker v2.0 - Separate Exercise Creation & Workout Logging
+
+// GOOGLE GEMINI AI CONFIGURATION
+const GEMINI_API_KEY = 'AIzaSyBnOgY0u9eaxZ1gDlwoXF0YCAn6mL035pU';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+let useRealAI = true; // Toggle this to switch between real AI and pattern matching
+
 // Firebase Configuration
 const firebaseConfig = {
   apiKey: "AIzaSyBfu3Z86uW0yjuZGPqObGeOaEEPY2aI0hI",
@@ -29,6 +35,88 @@ let setCounter = 1;
 let currentChart = null;
 let users = ['Fran', 'Pascal', 'Cicci']; // Track all users
 let isNewlyAddedFromCamera = false; // Track if exercise was just added from camera
+
+// GEMINI AI HELPER FUNCTIONS
+async function callGeminiAI(prompt, imageBase64 = null) {
+    if (!useRealAI || !GEMINI_API_KEY) {
+        console.log('Real AI disabled or no API key, using fallback');
+        return null;
+    }
+    
+    try {
+        const requestBody = {
+            contents: [{
+                parts: []
+            }]
+        };
+        
+        // Add image if provided
+        if (imageBase64) {
+            requestBody.contents[0].parts.push({
+                inline_data: {
+                    mime_type: "image/jpeg",
+                    data: imageBase64.split(',')[1] // Remove data:image/jpeg;base64, prefix
+                }
+            });
+        }
+        
+        // Add text prompt
+        requestBody.contents[0].parts.push({
+            text: prompt
+        });
+        
+        const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            console.error('Gemini API error:', error);
+            return null;
+        }
+        
+        const data = await response.json();
+        const aiResponse = data.candidates[0].content.parts[0].text;
+        console.log('Gemini AI response:', aiResponse);
+        return aiResponse;
+        
+    } catch (error) {
+        console.error('Error calling Gemini AI:', error);
+        return null;
+    }
+}
+
+async function detectMusclesWithAI(exerciseName) {
+    const prompt = `You are a fitness expert. Given the exercise name "${exerciseName}", identify the primary muscle groups worked.
+
+Respond ONLY with a JSON array of muscle group names from this exact list:
+["Chest", "Upper Chest", "Lower Chest", "Lats", "Traps", "Rhomboids", "Lower Back", "Front Delts", "Side Delts", "Rear Delts", "Biceps", "Triceps", "Forearms", "Quads", "Hamstrings", "Glutes", "Calves", "Abs", "Obliques", "Core"]
+
+Example response format: ["Chest", "Triceps"]
+
+Only include the most relevant 1-3 muscle groups. Be specific (e.g., "Upper Chest" for incline movements, not just "Chest").`;
+
+    const aiResponse = await callGeminiAI(prompt);
+    
+    if (aiResponse) {
+        try {
+            // Extract JSON from response (in case AI adds extra text)
+            const jsonMatch = aiResponse.match(/\[.*\]/s);
+            if (jsonMatch) {
+                const muscles = JSON.parse(jsonMatch[0]);
+                return muscles;
+            }
+        } catch (e) {
+            console.error('Failed to parse AI muscle response:', e);
+        }
+    }
+    
+    return null;
+}
 
 // DOM Elements (will be initialized in init())
 let userButtons;
@@ -166,118 +254,122 @@ function setupEventListeners() {
     muscleSuggestionsDiv.style.cssText = 'font-size: 12px; color: #10b981; margin-top: 5px; font-style: italic;';
     exerciseNameInput.parentElement.appendChild(muscleSuggestionsDiv);
     
-    exerciseNameInput.addEventListener('input', (e) => {
-        const exerciseName = e.target.value.toLowerCase().trim();
+    let aiDetectionTimeout;
+    exerciseNameInput.addEventListener('input', async (e) => {
+        const exerciseName = e.target.value.trim();
         
         if (exerciseName.length < 3) {
             muscleSuggestionsDiv.textContent = '';
             return;
         }
         
-        // Exercise name -> Muscle mapping database
-        const exercisePatterns = {
-            // CHEST
-            'bench press': ['Chest', 'Triceps'],
-            'incline bench': ['Upper Chest', 'Triceps'],
-            'decline bench': ['Lower Chest', 'Triceps'],
-            'chest press': ['Chest'],
-            'chest fly': ['Chest'],
-            'cable fly': ['Chest'],
-            'pec deck': ['Chest'],
-            'dumbbell fly': ['Chest'],
-            'push-up': ['Chest', 'Triceps'],
-            'dip': ['Lower Chest', 'Triceps'],
-            
-            // BACK
-            'deadlift': ['Lower Back', 'Hamstrings', 'Glutes'],
-            'pull-up': ['Lats', 'Biceps'],
-            'chin-up': ['Lats', 'Biceps'],
-            'lat pulldown': ['Lats'],
-            'row': ['Lats', 'Rhomboids'],
-            'barbell row': ['Lats', 'Rhomboids'],
-            'dumbbell row': ['Lats', 'Rhomboids'],
-            't-bar row': ['Lats'],
-            'cable row': ['Lats', 'Rhomboids'],
-            'seated row': ['Lats', 'Rhomboids'],
-            'face pull': ['Rear Delts', 'Traps'],
-            
-            // SHOULDERS
-            'shoulder press': ['Front Delts', 'Triceps'],
-            'overhead press': ['Front Delts', 'Triceps'],
-            'military press': ['Front Delts', 'Triceps'],
-            'arnold press': ['Front Delts', 'Side Delts'],
-            'lateral raise': ['Side Delts'],
-            'side raise': ['Side Delts'],
-            'front raise': ['Front Delts'],
-            'rear delt fly': ['Rear Delts'],
-            'reverse fly': ['Rear Delts'],
-            'shrug': ['Traps'],
-            
-            // LEGS
-            'squat': ['Quads', 'Glutes'],
-            'front squat': ['Quads'],
-            'back squat': ['Quads', 'Glutes'],
-            'leg press': ['Quads', 'Glutes'],
-            'leg extension': ['Quads'],
-            'leg curl': ['Hamstrings'],
-            'lunge': ['Quads', 'Glutes'],
-            'split squat': ['Quads', 'Glutes'],
-            'bulgarian': ['Quads', 'Glutes'],
-            'romanian deadlift': ['Hamstrings', 'Glutes'],
-            'rdl': ['Hamstrings', 'Glutes'],
-            'hamstring curl': ['Hamstrings'],
-            'calf raise': ['Calves'],
-            'leg raise': ['Abs'],
-            
-            // ARMS
-            'bicep curl': ['Biceps'],
-            'hammer curl': ['Biceps', 'Forearms'],
-            'preacher curl': ['Biceps'],
-            'concentration curl': ['Biceps'],
-            'tricep extension': ['Triceps'],
-            'tricep pushdown': ['Triceps'],
-            'skull crusher': ['Triceps'],
-            'overhead extension': ['Triceps'],
-            'close grip bench': ['Triceps', 'Chest'],
-            
-            // CORE
-            'crunch': ['Abs'],
-            'sit-up': ['Abs'],
-            'plank': ['Abs', 'Core'],
-            'russian twist': ['Obliques'],
-            'cable crunch': ['Abs'],
-            'ab wheel': ['Abs']
-        };
+        // Clear previous timeout
+        clearTimeout(aiDetectionTimeout);
         
-        // Find matching patterns
-        let detectedMuscles = [];
-        for (const [pattern, muscles] of Object.entries(exercisePatterns)) {
-            if (exerciseName.includes(pattern)) {
-                detectedMuscles = muscles;
-                break;
-            }
-        }
+        // Show loading indicator
+        muscleSuggestionsDiv.innerHTML = '🤖 AI analyzing...';
         
-        // Auto-select muscles if found
-        if (detectedMuscles.length > 0) {
-            const muscleSelect = document.getElementById('exerciseMuscle');
+        // Debounce AI calls (wait 800ms after user stops typing)
+        aiDetectionTimeout = setTimeout(async () => {
+            // Try real AI first
+            let detectedMuscles = await detectMusclesWithAI(exerciseName);
             
-            // Clear current selection
-            for (let option of muscleSelect.options) {
-                option.selected = false;
-            }
-            
-            // Select detected muscles
-            for (let option of muscleSelect.options) {
-                if (detectedMuscles.includes(option.value)) {
-                    option.selected = true;
+            // Fallback to pattern matching if AI fails
+            if (!detectedMuscles) {
+                const exercisePatterns = {
+                    'bench press': ['Chest', 'Triceps'],
+                    'incline bench': ['Upper Chest', 'Triceps'],
+                    'decline bench': ['Lower Chest', 'Triceps'],
+                    'chest press': ['Chest'],
+                    'chest fly': ['Chest'],
+                    'cable fly': ['Chest'],
+                    'pec deck': ['Chest'],
+                    'dumbbell fly': ['Chest'],
+                    'push-up': ['Chest', 'Triceps'],
+                    'dip': ['Lower Chest', 'Triceps'],
+                    'deadlift': ['Lower Back', 'Hamstrings', 'Glutes'],
+                    'pull-up': ['Lats', 'Biceps'],
+                    'chin-up': ['Lats', 'Biceps'],
+                    'lat pulldown': ['Lats'],
+                    'row': ['Lats', 'Rhomboids'],
+                    'barbell row': ['Lats', 'Rhomboids'],
+                    'dumbbell row': ['Lats', 'Rhomboids'],
+                    't-bar row': ['Lats'],
+                    'cable row': ['Lats', 'Rhomboids'],
+                    'seated row': ['Lats', 'Rhomboids'],
+                    'face pull': ['Rear Delts', 'Traps'],
+                    'shoulder press': ['Front Delts', 'Triceps'],
+                    'overhead press': ['Front Delts', 'Triceps'],
+                    'military press': ['Front Delts', 'Triceps'],
+                    'arnold press': ['Front Delts', 'Side Delts'],
+                    'lateral raise': ['Side Delts'],
+                    'side raise': ['Side Delts'],
+                    'front raise': ['Front Delts'],
+                    'rear delt fly': ['Rear Delts'],
+                    'reverse fly': ['Rear Delts'],
+                    'shrug': ['Traps'],
+                    'squat': ['Quads', 'Glutes'],
+                    'front squat': ['Quads'],
+                    'back squat': ['Quads', 'Glutes'],
+                    'leg press': ['Quads', 'Glutes'],
+                    'leg extension': ['Quads'],
+                    'leg curl': ['Hamstrings'],
+                    'lunge': ['Quads', 'Glutes'],
+                    'split squat': ['Quads', 'Glutes'],
+                    'bulgarian': ['Quads', 'Glutes'],
+                    'romanian deadlift': ['Hamstrings', 'Glutes'],
+                    'rdl': ['Hamstrings', 'Glutes'],
+                    'hamstring curl': ['Hamstrings'],
+                    'calf raise': ['Calves'],
+                    'leg raise': ['Abs'],
+                    'bicep curl': ['Biceps'],
+                    'hammer curl': ['Biceps', 'Forearms'],
+                    'preacher curl': ['Biceps'],
+                    'concentration curl': ['Biceps'],
+                    'tricep extension': ['Triceps'],
+                    'tricep pushdown': ['Triceps'],
+                    'skull crusher': ['Triceps'],
+                    'overhead extension': ['Triceps'],
+                    'close grip bench': ['Triceps', 'Chest'],
+                    'crunch': ['Abs'],
+                    'sit-up': ['Abs'],
+                    'plank': ['Abs', 'Core'],
+                    'russian twist': ['Obliques'],
+                    'cable crunch': ['Abs'],
+                    'ab wheel': ['Abs']
+                };
+                
+                const lowerName = exerciseName.toLowerCase();
+                for (const [pattern, muscles] of Object.entries(exercisePatterns)) {
+                    if (lowerName.includes(pattern)) {
+                        detectedMuscles = muscles;
+                        break;
+                    }
                 }
             }
             
-            muscleSuggestionsDiv.innerHTML = `🤖 AI detected: <strong>${detectedMuscles.join(', ')}</strong>`;
-        } else {
-            muscleSuggestionsDiv.textContent = '';
-        }
+            // Auto-select muscles if found
+            if (detectedMuscles && detectedMuscles.length > 0) {
+                const muscleSelect = document.getElementById('exerciseMuscle');
+                
+                // Clear current selection
+                for (let option of muscleSelect.options) {
+                    option.selected = false;
+                }
+                
+                // Select detected muscles
+                for (let option of muscleSelect.options) {
+                    if (detectedMuscles.includes(option.value)) {
+                        option.selected = true;
+                    }
+                }
+                
+                const aiLabel = useRealAI ? '🤖 Gemini AI detected' : '🤖 Pattern match';
+                muscleSuggestionsDiv.innerHTML = `${aiLabel}: <strong>${detectedMuscles.join(', ')}</strong>`;
+            } else {
+                muscleSuggestionsDiv.textContent = '';
+            }
+        }, 800);
     });
             }
         } else {
@@ -3601,16 +3693,18 @@ function captureAndAnalyze() {
     cameraVideo.style.display = 'none';
     cameraCanvas.style.display = 'block';
     
-    // Simulate AI analysis (in real implementation, you'd use TensorFlow.js or cloud vision API)
-    setTimeout(() => {
-        const detectedExercise = analyzeEquipmentAndIdentifyExercise();
+    // Get image data for AI analysis
+    const imageData = cameraCanvas.toDataURL('image/jpeg', 0.8);
+    
+    // Use real AI to analyze image
+    setTimeout(async () => {
+        const detectedExercise = await analyzeEquipmentAndIdentifyExercise(imageData);
         processDetectedExercise(detectedExercise, resultBox);
-    }, 2000);
+    }, 1000);
 }
 
-function analyzeEquipmentAndIdentifyExercise() {
-    // SMART EQUIPMENT DETECTION - Analyzes context instead of random selection
-    // Uses: location, time, recent workouts, and exercise database patterns
+async function analyzeEquipmentAndIdentifyExercise(imageBase64 = null) {
+    // REAL AI VISION - Analyzes actual camera image with Gemini Vision
     
     const exerciseDatabase = [
         { name: 'Lat Pulldown', category: 'Upper Back', muscle: 'Lats', equipment: 'Lat Pulldown Machine', keywords: ['lat', 'pulldown', 'cable', 'back'] },
@@ -3630,48 +3724,89 @@ function analyzeEquipmentAndIdentifyExercise() {
         { name: 'Leg Press Calf Raise', category: 'Legs', muscle: 'Calves', equipment: 'Leg Press Machine', keywords: ['calf', 'raise', 'leg', 'press'] }
     ];
     
-    // SMART DETECTION: Analyze recent workout patterns and user context
-    const recentExercises = exercises
-        .filter(ex => ex.users?.[currentUser]?.history?.length > 0)
-        .sort((a, b) => {
-            const aDate = new Date(a.users[currentUser].history[a.users[currentUser].history.length - 1].date);
-            const bDate = new Date(b.users[currentUser].history[b.users[currentUser].history.length - 1].date);
-            return bDate - aDate;
-        })
-        .slice(0, 5);
+    let detectedExercise = null;
+    let confidence = 0;
     
-    // Analyze workout patterns: What muscle groups did user train recently?
-    const recentMuscles = recentExercises.map(ex => ex.muscle.toLowerCase());
-    const needsTraining = ['chest', 'back', 'legs', 'shoulders', 'arms'].filter(
-        muscle => !recentMuscles.some(recent => recent.includes(muscle))
-    );
-    
-    // CONTEXT-AWARE SELECTION: Prioritize muscles that need training
-    let candidateExercises = [...exerciseDatabase];
-    
-    if (needsTraining.length > 0) {
-        // Filter to exercises matching muscles that need work
-        const priorityExercises = exerciseDatabase.filter(ex => 
-            needsTraining.some(muscle => 
-                ex.category.toLowerCase().includes(muscle) || 
-                ex.muscle.toLowerCase().includes(muscle)
-            )
-        );
+    // TRY REAL AI VISION FIRST
+    if (useRealAI && imageBase64) {
+        const equipmentList = exerciseDatabase.map(ex => ex.equipment).join(', ');
+        const prompt = `You are a fitness equipment recognition AI. Analyze this gym equipment image and identify what exercise equipment it is.
+
+Available equipment types: ${equipmentList}
+
+Respond with ONLY a JSON object in this exact format:
+{
+  "equipment": "exact equipment name from the list above",
+  "confidence": 75,
+  "reasoning": "brief description of what you see"
+}
+
+Be honest about confidence (0-100). If you're not sure, give lower confidence.`;
+
+        const aiResponse = await callGeminiAI(prompt, imageBase64);
         
-        if (priorityExercises.length > 0) {
-            candidateExercises = priorityExercises;
+        if (aiResponse) {
+            try {
+                const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const result = JSON.parse(jsonMatch[0]);
+                    
+                    // Find matching exercise from database
+                    const matchedExercise = exerciseDatabase.find(ex => 
+                        ex.equipment.toLowerCase() === result.equipment.toLowerCase()
+                    );
+                    
+                    if (matchedExercise) {
+                        detectedExercise = matchedExercise;
+                        confidence = result.confidence || 75;
+                        console.log('✅ Real AI detection:', result.equipment, confidence + '%');
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to parse AI vision response:', e);
+            }
         }
     }
     
-    // Select from candidate pool (still somewhat random, but smarter)
-    const detectedExercise = candidateExercises[Math.floor(Math.random() * candidateExercises.length)];
-    
-    // Simulate realistic confidence based on exercise popularity
-    // Popular exercises = higher confidence (more training data in real AI)
-    const popularExercises = ['Bench Press', 'Lat Pulldown', 'Leg Press', 'Shoulder Press'];
-    const isPopular = popularExercises.includes(detectedExercise.name);
-    const baseConfidence = isPopular ? 80 : 65;
-    const confidence = baseConfidence + Math.floor(Math.random() * 15);
+    // FALLBACK: Smart context-based selection if AI fails
+    if (!detectedExercise) {
+        console.log('⚠️ AI failed, using smart fallback');
+        
+        const recentExercises = exercises
+            .filter(ex => ex.users?.[currentUser]?.history?.length > 0)
+            .sort((a, b) => {
+                const aDate = new Date(a.users[currentUser].history[a.users[currentUser].history.length - 1].date);
+                const bDate = new Date(b.users[currentUser].history[b.users[currentUser].history.length - 1].date);
+                return bDate - aDate;
+            })
+            .slice(0, 5);
+        
+        const recentMuscles = recentExercises.map(ex => ex.muscle.toLowerCase());
+        const needsTraining = ['chest', 'back', 'legs', 'shoulders', 'arms'].filter(
+            muscle => !recentMuscles.some(recent => recent.includes(muscle))
+        );
+        
+        let candidateExercises = [...exerciseDatabase];
+        
+        if (needsTraining.length > 0) {
+            const priorityExercises = exerciseDatabase.filter(ex => 
+                needsTraining.some(muscle => 
+                    ex.category.toLowerCase().includes(muscle) || 
+                    ex.muscle.toLowerCase().includes(muscle)
+                )
+            );
+            
+            if (priorityExercises.length > 0) {
+                candidateExercises = priorityExercises;
+            }
+        }
+        
+        detectedExercise = candidateExercises[Math.floor(Math.random() * candidateExercises.length)];
+        
+        const popularExercises = ['Bench Press', 'Lat Pulldown', 'Leg Press', 'Shoulder Press'];
+        const isPopular = popularExercises.includes(detectedExercise.name);
+        confidence = isPopular ? (80 + Math.floor(Math.random() * 15)) : (65 + Math.floor(Math.random() * 15));
+    }
     
     return {
         ...detectedExercise,
@@ -4202,11 +4337,11 @@ function findSubstitutes() {
     resultBox.classList.add('show');
     resultBox.innerHTML = '<div class="loading-spinner"></div> AI is analyzing alternatives...';
     
-    setTimeout(() => {
+    setTimeout(async () => {
         const exercise = exercises.find(ex => ex.id === exerciseId);
-        const alternatives = getAIExerciseAlternatives(exercise, reason);
+        const alternatives = await getAIExerciseAlternatives(exercise, reason);
         
-        let html = `<h4>🔄 AI-Powered Alternatives for ${exercise.name}</h4>`;
+        let html = `<h4>🔄 ${useRealAI ? 'Gemini AI' : 'Smart'} Alternatives for ${exercise.name}</h4>`;
         
         if (reason) {
             html += `<p><em>Considering: ${reason}</em></p>`;
@@ -4224,6 +4359,10 @@ function findSubstitutes() {
             
             if (alt.muscle) {
                 html += `<div style="color: #666; font-size: 0.85rem; margin-bottom: 4px;">🎯 <strong>Targets:</strong> ${alt.muscle}</div>`;
+            }
+            
+            if (alt.difficulty) {
+                html += `<div style="color: #888; font-size: 0.8rem; margin-bottom: 4px;">📊 <strong>Level:</strong> ${alt.difficulty}</div>`;
             }
             
             html += `<div style="color: #555; font-size: 0.9rem;">${alt.reason}</div>`;
@@ -4244,18 +4383,56 @@ function findSubstitutes() {
     }, 1500);
 }
 
-function getAIExerciseAlternatives(exercise, reason) {
-    // AI-POWERED DYNAMIC RECOMMENDATIONS
-    // Analyzes exercise characteristics and generates intelligent alternatives
+async function getAIExerciseAlternatives(exercise, reason) {
+    // REAL AI-POWERED DYNAMIC RECOMMENDATIONS
+    // Uses Gemini AI to generate intelligent alternatives
     
     const lowerReason = reason.toLowerCase();
     const exerciseName = exercise.name.toLowerCase();
     const muscle = (exercise.muscle || exercise.category || '').toLowerCase();
-    
-    // Handle injury/pain - Show safer alternatives WITH recovery advice
     const hasInjury = lowerReason.includes('pain') || lowerReason.includes('injury') || lowerReason.includes('hurt');
     
-    // AI ANALYSIS: Determine exercise characteristics
+    // TRY REAL AI FIRST
+    if (useRealAI) {
+        const injuryContext = hasInjury ? 
+            `IMPORTANT: The user mentioned pain/injury ("${reason}"). Include recovery advice AND 3-5 safer alternative exercises (machines, cables, lighter variations) that avoid the painful area.` :
+            `User wants alternatives because: "${reason}"`;
+        
+        const prompt = `You are a certified personal trainer. Generate 5 alternative exercises for "${exercise.name}" (targets: ${muscle}).
+
+${injuryContext}
+
+Respond with ONLY a JSON array of 5 exercises in this exact format:
+[
+  {
+    "name": "Exercise Name",
+    "muscle": "Primary Muscle",
+    "reason": "Why this is a good alternative (1 sentence)",
+    "difficulty": "Beginner/Intermediate/Advanced"
+  }
+]
+
+${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), then 3-5 safer exercise alternatives.' : 'Focus on similar movement patterns or same muscle groups.'}`;
+
+        const aiResponse = await callGeminiAI(prompt);
+        
+        if (aiResponse) {
+            try {
+                const jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
+                if (jsonMatch) {
+                    const alternatives = JSON.parse(jsonMatch[0]);
+                    console.log('✅ Real AI generated alternatives:', alternatives);
+                    return alternatives;
+                }
+            } catch (e) {
+                console.error('Failed to parse AI alternatives:', e);
+            }
+        }
+    }
+    
+    // FALLBACK: Pattern-based alternatives if AI fails
+    console.log('⚠️ Using fallback alternatives');
+    
     const isCompound = exerciseName.includes('press') || exerciseName.includes('squat') || 
                        exerciseName.includes('deadlift') || exerciseName.includes('row') || 
                        exerciseName.includes('pull') || exerciseName.includes('dip');
@@ -4270,14 +4447,13 @@ function getAIExerciseAlternatives(exercise, reason) {
                      exerciseName.includes('bodyweight') || exerciseName.includes('push-up') || 
                      exerciseName.includes('pull-up') || exerciseName.includes('dip') ? 'bodyweight' : 'unknown';
     
-    // AI GENERATION: Create intelligent alternatives based on muscle group and exercise type
     let alternatives = [];
     
     // INJURY MODE: Add recovery options first, then safer alternatives
     if (hasInjury) {
         alternatives.push(
-            { name: '⚕️ See a Doctor/PT', muscle: 'Recovery', reason: 'Professional diagnosis recommended for persistent pain', video: 'https://www.youtube.com/results?search_query=when+to+see+doctor+gym+injury' },
-            { name: 'Rest & Ice (RICE)', muscle: 'Recovery', reason: '48-72 hours for acute injuries', video: 'https://www.youtube.com/results?search_query=RICE+protocol+injury' }
+            { name: '⚕️ See a Doctor/PT', muscle: 'Recovery', reason: 'Professional diagnosis recommended for persistent pain', difficulty: 'N/A' },
+            { name: 'Rest & Ice (RICE)', muscle: 'Recovery', reason: '48-72 hours for acute injuries', difficulty: 'N/A' }
         );
     }
     

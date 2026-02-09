@@ -2,7 +2,7 @@
 
 // AI CONFIGURATION
 const GEMINI_API_KEY = 'AIzaSyBnOgY0u9eaxZ1gDlwoXF0YCAn6mL035pU';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent';
 let useRealAI = true; // Toggle this to switch between real AI and pattern matching
 
 // Firebase Configuration

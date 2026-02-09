@@ -5,7 +5,7 @@
 // To set up: https://console.cloud.google.com/apis/credentials
 // Add HTTP referrer restrictions: https://pascalnuijten.github.io/*
 const GEMINI_API_KEY = 'AIzaSyCy8L-GZkUhNfaoG3JQ3d26IBN1s8M12lU';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-exp-1206:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
 let useRealAI = true; // AI enabled by default
 
 // Firebase Configuration
@@ -271,6 +271,92 @@ function init() {
     setupFirebaseListeners();
 }
 
+// Exercise Database - Common exercises with pre-filled data
+const EXERCISE_DATABASE = {
+    // Chest
+    'bench press': { category: 'Chest', muscles: ['Chest', 'Front Delts', 'Triceps'], equipment: 'Barbell' },
+    'incline bench press': { category: 'Chest', muscles: ['Upper Chest', 'Front Delts', 'Triceps'], equipment: 'Barbell' },
+    'decline bench press': { category: 'Chest', muscles: ['Lower Chest', 'Triceps'], equipment: 'Barbell' },
+    'dumbbell press': { category: 'Chest', muscles: ['Chest', 'Front Delts', 'Triceps'], equipment: 'Dumbbells' },
+    'incline dumbbell press': { category: 'Chest', muscles: ['Upper Chest', 'Front Delts'], equipment: 'Dumbbells' },
+    'chest fly': { category: 'Chest', muscles: ['Chest'], equipment: 'Dumbbells or Cable' },
+    'cable fly': { category: 'Chest', muscles: ['Chest'], equipment: 'Cable Machine' },
+    'push up': { category: 'Chest', muscles: ['Chest', 'Triceps'], equipment: 'Bodyweight' },
+    
+    // Back
+    'deadlift': { category: 'Lower Back', muscles: ['Lower Back', 'Glutes', 'Hamstrings'], equipment: 'Barbell' },
+    'barbell row': { category: 'Upper Back', muscles: ['Lats', 'Traps', 'Rear Delts'], equipment: 'Barbell' },
+    'bent over row': { category: 'Upper Back', muscles: ['Lats', 'Traps'], equipment: 'Barbell' },
+    'dumbbell row': { category: 'Upper Back', muscles: ['Lats', 'Traps'], equipment: 'Dumbbells' },
+    'pull up': { category: 'Upper Back', muscles: ['Lats', 'Biceps'], equipment: 'Bodyweight' },
+    'chin up': { category: 'Upper Back', muscles: ['Lats', 'Biceps'], equipment: 'Bodyweight' },
+    'lat pulldown': { category: 'Laterals', muscles: ['Lats', 'Biceps'], equipment: 'Cable Machine' },
+    'cable row': { category: 'Upper Back', muscles: ['Lats', 'Traps'], equipment: 'Cable Machine' },
+    'face pull': { category: 'Shoulders', muscles: ['Rear Delts', 'Traps'], equipment: 'Cable Machine' },
+    
+    // Shoulders
+    'shoulder press': { category: 'Shoulders', muscles: ['Front Delts', 'Side Delts', 'Triceps'], equipment: 'Barbell or Dumbbells' },
+    'overhead press': { category: 'Shoulders', muscles: ['Front Delts', 'Triceps'], equipment: 'Barbell' },
+    'military press': { category: 'Shoulders', muscles: ['Front Delts', 'Triceps'], equipment: 'Barbell' },
+    'dumbbell shoulder press': { category: 'Shoulders', muscles: ['Front Delts', 'Side Delts'], equipment: 'Dumbbells' },
+    'lateral raise': { category: 'Shoulders', muscles: ['Side Delts'], equipment: 'Dumbbells' },
+    'front raise': { category: 'Shoulders', muscles: ['Front Delts'], equipment: 'Dumbbells' },
+    'rear delt fly': { category: 'Shoulders', muscles: ['Rear Delts'], equipment: 'Dumbbells' },
+    
+    // Arms
+    'barbell curl': { category: 'Biceps', muscles: ['Biceps'], equipment: 'Barbell' },
+    'dumbbell curl': { category: 'Biceps', muscles: ['Biceps'], equipment: 'Dumbbells' },
+    'hammer curl': { category: 'Biceps', muscles: ['Biceps', 'Forearms'], equipment: 'Dumbbells' },
+    'preacher curl': { category: 'Biceps', muscles: ['Biceps'], equipment: 'Barbell or Dumbbells' },
+    'tricep extension': { category: 'Triceps', muscles: ['Triceps'], equipment: 'Dumbbells or Cable' },
+    'overhead tricep extension': { category: 'Triceps', muscles: ['Triceps'], equipment: 'Dumbbells' },
+    'tricep pushdown': { category: 'Triceps', muscles: ['Triceps'], equipment: 'Cable Machine' },
+    'skull crusher': { category: 'Triceps', muscles: ['Triceps'], equipment: 'Barbell' },
+    'dips': { category: 'Triceps', muscles: ['Triceps', 'Chest'], equipment: 'Bodyweight or Dip Bar' },
+    
+    // Legs
+    'squat': { category: 'Legs', muscles: ['Quads', 'Glutes', 'Hamstrings'], equipment: 'Barbell' },
+    'back squat': { category: 'Legs', muscles: ['Quads', 'Glutes'], equipment: 'Barbell' },
+    'front squat': { category: 'Legs', muscles: ['Quads', 'Core'], equipment: 'Barbell' },
+    'leg press': { category: 'Legs', muscles: ['Quads', 'Glutes'], equipment: 'Machine' },
+    'hack squat': { category: 'Legs', muscles: ['Quads', 'Glutes'], equipment: 'Machine' },
+    'leg extension': { category: 'Legs', muscles: ['Quads'], equipment: 'Machine' },
+    'leg curl': { category: 'Legs', muscles: ['Hamstrings'], equipment: 'Machine' },
+    'hamstring curl': { category: 'Legs', muscles: ['Hamstrings'], equipment: 'Machine' },
+    'romanian deadlift': { category: 'Legs', muscles: ['Hamstrings', 'Glutes', 'Lower Back'], equipment: 'Barbell' },
+    'lunge': { category: 'Legs', muscles: ['Quads', 'Glutes'], equipment: 'Bodyweight or Dumbbells' },
+    'bulgarian split squat': { category: 'Legs', muscles: ['Quads', 'Glutes'], equipment: 'Dumbbells' },
+    'calf raise': { category: 'Legs', muscles: ['Calves'], equipment: 'Machine or Dumbbells' },
+    
+    // Abs
+    'crunch': { category: 'Abdominals', muscles: ['Abs'], equipment: 'Bodyweight' },
+    'sit up': { category: 'Abdominals', muscles: ['Abs', 'Core'], equipment: 'Bodyweight' },
+    'plank': { category: 'Abdominals', muscles: ['Core', 'Abs'], equipment: 'Bodyweight' },
+    'leg raise': { category: 'Abdominals', muscles: ['Abs', 'Core'], equipment: 'Bodyweight' },
+    'hanging leg raise': { category: 'Abdominals', muscles: ['Abs'], equipment: 'Pull-up Bar' },
+    'cable crunch': { category: 'Abdominals', muscles: ['Abs'], equipment: 'Cable Machine' },
+    'russian twist': { category: 'Abdominals', muscles: ['Obliques', 'Abs'], equipment: 'Bodyweight or Dumbbell' }
+};
+
+// Smart exercise matching function
+function findExerciseMatch(exerciseName) {
+    const cleanName = exerciseName.toLowerCase().trim();
+    
+    // Direct match
+    if (EXERCISE_DATABASE[cleanName]) {
+        return EXERCISE_DATABASE[cleanName];
+    }
+    
+    // Partial match - find exercises that contain the search term
+    for (const [key, value] of Object.entries(EXERCISE_DATABASE)) {
+        if (cleanName.includes(key) || key.includes(cleanName)) {
+            return value;
+        }
+    }
+    
+    return null;
+}
+
 // AI Auto-fill Exercise Data
 async function aiSuggestExerciseData(exerciseName) {
     const statusEl = document.getElementById('aiSuggestionStatus');
@@ -284,16 +370,46 @@ async function aiSuggestExerciseData(exerciseName) {
     aiBtn.textContent = '⏳ Analyzing...';
     statusEl.style.display = 'block';
     statusEl.style.color = '#666';
-    statusEl.textContent = '🤖 AI is analyzing the exercise...';
-    
-    // Set timeout for AI response
-    const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('AI request timed out after 45 seconds')), 45000)
-    );
+    statusEl.textContent = '🔍 Searching exercise database...';
     
     try {
-        console.log('AI auto-fill starting for:', exerciseName);
-        console.log('useRealAI:', useRealAI);
+        console.log('Auto-fill starting for:', exerciseName);
+        
+        // FIRST: Try database match (instant, no API calls)
+        const dbMatch = findExerciseMatch(exerciseName);
+        if (dbMatch) {
+            console.log('✅ Found in database:', dbMatch);
+            statusEl.style.color = '#28a745';
+            statusEl.textContent = '✅ Found in exercise database!';
+            
+            // Auto-fill the form
+            if (dbMatch.category) {
+                categorySelect.value = dbMatch.category;
+                categorySelect.dispatchEvent(new Event('change'));
+            }
+            
+            if (dbMatch.muscles && dbMatch.muscles.length > 0) {
+                muscleSelect.value = dbMatch.muscles[0];
+            }
+            
+            // Show success message
+            aiBtn.textContent = '✨ Auto-fill';
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+                aiBtn.disabled = false;
+            }, 2000);
+            
+            return;
+        }
+        
+        // SECOND: No database match - try AI (if not quota exceeded)
+        console.log('Not in database, trying AI...');
+        statusEl.textContent = '🤖 AI is analyzing (this may take 30+ seconds)...';
+        
+        // Set timeout for AI response
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('AI request timed out after 45 seconds')), 45000)
+        );
         
         if (!useRealAI) {
             throw new Error('AI is disabled - set useRealAI = true');

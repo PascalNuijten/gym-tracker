@@ -129,24 +129,27 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
         
         const requestBody = {
             contents: [{
-                parts: []
-            }]
-        };
+                parts: [{
+                    text: enhancedPrompt
+                }]
+            }],
+            generationConfig: {
+                temperature: 0.1,
+                maxOutputTokens: 200,
+                topP: 0.8,
+                topK: 10
+            }
+        }
         
         // Add image if provided
         if (imageBase64) {
-            requestBody.contents[0].parts.push({
+            requestBody.contents[0].parts.unshift({
                 inline_data: {
                     mime_type: "image/jpeg",
-                    data: imageBase64.split(',')[1] // Remove data:image/jpeg;base64, prefix
+                    data: imageBase64.split(',')[1]
                 }
             });
         }
-        
-        // Add text prompt
-        requestBody.contents[0].parts.push({
-            text: enhancedPrompt
-        });
         
         const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
             method: 'POST',

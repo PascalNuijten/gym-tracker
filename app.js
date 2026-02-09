@@ -6,11 +6,10 @@
 // Add HTTP referrer restrictions: https://pascalnuijten.github.io/*
 const GEMINI_API_KEY = 'AIzaSyCy8L-GZkUhNfaoG3JQ3d26IBN1s8M12lU';
 
-// Model rotation: Use 3 different models to get 60 requests/day total
+// Model rotation: Only use models that actually exist and work
 const GEMINI_MODELS = [
     'gemini-2.5-flash',           // 20 RPD
-    'gemini-2.5-flash-lite',      // 20 RPD  
-    'gemini-1.5-flash-002'        // 20 RPD (stable production model)
+    'gemini-2.5-flash-lite'       // 20 RPD
 ];
 let currentModelIndex = parseInt(localStorage.getItem('gymTrackerModelIndex') || '0');
 
@@ -5570,12 +5569,16 @@ function quickAddExercise(altDataEncoded) {
     }
     
     // Enable form fields
-    document.getElementById('exerciseCategory').disabled = false;
-    document.getElementById('exerciseMuscle').disabled = false;
+    const categoryEl = document.getElementById('exerciseCategory');
+    const muscleEl = document.getElementById('exerciseMuscle');
+    if (categoryEl) categoryEl.disabled = false;
+    if (muscleEl) muscleEl.disabled = false;
     
     // Show new exercise section
-    document.getElementById('newExerciseSection').style.display = 'block';
-    document.getElementById('logWorkoutSection').style.display = 'none';
+    const newSection = document.getElementById('newExerciseSection');
+    const logSection = document.getElementById('logWorkoutSection');
+    if (newSection) newSection.style.display = 'block';
+    if (logSection) logSection.style.display = 'none';
     
     // Open modal
     const modal = document.getElementById('exerciseModal');

@@ -4116,13 +4116,40 @@ function generateCombinedAnalysis(period) {
             const userProfile = getUserProfile(currentUser);
             const profileContext = userProfile ? getUserContext(currentUser) : '';
             
+            // Build goal-specific analysis requirements
+            let goalGuidance = '';
+            if (userProfile?.goal) {
+                const goalMap = {
+                    'muscle': `Their goal is MUSCLE BUILDING. Assess if they're doing enough volume (10-20 sets per muscle group per week), training frequency (each muscle 2x/week), and progressive overload. Recommend hypertrophy rep ranges (8-12 reps).`,
+                    'strength': `Their goal is STRENGTH. Evaluate if they're lifting heavy enough (6-8 reps), doing compound movements, and allowing proper recovery. Check if they're progressively overloading.`,
+                    'endurance': `Their goal is ENDURANCE. Check if they're doing higher rep ranges (15-20+), sufficient training frequency, and maintaining consistency. Volume over intensity.`,
+                    'weight_loss': `Their goal is WEIGHT LOSS. Assess training frequency (4-5x/week ideal), total calorie burn through volume, and circuit-style training. Encourage consistency above all.`,
+                    'general': `Their goal is GENERAL FITNESS. Evaluate overall balance, variety of exercises, and sustainable training frequency. Well-rounded approach is key.`
+                };
+                goalGuidance = goalMap[userProfile.goal] || goalMap['general'];
+            }
+            
+            let frequencyGuidance = '';
+            if (userProfile?.frequency) {
+                const targetDays = parseInt(userProfile.frequency);
+                if (!isNaN(targetDays)) {
+                    frequencyGuidance = `They planned to train ${targetDays} days/week but actually trained ${uniqueDays} days in ${periodName.toLowerCase()}. ${uniqueDays >= targetDays ? 'GREAT consistency! Praise this.' : `They're UNDER their target by ${targetDays - uniqueDays} days. Encourage them to hit their planned frequency.`}`;
+                }
+            }
+            
             const prompt = `You are an expert personal trainer analyzing ${currentUser}'s workout data for ${periodName.toLowerCase()}.
 
 ${profileContext ? `USER PROFILE:
 ${profileContext}
-
-` : ''}WORKOUT DATA SUMMARY:
-- Training Days: ${uniqueDays} days
+` : ''}
+${goalGuidance ? `🎯 PRIMARY GOAL FOCUS:
+${goalGuidance}
+` : ''}
+${frequencyGuidance ? `📅 TRAINING FREQUENCY CHECK:
+${frequencyGuidance}
+` : ''}
+WORKOUT DATA SUMMARY:
+- Training Days: ${uniqueDays} days ${userProfile?.frequency ? `(Target: ${userProfile.frequency} days/week)` : ''}
 - Different Exercises: ${uniqueExercises} exercises
 - Total Sets: ${totalSets} sets
 - Total Volume: ${totalVolume.toLocaleString()}kg
@@ -4132,15 +4159,17 @@ DETAILED WORKOUTS:
 ${workoutSummary}
 
 Provide a comprehensive analysis (200-300 words) covering:
-1. **Overall Performance**: Comment on training frequency, volume, and consistency RELATIVE to their profile
-2. **Muscle Group Balance**: Analyze if training is balanced (push/pull/legs ratio)
-3. **Specific Insights**: Identify strengths and weaknesses based on actual data
-4. **Actionable Recommendations**: 2-3 specific things to improve considering their experience level, goals, and any injuries
-5. **Progress Indicators**: Are they on track for their specific fitness goals?
+1. **Goal Progress**: ${goalGuidance ? 'MOST IMPORTANT - Are they training correctly for their specific goal? Be specific about what they need to do differently.' : 'Assess overall training approach'}
+2. **Frequency Check**: ${frequencyGuidance ? 'Did they hit their planned training frequency? Praise or encourage accordingly.' : 'Is training frequency optimal?'}
+3. **Muscle Group Balance**: Analyze if training is balanced (push/pull/legs ratio) considering their goal
+4. **Specific Insights**: Identify strengths and weaknesses based on actual data
+5. **Actionable Recommendations**: 2-3 specific things to improve considering their experience level, goals, and any injuries
 
-${userProfile?.injuries ? `IMPORTANT: Consider their reported injuries: ${userProfile.injuries}. Suggest safe alternatives if needed.
+${userProfile?.injuries ? `⚠️ CRITICAL: Consider their reported injuries: ${userProfile.injuries}. Suggest safe alternatives if needed.
+` : ''}
+TONE: Encouraging but honest. If they're off-track from their goals, tell them clearly but supportively.
 
-` : ''}Format with HTML: Use <strong> for emphasis, <ul><li> for lists, keep it encouraging but honest.`;
+Format with HTML: Use <strong> for emphasis, <ul><li> for lists.
 
             console.log('Calling AI for performance analysis...');
             console.log('Prompt length:', prompt.length, 'characters');

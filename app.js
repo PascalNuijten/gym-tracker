@@ -283,6 +283,11 @@ async function aiSuggestExerciseData(exerciseName) {
     statusEl.style.color = '#666';
     statusEl.textContent = '🤖 AI is analyzing the exercise...';
     
+    // Set timeout for AI response
+    const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('AI request timed out after 15 seconds')), 15000)
+    );
+    
     try {
         console.log('AI auto-fill starting for:', exerciseName);
         console.log('useRealAI:', useRealAI);
@@ -307,7 +312,12 @@ Rules:
 - imageUrl: Search for a real demonstration image URL or use a placeholder
 - equipment: Brief description (e.g., "Barbell", "Dumbbells", "Cable Machine")`;
 
-        const aiResponse = await callGeminiAI(prompt, null, false); // Don't include user context for exercise data
+        // Race between AI response and timeout
+        const aiResponse = await Promise.race([
+            callGeminiAI(prompt, null, false),
+            timeoutPromise
+        ]);
+        
         console.log('AI response received:', aiResponse);
         
         if (!aiResponse) {

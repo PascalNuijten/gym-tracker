@@ -1,12 +1,77 @@
 // Gym Tracker v2.0 - Separate Exercise Creation & Workout Logging
 
-// AI CONFIGURATION
+// AI CONFIGURATION - MULTI-MODEL ROTATION + CACHING
 // API key is restricted to specific websites in Google Cloud Console
 // To set up: https://console.cloud.google.com/apis/credentials
 // Add HTTP referrer restrictions: https://pascalnuijten.github.io/*
 const GEMINI_API_KEY = 'AIzaSyCy8L-GZkUhNfaoG3JQ3d26IBN1s8M12lU';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-native-audio-dialog:generateContent';
+
+// Model rotation: Use 3 different models to get 60 requests/day total
+const GEMINI_MODELS = [
+    'gemini-2.5-flash',           // 20 RPD
+    'gemini-2.5-flash-lite',      // 20 RPD
+    'gemini-3-flash'              // 20 RPD
+];
+let currentModelIndex = parseInt(localStorage.getItem('gymTrackerModelIndex') || '0');
+
+function getNextModel() {
+    const model = GEMINI_MODELS[currentModelIndex];
+    currentModelIndex = (currentModelIndex + 1) % GEMINI_MODELS.length;
+    localStorage.setItem('gymTrackerModelIndex', currentModelIndex.toString());
+    console.log(`🔄 Using model: ${model}`);
+    return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+}
+
 let useRealAI = true; // AI enabled by default
+
+// AI Response Cache - Store responses to avoid re-requesting
+const AI_CACHE_KEY = 'gymTrackerAICache';
+const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+function getCachedAIResponse(promptHash) {
+    try {
+        const cache = JSON.parse(localStorage.getItem(AI_CACHE_KEY) || '{}');
+        const cached = cache[promptHash];
+        if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+            console.log('✅ Using cached AI response');
+            return cached.response;
+        }
+    } catch (e) {
+        console.error('Cache read error:', e);
+    }
+    return null;
+}
+
+function setCachedAIResponse(promptHash, response) {
+    try {
+        const cache = JSON.parse(localStorage.getItem(AI_CACHE_KEY) || '{}');
+        // Limit cache size to 50 entries
+        const entries = Object.entries(cache);
+        if (entries.length >= 50) {
+            // Remove oldest entry
+            const oldest = entries.sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
+            delete cache[oldest[0]];
+        }
+        cache[promptHash] = {
+            response: response,
+            timestamp: Date.now()
+        };
+        localStorage.setItem(AI_CACHE_KEY, JSON.stringify(cache));
+    } catch (e) {
+        console.error('Cache write error:', e);
+    }
+}
+
+function hashString(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash.toString(36);
+}
+
 
 // Firebase Configuration
 const firebaseConfig = {
@@ -127,6 +192,13 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
             }
         }
         
+        // STRATEGY 2: Check cache first (avoid duplicate requests)
+        const promptHash = hashString(enhancedPrompt + (imageBase64 || ''));
+        const cachedResponse = getCachedAIResponse(promptHash);
+        if (cachedResponse) {
+            return cachedResponse;
+        }
+        
         const requestBody = {
             contents: [{
                 parts: [{
@@ -150,6 +222,9 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
                 }
             });
         }
+        
+        // STRATEGY 1: Model rotation - Get next available model
+        const GEMINI_API_URL = getNextModel();
         
         const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
             method: 'POST',
@@ -181,6 +256,10 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
         
         const aiResponse = data.candidates[0].content.parts[0].text;
         console.log('AI response:', aiResponse);
+        
+        // STRATEGY 2: Cache the response for 24 hours
+        setCachedAIResponse(promptHash, aiResponse);
+        
         return aiResponse;
         
     } catch (error) {

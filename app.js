@@ -403,91 +403,92 @@ Be concise and respond immediately with only the JSON.`;
             // Race between AI response and timeout
             const aiResponse = await Promise.race([
                 callGeminiAI(prompt, null, false),
-            timeoutPromise
-        ]);
+                timeoutPromise
+            ]);
         
-        console.log('AI response received:', aiResponse);
-        
-        if (!aiResponse) {
-            throw new Error('No AI response received');
-        }
-        
-        // Extract JSON - be very lenient with partial responses
-        let jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-            // Try to find JSON in markdown code block (even incomplete)
-            const codeBlockMatch = aiResponse.match(/```(?:json)?\s*(\{[\s\S]*)/);
-            if (codeBlockMatch) {
-                // Try to complete the JSON if it's cut off
-                let jsonStr = codeBlockMatch[1].trim();
-                // Remove trailing backticks if present
-                jsonStr = jsonStr.replace(/```\s*$/, '');
-                // If no closing brace, try to find where it was cut off and complete it
-                const openBraces = (jsonStr.match(/\{/g) || []).length;
-                const closeBraces = (jsonStr.match(/\}/g) || []).length;
-                if (openBraces > closeBraces) {
-                    // Add missing closing braces
-                    jsonStr += '\n}';
-                }
-                jsonMatch = [jsonStr];
-            }
-        }
-        
-        if (!jsonMatch) {
-            console.error('No JSON found in response:', aiResponse);
-            throw new Error('Invalid AI response format - no JSON found');
-        }
-        
-        let data;
-        try {
-            data = JSON.parse(jsonMatch[0]);
-        } catch (parseError) {
-            // If parsing fails, try to extract partial data
-            console.error('JSON parse error, attempting partial extraction:', parseError);
-            const categoryMatch = jsonMatch[0].match(/"category"\s*:\s*"([^"]+)"/);
-            const musclesMatch = jsonMatch[0].match(/"muscles"\s*:\s*\[(.*?)\]/s);
-            const equipmentMatch = jsonMatch[0].match(/"equipment"\s*:\s*"([^"]+)"/);
+            console.log('AI response received:', aiResponse);
             
-            if (categoryMatch) {
-                data = {
-                    category: categoryMatch[1],
-                    muscles: musclesMatch ? musclesMatch[1].split(',').map(m => m.replace(/["\s]/g, '')) : [],
-                    equipment: equipmentMatch ? equipmentMatch[1] : ''
-                };
-                console.log('Extracted partial data:', data);
-            } else {
-                throw new Error('Could not extract any valid data from response');
+            if (!aiResponse) {
+                throw new Error('No AI response received');
             }
+            
+            // Extract JSON - be very lenient with partial responses
+            let jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) {
+                // Try to find JSON in markdown code block (even incomplete)
+                const codeBlockMatch = aiResponse.match(/```(?:json)?\s*(\{[\s\S]*)/);
+                if (codeBlockMatch) {
+                    // Try to complete the JSON if it's cut off
+                    let jsonStr = codeBlockMatch[1].trim();
+                    // Remove trailing backticks if present
+                    jsonStr = jsonStr.replace(/```\s*$/, '');
+                    // If no closing brace, try to find where it was cut off and complete it
+                    const openBraces = (jsonStr.match(/\{/g) || []).length;
+                    const closeBraces = (jsonStr.match(/\}/g) || []).length;
+                    if (openBraces > closeBraces) {
+                        // Add missing closing braces
+                        jsonStr += '\n}';
+                    }
+                    jsonMatch = [jsonStr];
+                }
+            }
+            
+            if (!jsonMatch) {
+                console.error('No JSON found in response:', aiResponse);
+                throw new Error('Invalid AI response format - no JSON found');
+            }
+            
+            let data;
+            try {
+                data = JSON.parse(jsonMatch[0]);
+            } catch (parseError) {
+                // If parsing fails, try to extract partial data
+                console.error('JSON parse error, attempting partial extraction:', parseError);
+                const categoryMatch = jsonMatch[0].match(/"category"\s*:\s*"([^"]+)"/);
+                const musclesMatch = jsonMatch[0].match(/"muscles"\s*:\s*\[(.*?)\]/s);
+                const equipmentMatch = jsonMatch[0].match(/"equipment"\s*:\s*"([^"]+)"/);
+                
+                if (categoryMatch) {
+                    data = {
+                        category: categoryMatch[1],
+                        muscles: musclesMatch ? musclesMatch[1].split(',').map(m => m.replace(/["\s]/g, '')) : [],
+                        equipment: equipmentMatch ? equipmentMatch[1] : ''
+                    };
+                    console.log('Extracted partial data:', data);
+                } else {
+                    throw new Error('Could not extract any valid data from response');
+                }
+            }
+            console.log('Parsed AI data:', data);
+            
+            // Auto-fill category
+            if (data.category && categorySelect.querySelector(`option[value="${data.category}"]`)) {
+                categorySelect.value = data.category;
+                console.log('Category set to:', data.category);
+            }
+            
+            // Auto-select muscles
+            if (data.muscles && Array.isArray(data.muscles)) {
+                Array.from(muscleSelect.options).forEach(option => {
+                    option.selected = data.muscles.some(m => 
+                        option.value.toLowerCase().includes(m.toLowerCase()) || 
+                        m.toLowerCase().includes(option.value.toLowerCase())
+                    );
+                });
+                console.log('Muscles selected:', data.muscles);
+            }
+            
+            // Auto-fill equipment info
+            if (data.equipment) {
+                document.getElementById('machineInfo').value = data.equipment;
+                console.log('Equipment set:', data.equipment);
+            }
+            
+            statusEl.style.color = '#4CAF50';
+            statusEl.textContent = `✅ AI suggested: ${data.category} targeting ${data.muscles.join(', ')}. Review and modify if needed.`;
+            
+            console.log('✅ AI auto-filled exercise data successfully');
         }
-        console.log('Parsed AI data:', data);
-        
-        // Auto-fill category
-        if (data.category && categorySelect.querySelector(`option[value="${data.category}"]`)) {
-            categorySelect.value = data.category;
-            console.log('Category set to:', data.category);
-        }
-        
-        // Auto-select muscles
-        if (data.muscles && Array.isArray(data.muscles)) {
-            Array.from(muscleSelect.options).forEach(option => {
-                option.selected = data.muscles.some(m => 
-                    option.value.toLowerCase().includes(m.toLowerCase()) || 
-                    m.toLowerCase().includes(option.value.toLowerCase())
-                );
-            });
-            console.log('Muscles selected:', data.muscles);
-        }
-        
-        // Auto-fill equipment info
-        if (data.equipment) {
-            document.getElementById('machineInfo').value = data.equipment;
-            console.log('Equipment set:', data.equipment);
-        }
-        
-        statusEl.style.color = '#4CAF50';
-        statusEl.textContent = `✅ AI suggested: ${data.category} targeting ${data.muscles.join(', ')}. Review and modify if needed.`;
-        
-        console.log('✅ AI auto-filled exercise data successfully');
         
     } catch (error) {
         console.error('AI auto-fill failed:', error);

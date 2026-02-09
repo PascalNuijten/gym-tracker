@@ -262,8 +262,14 @@ async function aiSuggestExerciseData(exerciseName) {
     statusEl.textContent = '🤖 AI is analyzing the exercise...';
     
     try {
-        if (useRealAI) {
-            const prompt = `You are a fitness expert. Analyze the exercise: "${exerciseName}"
+        console.log('AI auto-fill starting for:', exerciseName);
+        console.log('useRealAI:', useRealAI);
+        
+        if (!useRealAI) {
+            throw new Error('AI is disabled - set useRealAI = true');
+        }
+        
+        const prompt = `You are a fitness expert. Analyze the exercise: "${exerciseName}"
 
 Respond with ONLY a JSON object in this exact format:
 {
@@ -279,55 +285,61 @@ Rules:
 - imageUrl: Search for a real demonstration image URL or use a placeholder
 - equipment: Brief description (e.g., "Barbell", "Dumbbells", "Cable Machine")`;
 
-            const aiResponse = await callGeminiAI(prompt, null, false); // Don't include user context for exercise data
-            
-            if (aiResponse) {
-                const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    const data = JSON.parse(jsonMatch[0]);
-                    
-                    // Auto-fill category
-                    if (data.category && categorySelect.querySelector(`option[value="${data.category}"]`)) {
-                        categorySelect.value = data.category;
-                    }
-                    
-                    // Auto-select muscles
-                    if (data.muscles && Array.isArray(data.muscles)) {
-                        Array.from(muscleSelect.options).forEach(option => {
-                            option.selected = data.muscles.some(m => 
-                                option.value.toLowerCase().includes(m.toLowerCase()) || 
-                                m.toLowerCase().includes(option.value.toLowerCase())
-                            );
-                        });
-                    }
-                    
-                    // Auto-fill image URL
-                    if (data.imageUrl && data.imageUrl.startsWith('http')) {
-                        imageInput.value = data.imageUrl;
-                    }
-                    
-                    // Auto-fill equipment info
-                    if (data.equipment) {
-                        document.getElementById('machineInfo').value = data.equipment;
-                    }
-                    
-                    statusEl.style.color = '#4CAF50';
-                    statusEl.textContent = `✅ AI suggested: ${data.category} targeting ${data.muscles.join(', ')}. Review and modify if needed.`;
-                    
-                    console.log('✅ AI auto-filled exercise data:', data);
-                } else {
-                    throw new Error('Invalid AI response format');
-                }
-            } else {
-                throw new Error('No AI response');
-            }
-        } else {
-            throw new Error('AI is disabled');
+        const aiResponse = await callGeminiAI(prompt, null, false); // Don't include user context for exercise data
+        console.log('AI response received:', aiResponse);
+        
+        if (!aiResponse) {
+            throw new Error('No AI response received');
         }
+        
+        const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            console.error('No JSON found in response:', aiResponse);
+            throw new Error('Invalid AI response format - no JSON found');
+        }
+        
+        const data = JSON.parse(jsonMatch[0]);
+        console.log('Parsed AI data:', data);
+        
+        // Auto-fill category
+        if (data.category && categorySelect.querySelector(`option[value="${data.category}"]`)) {
+            categorySelect.value = data.category;
+            console.log('Category set to:', data.category);
+        }
+        
+        // Auto-select muscles
+        if (data.muscles && Array.isArray(data.muscles)) {
+            Array.from(muscleSelect.options).forEach(option => {
+                option.selected = data.muscles.some(m => 
+                    option.value.toLowerCase().includes(m.toLowerCase()) || 
+                    m.toLowerCase().includes(option.value.toLowerCase())
+                );
+            });
+            console.log('Muscles selected:', data.muscles);
+        }
+        
+        // Auto-fill image URL
+        if (data.imageUrl && data.imageUrl.startsWith('http')) {
+            imageInput.value = data.imageUrl;
+            console.log('Image URL set');
+        }
+        
+        // Auto-fill equipment info
+        if (data.equipment) {
+            document.getElementById('machineInfo').value = data.equipment;
+            console.log('Equipment set:', data.equipment);
+        }
+        
+        statusEl.style.color = '#4CAF50';
+        statusEl.textContent = `✅ AI suggested: ${data.category} targeting ${data.muscles.join(', ')}. Review and modify if needed.`;
+        
+        console.log('✅ AI auto-filled exercise data successfully');
+        
     } catch (error) {
         console.error('AI auto-fill failed:', error);
-        statusEl.style.color = '#ff9800';
-        statusEl.textContent = '⚠️ AI auto-fill unavailable. Please fill in manually.';
+        console.error('Error details:', error.message, error.stack);
+        statusEl.style.color = '#f44336';
+        statusEl.textContent = `❌ AI auto-fill failed: ${error.message}. Please fill in manually.`;
     } finally {
         aiBtn.disabled = false;
         aiBtn.textContent = '🤖 Auto-fill';
@@ -3609,102 +3621,114 @@ function generateCombinedAnalysis(period) {
         });
         
         const sortedCategories = Object.entries(categoryBreakdown).sort((a, b) => b[1] - a[1]);
-        const topCategory = sortedCategories[0][0];
-        const weakestCategory = sortedCategories[sortedCategories.length - 1][0];
         
-        // Generate comprehensive feedback
+        // Build detailed workout summary for AI
+        const workoutSummary = periodWorkouts.map(w => {
+            const avgWeight = w.sets.reduce((sum, s) => sum + s.weight, 0) / w.sets.length;
+            const avgReps = w.sets.reduce((sum, s) => sum + s.reps, 0) / w.sets.length;
+            return `${w.exercise} (${w.category}): ${w.sets.length} sets, avg ${avgWeight.toFixed(1)}kg × ${avgReps.toFixed(0)} reps`;
+        }).join('\n');
+        
+        const categoryStats = sortedCategories.map(([cat, sets]) => `${cat}: ${sets} sets`).join(', ');
+        
         let feedback = `<h4>📊 ${periodName}'s Complete Analysis</h4>`;
         
-        // Workout Summary
-        feedback += `<p><strong>Workout Summary:</strong></p>`;
-        feedback += `<ul>`;
-        feedback += `<li>🏋️ ${uniqueExercises} different exercises completed</li>`;
-        feedback += `<li>💪 ${totalSets} total sets performed</li>`;
-        feedback += `<li>⚖️ ${totalVolume.toLocaleString()}kg total volume moved</li>`;
-        feedback += `<li>📅 ${uniqueDays} training days</li>`;
-        feedback += `</ul>`;
-        
-        // Muscle Group Distribution
-        feedback += `<p><strong>📈 Muscle Group Distribution:</strong></p>`;
-        feedback += `<ul>`;
-        sortedCategories.forEach(([cat, sets], idx) => {
-            const icon = idx === 0 ? '🏆' : idx === sortedCategories.length - 1 ? '⚠️' : '✓';
-            feedback += `<li>${icon} ${cat}: ${sets} sets</li>`;
-        });
-        feedback += `</ul>`;
-        
-        // Personalized Insights
-        feedback += `<p><strong>💡 Insights & Recommendations:</strong></p>`;
-        feedback += `<ul>`;
-        
-        // Training frequency feedback
-        if (period === 'week') {
-            if (uniqueDays < 3) {
-                feedback += `<li>🔴 ${uniqueDays} training days this week. Aim for 3-5 days for optimal muscle growth.</li>`;
-            } else if (uniqueDays >= 3 && uniqueDays <= 5) {
-                feedback += `<li>🟢 Excellent! ${uniqueDays} training days is ideal for most people.</li>`;
+        // Try AI-powered analysis first
+        if (useRealAI) {
+            feedback += `<div class="loading-spinner"></div> <p>AI is analyzing your complete training data...</p>`;
+            resultBox.innerHTML = feedback;
+            
+            const prompt = `You are an expert personal trainer analyzing ${currentUser}'s workout data for ${periodName.toLowerCase()}.
+
+WORKOUT DATA SUMMARY:
+- Training Days: ${uniqueDays} days
+- Different Exercises: ${uniqueExercises} exercises
+- Total Sets: ${totalSets} sets
+- Total Volume: ${totalVolume.toLocaleString()}kg
+- Muscle Group Distribution: ${categoryStats}
+
+DETAILED WORKOUTS:
+${workoutSummary}
+
+Provide a comprehensive analysis (200-300 words) covering:
+1. **Overall Performance**: Comment on training frequency, volume, and consistency
+2. **Muscle Group Balance**: Analyze if training is balanced (push/pull/legs ratio)
+3. **Specific Insights**: Identify strengths and weaknesses based on actual data
+4. **Actionable Recommendations**: 2-3 specific things to improve (exercises to add, volume adjustments, etc.)
+5. **Progress Indicators**: Are they on track for their goals?
+
+Consider their personal profile (height, weight, experience, goals, injuries) in your analysis.
+
+Format with HTML: Use <strong> for emphasis, <ul><li> for lists, keep it encouraging but honest.`;
+
+            const aiAnalysis = await callGeminiAI(prompt); // includeUserContext=true by default
+            
+            if (aiAnalysis) {
+                feedback = `<h4>📊 ${periodName}'s Complete AI Analysis</h4>`;
+                feedback += `<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea; margin: 15px 0;">`;
+                feedback += aiAnalysis.replace(/```html/g, '').replace(/```/g, '').trim();
+                feedback += `</div>`;
+                console.log('✅ AI-powered performance analysis generated');
             } else {
-                feedback += `<li>🟡 ${uniqueDays} training days is quite high. Ensure you're recovering properly!</li>`;
+                throw new Error('AI analysis failed');
             }
-        }
-        
-        // Volume feedback
-        const avgSetsPerDay = totalSets / uniqueDays;
-        if (avgSetsPerDay < 12) {
-            feedback += `<li>Consider increasing volume - averaging ${Math.round(avgSetsPerDay)} sets per session. Aim for 12-20.</li>`;
-        } else if (avgSetsPerDay > 25) {
-            feedback += `<li>High volume (${Math.round(avgSetsPerDay)} sets/session). Make sure you're eating and sleeping enough!</li>`;
         } else {
-            feedback += `<li>Good volume - ${Math.round(avgSetsPerDay)} sets per session is in the sweet spot.</li>`;
+            throw new Error('AI disabled');
         }
         
-        // Balance feedback
-        const ratio = sortedCategories[0][1] / (sortedCategories[sortedCategories.length - 1][1] || 1);
-        if (ratio > 2.5) {
-            feedback += `<li>⚠️ <strong>Imbalance detected:</strong> ${topCategory} trained ${ratio.toFixed(1)}x more than ${weakestCategory}. Add more ${weakestCategory} exercises!</li>`;
-        } else if (ratio > 1.5) {
-            feedback += `<li>Minor imbalance: Consider adding more ${weakestCategory} exercises for balanced development.</li>`;
-        } else {
-            feedback += `<li>✅ Well-balanced training across muscle groups!</li>`;
-        }
-        
-        // Push/Pull/Legs analysis
-        const pushCategories = ['Chest', 'Shoulders', 'Triceps'];
-        const pullCategories = ['Upper Back', 'Lower Back', 'Biceps'];
-        const legCategories = ['Legs'];
-        
-        const pushVolume = sortedCategories.filter(([cat]) => pushCategories.includes(cat))
-            .reduce((sum, [, sets]) => sum + sets, 0);
-        const pullVolume = sortedCategories.filter(([cat]) => pullCategories.includes(cat))
-            .reduce((sum, [, sets]) => sum + sets, 0);
-        const legVolume = sortedCategories.filter(([cat]) => legCategories.includes(cat))
-            .reduce((sum, [, sets]) => sum + sets, 0);
-        
-        if (legVolume > 0 && legVolume < pushVolume * 0.5) {
-            feedback += `<li>🦵 Don't skip leg day! Your leg volume (${legVolume} sets) is low compared to upper body (${pushVolume} sets).</li>`;
-        }
-        
-        if (pullVolume > 0 && pullVolume < pushVolume * 0.7) {
-            feedback += `<li>💡 Increase pull exercises (${pullVolume} sets) to balance pushing movements (${pushVolume} sets) and prevent shoulder issues.</li>`;
-        }
-        
-        feedback += `</ul>`;
-        
-        // Fun fact (async)
+        // Fun fact (async - always AI-generated now)
         const funFact = await generateFunFact(totalVolume, totalSets, period);
         feedback += funFact;
         
-        // Add AI-powered follow-up questions
+        // Add AI-generated follow-up questions
         if (useRealAI && periodWorkouts.length > 0) {
-            feedback += `<div style="margin-top: 20px; padding: 15px; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1)); border-radius: 8px; border-left: 3px solid #667eea;">
-                <h4 style="margin: 0 0 10px 0;">💬 Want Deeper AI Analysis?</h4>
-                <p style="margin: 0 0 10px 0; color: #666;">Ask any question about your training:</p>
-                <div style="display: flex; gap: 5px; flex-wrap: wrap;">
-                    <button onclick="askAIQuestion('Why am I not progressing on bench press?')" class="secondary-btn" style="font-size: 0.85em;">Why no progress?</button>
-                    <button onclick="askAIQuestion('Am I training enough?')" class="secondary-btn" style="font-size: 0.85em;">Training enough?</button>
-                    <button onclick="askAIQuestion('What should I focus on next?')" class="secondary-btn" style="font-size: 0.85em;">What to focus on?</button>
-                </div>
-            </div>`;
+            feedback += `<div style="margin-top: 20px;">`;
+            feedback += `<div class="loading-spinner"></div> <p style="color: #666; font-size: 0.9em;">AI is generating personalized questions...</p>`;
+            feedback += `</div>`;
+            resultBox.innerHTML = feedback;
+            
+            const questionPrompt = `Based on ${currentUser}'s workout data for ${periodName.toLowerCase()}:
+- ${uniqueDays} training days
+- ${uniqueExercises} exercises
+- ${totalSets} total sets
+- Top muscle groups: ${sortedCategories.slice(0, 3).map(([cat]) => cat).join(', ')}
+
+Generate 3-4 highly specific follow-up questions they might want to ask about their training. Questions should:
+- Reference their actual data (e.g., "Why is my chest volume so low?" if chest is neglected)
+- Address potential weaknesses or imbalances
+- Be actionable and relevant to their current training
+
+Respond with ONLY a JSON array:
+["Question 1?", "Question 2?", "Question 3?", "Question 4?"]`;
+
+            const aiQuestions = await callGeminiAI(questionPrompt, null, false);
+            
+            if (aiQuestions) {
+                try {
+                    const jsonMatch = aiQuestions.match(/\[[\s\S]*\]/);
+                    if (jsonMatch) {
+                        const questions = JSON.parse(jsonMatch[0]);
+                        
+                        feedback = feedback.replace(/<div style="margin-top: 20px;">[\s\S]*<\/div>$/, '');
+                        
+                        feedback += `<div style="margin-top: 20px; padding: 15px; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1)); border-radius: 8px; border-left: 3px solid #667eea;">
+                            <h4 style="margin: 0 0 10px 0;">💬 AI-Recommended Questions</h4>
+                            <p style="margin: 0 0 10px 0; color: #666;">Based on your data, you might want to ask:</p>
+                            <div style="display: flex; gap: 5px; flex-wrap: wrap;">`;
+                        
+                        questions.forEach(q => {
+                            feedback += `<button onclick="askAIQuestion('${q.replace(/'/g, "\\'")}')" class="secondary-btn" style="font-size: 0.85em;">${q}</button>`;
+                        });
+                        
+                        feedback += `</div>
+                        </div>`;
+                        
+                        console.log('✅ AI-generated recommended questions');
+                    }
+                } catch (e) {
+                    console.error('Failed to parse AI questions:', e);
+                }
+            }
         }
         
         resultBox.innerHTML = feedback;
@@ -3956,66 +3980,48 @@ function generateFeedback(period) {
 }
 
 async function generateFunFact(totalVolume, totalSets, period) {
-    // TRY REAL AI FIRST
-    if (useRealAI) {
-        const prompt = `You are a fitness coach. Generate ONE interesting, motivating fun fact about this workout achievement:
+    // ALWAYS USE AI - No fallback to hardcoded facts
+    if (!useRealAI) {
+        return `<div class="fun-fact-box"><h5>🎉 Fun Fact</h5><p>Enable AI for personalized fun facts! 🤖</p></div>`;
+    }
+    
+    const prompt = `You are an enthusiastic fitness coach. Generate ONE unique, creative fun fact about this workout achievement:
 
 Stats:
-- Total volume: ${totalVolume}kg
+- Total volume: ${totalVolume.toLocaleString()}kg
 - Total sets: ${totalSets}
 - Period: ${period}
 
-Create a fun comparison or insight (30-50 words). Examples:
-- Compare volume to real-world objects (cars, elephants, etc.)
-- Percentile ranking estimation
-- Athlete comparisons
-- Physiological facts
+Create a fun, UNIQUE comparison or insight (30-50 words). Be creative and avoid clichés. Ideas:
+- Compare volume to unusual real-world objects or animals
+- Historical or pop culture references
+- Scientific physiological facts
+- Percentile rankings with specific contexts
+- Athletic achievements comparisons
 
-Be specific, use emojis, and be encouraging! Just return the fact text, no formatting.`;
+Requirements:
+- Must be specific to their actual numbers
+- Use emojis
+- Be encouraging and fun
+- NO generic statements
+- Make it memorable and shareable
 
+Just return the fact text, no formatting or quotes.`;
+
+    try {
         const aiResponse = await callGeminiAI(prompt);
         
         if (aiResponse) {
-            console.log('✅ Real AI fun fact');
+            console.log('✅ AI-generated fun fact');
             const cleanFact = aiResponse.replace(/```html/g, '').replace(/```/g, '').trim();
             return `<div class="fun-fact-box"><h5>🎉 Fun Fact</h5><p>${cleanFact}</p></div>`;
-        }
-    }
-    
-    // FALLBACK
-    const facts = [];
-    
-    if (totalVolume > 0) {
-        const elephants = (totalVolume / 6000).toFixed(1);
-        const cars = (totalVolume / 1500).toFixed(1);
-        
-        if (elephants >= 1) {
-            facts.push(`You moved ${totalVolume}kg - that's equivalent to ${elephants} elephants! 🐘`);
-        } else if (cars >= 1) {
-            facts.push(`You moved ${totalVolume}kg - that's like lifting ${cars} cars! 🚗`);
         } else {
-            const pianos = (totalVolume / 400).toFixed(1);
-            if (pianos >= 1) {
-                facts.push(`You moved ${totalVolume}kg - equivalent to ${pianos} grand pianos! 🎹`);
-            }
+            throw new Error('No AI response');
         }
+    } catch (error) {
+        console.error('Fun fact AI generation failed:', error);
+        return `<div class="fun-fact-box"><h5>🎉 Fun Fact</h5><p>You moved ${totalVolume.toLocaleString()}kg in ${totalSets} sets ${period}! Amazing work! 💪</p></div>`;
     }
-    
-    const percentile = Math.min(95, 50 + (totalSets * 2));
-    facts.push(`Based on your volume, you're in the top ${100 - percentile}% of recreational lifters! 🏆`);
-    
-    if (totalVolume > 10000) {
-        facts.push(`Your training volume matches that of competitive powerlifters! 💪`);
-    } else if (totalVolume > 5000) {
-        facts.push(`You're training like a college athlete! Keep it up! 🎓`);
-    }
-    
-    if (totalSets > 100) {
-        facts.push(`${totalSets} sets ${period === 'week' ? 'this week' : 'this month'}! That's more than most professional bodybuilders! 🏋️‍♂️`);
-    }
-    
-    const randomFact = facts[Math.floor(Math.random() * facts.length)];
-    return `<div class="fun-fact-box"><h5>🎉 Fun Fact</h5><p>${randomFact}</p></div>`;
 }
 
 // ==================== CAMERA MODE ====================

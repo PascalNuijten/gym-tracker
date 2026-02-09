@@ -135,7 +135,7 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
             }],
             generationConfig: {
                 temperature: 0.1,
-                maxOutputTokens: 200,
+                maxOutputTokens: 500,
                 topP: 0.8,
                 topK: 10
             }
@@ -327,7 +327,16 @@ Be concise and respond immediately with only the JSON.`;
             throw new Error('No AI response received');
         }
         
-        const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+        // Extract JSON - handle both raw JSON and markdown code blocks
+        let jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            // Try to find JSON in markdown code block
+            const codeBlockMatch = aiResponse.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+            if (codeBlockMatch) {
+                jsonMatch = [codeBlockMatch[1]];
+            }
+        }
+        
         if (!jsonMatch) {
             console.error('No JSON found in response:', aiResponse);
             throw new Error('Invalid AI response format - no JSON found');

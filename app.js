@@ -10,7 +10,7 @@ const GEMINI_API_KEY = 'AIzaSyCy8L-GZkUhNfaoG3JQ3d26IBN1s8M12lU';
 const GEMINI_MODELS = [
     'gemini-2.5-flash',           // 20 RPD
     'gemini-2.5-flash-lite',      // 20 RPD
-    'gemini-3-flash'              // 20 RPD
+    'gemini-1.5-flash'            // 20 RPD (stable model)
 ];
 let currentModelIndex = parseInt(localStorage.getItem('gymTrackerModelIndex') || '0');
 
@@ -4232,7 +4232,8 @@ Respond with ONLY a JSON array:
                             <div style="display: flex; gap: 5px; flex-wrap: wrap;">`;
                         
                         questions.forEach(q => {
-                            feedback += `<button onclick="askAIQuestion('${q.replace(/'/g, "\\'")}')" class="secondary-btn" style="font-size: 0.85em;">${q}</button>`;
+                            const shortQ = q.length > 40 ? q.substring(0, 40) + '...' : q;
+                            feedback += `<button onclick="askAIQuestion('${q.replace(/'/g, "\\'")}')" class="secondary-btn" style="font-size: 0.85em;" title="${q.replace(/"/g, '&quot;')}">${shortQ}</button>`;
                         });
                         
                         feedback += `</div>
@@ -4528,22 +4529,26 @@ Workout Stats:
 - Total sets: ${totalSets}
 - Period: ${period}
 
-Create a fun, UNIQUE comparison or insight (30-50 words) PERSONALIZED to their profile. Be creative and avoid clichés. Ideas:
-- Compare volume to their bodyweight (e.g., "lifted 50x your bodyweight!")
-- Compare to unusual real-world objects or animals
-- Historical or pop culture references
-- Scientific physiological facts
-- Percentile rankings for their experience level
-- Athletic achievements comparisons
+Create a SUPER FUN and UNIQUE comparison (25-40 words max) that will make them smile! 🎉
 
-Requirements:
-- Must be specific to their actual numbers AND profile
-- Use emojis
-- Be encouraging and fun
-- NO generic statements
-- Make it memorable and shareable
+Ideas for comparisons:
+- "You lifted the equivalent of ${Math.floor(totalVolume / 1000)} grand pianos!" 🎹
+- "That's like doing a bench press with ${Math.floor(totalVolume / 70)} average humans on the bar!" 👥
+- Compare to their bodyweight: "You moved ${Math.floor(totalVolume / (userProfile?.weight || 70))}x your own bodyweight!"
+- Compare to animals: "That's heavier than ${Math.floor(totalVolume / 5000)} elephants!" 🐘
+- Compare to everyday objects: cars, washing machines, vending machines
+- Athletic achievements: "Olympic powerlifters would be proud!"
+- Historical facts: "Ancient Greeks trained with less!"
 
-Just return the fact text, no formatting or quotes.`;
+MUST:
+✅ Use specific numbers from their data (${totalVolume}kg, ${totalSets} sets)
+✅ Include 2-3 emojis
+✅ Be surprising and memorable
+✅ Make them want to share it
+❌ NO boring/generic statements like "great work" or "keep it up"
+❌ NO technical jargon
+
+Return ONLY the fun fact text, nothing else.`;
 
     try {
         // Add timeout
@@ -5416,6 +5421,7 @@ function findSubstitutes() {
     
     setTimeout(async () => {
         const exercise = exercises.find(ex => ex.id === exerciseId);
+        const userExercises = exercises.filter(ex => ex.users && ex.users[currentUser]);
         const alternatives = await getAIExerciseAlternatives(exercise, reason);
         
         let html = `<h4>🔄 Alternative Exercises for ${exercise.name}</h4>`;

@@ -5311,6 +5311,9 @@ function findSubstitutes() {
         
         html += `<div style="margin-top: 15px;">`;
         
+        // Get rep recommendations for all alternatives at once
+        const repRecommendations = await getRepRecommendationsForAlternatives(exercise, alternatives);
+        
         alternatives.forEach((alt, idx) => {
             const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '💪';
             
@@ -5345,6 +5348,15 @@ function findSubstitutes() {
                 html += `<div style="color: #888; font-size: 0.8rem; margin-bottom: 4px;">📊 <strong>Level:</strong> ${alt.difficulty}</div>`;
             }
             
+            // Add rep recommendation if available
+            const repRec = repRecommendations[idx];
+            if (repRec && alt.name !== '⚕️ See a Doctor/PT' && alt.name !== 'Rest & Ice (RICE)') {
+                html += `<div style="background: #e8f5e9; padding: 8px; border-radius: 6px; margin: 8px 0; border-left: 3px solid #4CAF50;">`;
+                html += `<div style="font-weight: bold; color: #2e7d32; font-size: 0.85rem; margin-bottom: 3px;">🎯 Recommended Reps</div>`;
+                html += `<div style="color: #1b5e20; font-size: 0.9rem;">${repRec}</div>`;
+                html += `</div>`;
+            }
+            
             html += `<div style="color: #555; font-size: 0.9rem;">${alt.reason}</div>`;
             html += `</div>`;
             
@@ -5361,6 +5373,139 @@ function findSubstitutes() {
         
         resultBox.innerHTML = html;
     }, 1500);
+}
+
+// Get AI-powered rep recommendations for alternative exercises
+async function getRepRecommendationsForAlternatives(originalExercise, alternatives) {
+    if (!useRealAI) {
+        return alternatives.map(() => null);
+    }
+    
+    try {
+        // Get user's performance on the original exercise and similar exercises
+        const userData = originalExercise.users?.[currentUser];
+        const history = userData?.history || [];
+        
+        if (history.length === 0) {
+            return alternatives.map(() => null);
+        }
+        
+        // Calculate average reps for original exercise
+        let totalReps = 0;
+        let totalSets = 0;
+        history.forEach(workout => {
+            workout.sets.forEach(set => {
+                totalReps += parseInt(set.reps) || 0;
+                totalSets++;
+            });
+        });
+        const avgReps = totalSets > 0 ? Math.round(totalReps / totalSets) : 0;
+        
+        // Get ALL related exercises (same muscle/category) with their rep patterns
+        const relatedExercises = userExercises
+            .filter(ex => {
+                const exData = ex.users?.[currentUser];
+                const exHistory = exData?.history || [];
+                return exHistory.length > 0 && (
+                    ex.muscle === originalExercise.muscle || 
+                    ex.category === originalExercise.category
+                );
+            })
+            .map(ex => {
+                const exData = ex.users[currentUser];
+                const exHistory = exData.history;
+                let reps = 0;
+                let sets = 0;
+                exHistory.forEach(w => {
+                    w.sets.forEach(s => {
+                        reps += parseInt(s.reps) || 0;
+                        sets++;
+                    });
+                });
+                return {
+                    name: ex.name,
+                    avgReps: sets > 0 ? Math.round(reps / sets) : 0
+                };
+            })
+            .filter(ex => ex.avgReps > 0)
+            .slice(0, 10);
+        
+        if (relatedExercises.length === 0) {
+            return alternatives.map(() => null);
+        }
+        
+        // Get user profile for personalization
+        const userProfile = getUserProfile(currentUser);
+        const profileContext = userProfile ? `
+User Profile:
+- Experience: ${userProfile.experience}
+- Goal: ${userProfile.goal}
+- ${userProfile.age} years old, ${userProfile.weight}kg` : '';
+        
+        // Build context about user's rep patterns
+        const repContext = `
+Original Exercise: ${originalExercise.name} (Average: ${avgReps} reps/set)
+
+Related Exercise Rep Patterns:
+${relatedExercises.map(ex => `- ${ex.name}: ${ex.avgReps} reps/set`).join('\n')}`;
+        
+        // Build list of alternatives for AI to analyze
+        const alternativesList = alternatives
+            .filter(alt => alt.name !== '⚕️ See a Doctor/PT' && alt.name !== 'Rest & Ice (RICE)')
+            .map((alt, idx) => `${idx + 1}. ${alt.name} (${alt.equipment}, ${alt.difficulty})`)
+            .join('\n');
+        
+        const prompt = `You are a strength coach. Based on the user's performance data, recommend optimal rep ranges for these alternative exercises.${profileContext}
+
+${repContext}
+
+Alternative Exercises to Recommend Reps For:
+${alternativesList}
+
+For EACH alternative exercise listed above, provide a rep recommendation in this format:
+"[number]-[number] reps (reason)"
+
+Example outputs:
+- "8-12 reps (similar to your squat pattern, hypertrophy range)"
+- "12-15 reps (higher due to bodyweight nature)"
+- "6-10 reps (lower for compound movement strength)"
+
+Consider:
+1. User's current rep patterns on similar exercises
+2. Exercise type (compound vs isolation)
+3. Equipment (bodyweight = higher reps, barbell = lower reps)
+4. User's goal (${userProfile?.goal || 'general fitness'})
+5. Difficulty level
+6. Biomechanical similarity to exercises they already do
+
+Respond with ONLY a JSON array of strings (one per exercise):
+["8-12 reps (reason)", "12-15 reps (reason)", ...]`;
+
+        const aiResponse = await callGeminiAI(prompt, null, false, 800);
+        
+        if (aiResponse) {
+            const jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+                const recommendations = JSON.parse(jsonMatch[0]);
+                console.log('✅ AI rep recommendations:', recommendations);
+                
+                // Map back to include recovery items (which get null)
+                const fullRecommendations = alternatives.map(alt => {
+                    if (alt.name === '⚕️ See a Doctor/PT' || alt.name === 'Rest & Ice (RICE)') {
+                        return null;
+                    }
+                    return recommendations.shift() || null;
+                });
+                
+                return fullRecommendations;
+            }
+        }
+    } catch (error) {
+        console.error('Rep recommendation failed:', error);
+    }
+    
+    // Fallback: return null for all
+    return alternatives.map(() => null);
 }
 
 async function getAIExerciseAlternatives(exercise, reason) {

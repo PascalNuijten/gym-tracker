@@ -5433,7 +5433,7 @@ function findSubstitutes() {
         html += `<div style="margin-top: 15px;">`;
         
         // Get rep recommendations for all alternatives at once
-        const repRecommendations = await getRepRecommendationsForAlternatives(exercise, alternatives);
+        const repRecommendations = await getRepRecommendationsForAlternatives(exercise, alternatives, userExercises);
         
         alternatives.forEach((alt, idx) => {
             const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '💪';
@@ -5630,7 +5630,7 @@ function quickLogExercise(exerciseId) {
 }
 
 // Get AI-powered rep recommendations for alternative exercises
-async function getRepRecommendationsForAlternatives(originalExercise, alternatives) {
+async function getRepRecommendationsForAlternatives(originalExercise, alternatives, userExercises) {
     if (!useRealAI) {
         return alternatives.map(() => null);
     }

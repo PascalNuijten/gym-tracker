@@ -3634,7 +3634,11 @@ function generateCombinedAnalysis(period) {
         let feedback = `<h4>📊 ${periodName}'s Complete Analysis</h4>`;
         
         // Try AI-powered analysis first
-        if (useRealAI) {
+        try {
+            if (!useRealAI) {
+                throw new Error('AI disabled');
+            }
+            
             feedback += `<div class="loading-spinner"></div> <p>AI is analyzing your complete training data...</p>`;
             resultBox.innerHTML = feedback;
             
@@ -3661,31 +3665,52 @@ Consider their personal profile (height, weight, experience, goals, injuries) in
 
 Format with HTML: Use <strong> for emphasis, <ul><li> for lists, keep it encouraging but honest.`;
 
+            console.log('Calling AI for performance analysis...');
             const aiAnalysis = await callGeminiAI(prompt); // includeUserContext=true by default
             
-            if (aiAnalysis) {
-                feedback = `<h4>📊 ${periodName}'s Complete AI Analysis</h4>`;
-                feedback += `<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea; margin: 15px 0;">`;
-                feedback += aiAnalysis.replace(/```html/g, '').replace(/```/g, '').trim();
-                feedback += `</div>`;
-                console.log('✅ AI-powered performance analysis generated');
-            } else {
-                throw new Error('AI analysis failed');
+            if (!aiAnalysis) {
+                throw new Error('No AI response received');
             }
-        } else {
-            throw new Error('AI disabled');
+            
+            feedback = `<h4>📊 ${periodName}'s Complete AI Analysis</h4>`;
+            feedback += `<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea; margin: 15px 0;">`;
+            feedback += aiAnalysis.replace(/```html/g, '').replace(/```/g, '').trim();
+            feedback += `</div>`;
+            console.log('✅ AI-powered performance analysis generated');
+            
+        } catch (error) {
+            console.error('AI analysis failed:', error);
+            // Fallback to basic summary
+            feedback = `<h4>📊 ${periodName}'s Analysis</h4>`;
+            feedback += `<div style="background: #fff3cd; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin: 15px 0;">`;
+            feedback += `<p><strong>⚠️ AI Analysis Unavailable</strong></p>`;
+            feedback += `<p>${error.message}</p>`;
+            feedback += `</div>`;
+            feedback += `<p><strong>Basic Summary:</strong></p>`;
+            feedback += `<ul>`;
+            feedback += `<li>🏋️ ${uniqueExercises} different exercises</li>`;
+            feedback += `<li>💪 ${totalSets} total sets</li>`;
+            feedback += `<li>⚖️ ${totalVolume.toLocaleString()}kg total volume</li>`;
+            feedback += `<li>📅 ${uniqueDays} training days</li>`;
+            feedback += `</ul>`;
+            feedback += `<p><strong>Muscle Groups:</strong> ${categoryStats}</p>`;
         }
         
         // Fun fact (async - always AI-generated now)
-        const funFact = await generateFunFact(totalVolume, totalSets, period);
-        feedback += funFact;
+        try {
+            const funFact = await generateFunFact(totalVolume, totalSets, period);
+            feedback += funFact;
+        } catch (error) {
+            console.error('Fun fact generation failed:', error);
+        }
         
         // Add AI-generated follow-up questions
         if (useRealAI && periodWorkouts.length > 0) {
-            feedback += `<div style="margin-top: 20px;">`;
-            feedback += `<div class="loading-spinner"></div> <p style="color: #666; font-size: 0.9em;">AI is generating personalized questions...</p>`;
-            feedback += `</div>`;
-            resultBox.innerHTML = feedback;
+            try {
+                feedback += `<div style="margin-top: 20px;">`;
+                feedback += `<div class="loading-spinner"></div> <p style="color: #666; font-size: 0.9em;">AI is generating personalized questions...</p>`;
+                feedback += `</div>`;
+                resultBox.innerHTML = feedback;
             
             const questionPrompt = `Based on ${currentUser}'s workout data for ${periodName.toLowerCase()}:
 - ${uniqueDays} training days
@@ -3728,6 +3753,9 @@ Respond with ONLY a JSON array:
                 } catch (e) {
                     console.error('Failed to parse AI questions:', e);
                 }
+            }
+            } catch (error) {
+                console.error('Failed to generate AI questions:', error);
             }
         }
         

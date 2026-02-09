@@ -5,7 +5,7 @@
 // To set up: https://console.cloud.google.com/apis/credentials
 // Add HTTP referrer restrictions: https://pascalnuijten.github.io/*
 const GEMINI_API_KEY = 'AIzaSyCy8L-GZkUhNfaoG3JQ3d26IBN1s8M12lU';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 let useRealAI = true; // AI enabled by default
 
 // Firebase Configuration
@@ -288,7 +288,7 @@ async function aiSuggestExerciseData(exerciseName) {
     
     // Set timeout for AI response
     const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('AI request timed out after 15 seconds')), 15000)
+        setTimeout(() => reject(new Error('AI request timed out after 30 seconds')), 30000)
     );
     
     try {

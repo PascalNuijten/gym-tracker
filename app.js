@@ -5348,6 +5348,8 @@ function findSubstitutes() {
                 html += `<div style="color: #888; font-size: 0.8rem; margin-bottom: 4px;">📊 <strong>Level:</strong> ${alt.difficulty}</div>`;
             }
             
+            html += `<div style="color: #555; font-size: 0.9rem; margin-bottom: 8px;">${alt.reason}</div>`;
+            
             // Add rep recommendation if available
             const repRec = repRecommendations[idx];
             if (repRec && alt.name !== '⚕️ See a Doctor/PT' && alt.name !== 'Rest & Ice (RICE)') {
@@ -5357,12 +5359,32 @@ function findSubstitutes() {
                 html += `</div>`;
             }
             
-            html += `<div style="color: #555; font-size: 0.9rem;">${alt.reason}</div>`;
-            html += `</div>`;
-            
-            if (alt.video) {
-                html += `<a href="${alt.video}" target="_blank" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 8px 12px; border-radius: 6px; text-decoration: none; font-size: 0.85rem; white-space: nowrap; margin-left: 10px; display: inline-block;">📹 Watch Tutorial</a>`;
+            // Add action buttons (if not recovery advice)
+            if (alt.name !== '⚕️ See a Doctor/PT' && alt.name !== 'Rest & Ice (RICE)') {
+                // Check if exercise already exists
+                const existingExercise = userExercises.find(ex => 
+                    ex.name.toLowerCase() === alt.name.toLowerCase()
+                );
+                
+                html += `<div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">`;
+                
+                if (existingExercise) {
+                    // Exercise exists - show "Log Workout" button
+                    html += `<button onclick="quickLogExercise('${existingExercise.id}')" style="background: #4CAF50; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 500;">📝 Log Workout</button>`;
+                } else {
+                    // Exercise doesn't exist - show "Add Exercise" button
+                    const altData = encodeURIComponent(JSON.stringify(alt));
+                    html += `<button onclick="quickAddExercise('${altData}')" style="background: #2196F3; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 500;">➕ Add Exercise</button>`;
+                }
+                
+                if (alt.video) {
+                    html += `<a href="${alt.video}" target="_blank" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.85rem; display: inline-block;">📹 Watch Tutorial</a>`;
+                }
+                
+                html += `</div>`;
             }
+            
+            html += `</div>`;
             
             html += `</div>`;
             html += `</div>`;
@@ -5373,6 +5395,117 @@ function findSubstitutes() {
         
         resultBox.innerHTML = html;
     }, 1500);
+}
+
+// Quick add exercise from alternative suggestion
+function quickAddExercise(altDataEncoded) {
+    const alt = JSON.parse(decodeURIComponent(altDataEncoded));
+    
+    // Open the add exercise modal
+    editingExerciseId = null;
+    document.getElementById('modalTitle').textContent = 'Add Exercise';
+    exerciseForm.reset();
+    
+    // Pre-fill with alternative exercise data
+    document.getElementById('exerciseName').value = alt.name;
+    document.getElementById('exerciseName').readOnly = false;
+    
+    // Map muscle to category
+    const categoryMapping = {
+        'chest': 'Chest',
+        'upper chest': 'Chest',
+        'lower chest': 'Chest',
+        'back': 'Upper Back',
+        'lats': 'Laterals',
+        'upper back': 'Upper Back',
+        'lower back': 'Lower Back',
+        'shoulders': 'Shoulders',
+        'delts': 'Shoulders',
+        'biceps': 'Biceps',
+        'triceps': 'Triceps',
+        'abs': 'Abdominals',
+        'core': 'Abdominals',
+        'legs': 'Legs',
+        'quads': 'Legs',
+        'hamstrings': 'Legs',
+        'glutes': 'Legs',
+        'calves': 'Legs'
+    };
+    
+    const muscleLower = (alt.muscle || '').toLowerCase();
+    for (const [key, value] of Object.entries(categoryMapping)) {
+        if (muscleLower.includes(key)) {
+            document.getElementById('exerciseCategory').value = value;
+            break;
+        }
+    }
+    
+    if (alt.muscle) {
+        document.getElementById('exerciseMuscle').value = alt.muscle;
+    }
+    
+    if (alt.equipment) {
+        document.getElementById('machineInfo').value = alt.equipment;
+    }
+    
+    // Enable form fields
+    document.getElementById('exerciseCategory').disabled = false;
+    document.getElementById('exerciseMuscle').disabled = false;
+    
+    // Show new exercise section
+    document.getElementById('newExerciseSection').style.display = 'block';
+    document.getElementById('logWorkoutSection').style.display = 'none';
+    
+    // Open modal
+    exerciseModal.style.display = 'block';
+    
+    // Show success message
+    const statusEl = document.getElementById('aiSuggestionStatus');
+    if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#2196F3';
+        statusEl.textContent = '✅ Exercise details pre-filled! Review and click "Add Exercise".';
+        setTimeout(() => {
+            if (statusEl) statusEl.style.display = 'none';
+        }, 3000);
+    }
+}
+
+// Quick log workout for existing exercise
+function quickLogExercise(exerciseId) {
+    const exercise = exercises.find(ex => ex.id === exerciseId);
+    if (!exercise) return;
+    
+    editingExerciseId = exerciseId;
+    document.getElementById('modalTitle').textContent = `Log Workout: ${exercise.name}`;
+    exerciseForm.reset();
+    
+    // Fill exercise info (read-only)
+    document.getElementById('exerciseName').value = exercise.name;
+    document.getElementById('exerciseName').readOnly = true;
+    document.getElementById('exerciseCategory').value = exercise.category;
+    document.getElementById('exerciseCategory').disabled = true;
+    document.getElementById('exerciseMuscle').value = exercise.muscle;
+    document.getElementById('exerciseMuscle').disabled = true;
+    
+    if (exercise.imageUrl) {
+        document.getElementById('exerciseImagePreview').src = exercise.imageUrl;
+        document.getElementById('exerciseImagePreview').style.display = 'block';
+    }
+    
+    // Show log workout section
+    document.getElementById('newExerciseSection').style.display = 'none';
+    document.getElementById('logWorkoutSection').style.display = 'block';
+    
+    // Clear previous sets
+    setsContainer.innerHTML = '';
+    addSetRow();
+    
+    // Open modal
+    exerciseModal.style.display = 'block';
+    
+    // Show success message
+    document.getElementById('resultBox').innerHTML = '<div style="background: #e8f5e9; padding: 12px; border-radius: 8px; border-left: 3px solid #4CAF50; color: #2e7d32; margin-bottom: 15px;">✅ Ready to log workout! Enter your sets and click "Save".</div>' + document.getElementById('resultBox').innerHTML;
 }
 
 // Get AI-powered rep recommendations for alternative exercises

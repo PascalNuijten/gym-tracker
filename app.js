@@ -4032,7 +4032,16 @@ ${userProfile?.injuries ? `IMPORTANT: Consider their reported injuries: ${userPr
 ` : ''}Format with HTML: Use <strong> for emphasis, <ul><li> for lists, keep it encouraging but honest.`;
 
             console.log('Calling AI for performance analysis...');
-            const aiAnalysis = await callGeminiAI(prompt); // includeUserContext=true by default
+            
+            // Add timeout
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('AI analysis timed out after 45 seconds')), 45000)
+            );
+            
+            const aiAnalysis = await Promise.race([
+                callGeminiAI(prompt), // includeUserContext=true by default
+                timeoutPromise
+            ]);
             
             if (!aiAnalysis) {
                 throw new Error('No AI response received');
@@ -4422,7 +4431,15 @@ Requirements:
 Just return the fact text, no formatting or quotes.`;
 
     try {
-        const aiResponse = await callGeminiAI(prompt);
+        // Add timeout
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Fun fact timed out after 30 seconds')), 30000)
+        );
+        
+        const aiResponse = await Promise.race([
+            callGeminiAI(prompt),
+            timeoutPromise
+        ]);
         
         if (aiResponse) {
             console.log('✅ AI-generated fun fact');

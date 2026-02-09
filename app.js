@@ -4,7 +4,7 @@
 // API key is restricted to specific websites in Google Cloud Console
 // To set up: https://console.cloud.google.com/apis/credentials
 // Add HTTP referrer restrictions: https://pascalnuijten.github.io/*
-const GEMINI_API_KEY = 'REPLACE_WITH_NEW_RESTRICTED_KEY';
+const GEMINI_API_KEY = 'AIzaSyCy8L-GZkUhNfaoG3JQ3d26IBN1s8M12lU';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 let useRealAI = true; // AI enabled by default
 

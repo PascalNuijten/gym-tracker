@@ -1960,7 +1960,7 @@ function calculateStats(history) {
 }
 
 // Smart AI Improvement Suggestion
-function generateSuggestion(history) {
+async function generateSuggestion(history, exerciseName = 'this exercise') {
     if (!history || history.length === 0) {
         return "🎯 <strong>Start Smart:</strong> Begin with a weight you can lift for 8-12 reps with proper form. Leave 2-3 reps 'in the tank' on your first session.";
     }
@@ -1970,6 +1970,42 @@ function generateSuggestion(history) {
     const avgWeight = lastSets.reduce((sum, set) => sum + set.weight, 0) / lastSets.length;
     const avgReps = lastSets.reduce((sum, set) => sum + set.reps, 0) / lastSets.length;
     const totalVolume = lastSets.reduce((sum, set) => sum + (set.reps * set.weight), 0);
+    
+    // TRY REAL AI FIRST
+    if (useRealAI) {
+        const recentSessions = history.slice(-5);
+        const sessionSummary = recentSessions.map((s, i) => {
+            const avgW = s.sets.reduce((sum, set) => sum + set.weight, 0) / s.sets.length;
+            const avgR = s.sets.reduce((sum, set) => sum + set.reps, 0) / s.sets.length;
+            return `Session ${i + 1}: ${avgW}kg × ${Math.round(avgR)} reps (${s.sets.length} sets)`;
+        }).join('; ');
+        
+        const daysSince = Math.floor((Date.now() - new Date(lastSession.date).getTime()) / (1000 * 60 * 60 * 24));
+        
+        const prompt = `You are an expert personal trainer analyzing workout data for "${exerciseName}".
+
+Recent Performance (last 5 sessions):
+${sessionSummary}
+
+Latest session: ${avgWeight}kg × ${Math.round(avgReps)} reps (${lastSets.length} sets, ${daysSince} days ago)
+
+Provide ONE specific, actionable training tip (50-80 words) in HTML format:
+- If reps >12: suggest weight increase
+- If reps <6: suggest weight decrease  
+- If stagnant (same weight 3+ sessions): suggest plateau break
+- If long break (>14 days): suggest deload
+- Include specific numbers (weights, reps, sets)
+
+Format: <strong>Title:</strong> Detailed advice with exact numbers.
+Be encouraging but realistic.`;
+
+        const aiResponse = await callGeminiAI(prompt);
+        
+        if (aiResponse) {
+            console.log('✅ Real AI suggestion:', aiResponse);
+            return aiResponse.replace(/```html/g, '').replace(/```/g, '').trim();
+        }
+    }
     
     // Analyze progression pattern (last 5 sessions)
     const recentSessions = history.slice(-5);
@@ -2161,13 +2197,16 @@ function editSet(exerciseId, historyIndex, setIndex) {
 }
 
 // Show Exercise Details Modal
-function showExerciseDetails(id) {
+async function showExerciseDetails(id) {
     const exercise = exercises.find(ex => ex.id === id);
     if (!exercise) return;
 
     const userData = exercise.users[currentUser];
     const history = userData.history || [];
     const stats = calculateStats(history);
+    
+    // Generate AI suggestion (async)
+    const suggestion = await generateSuggestion(history, exercise.name);
 
     // Create details modal
     const detailsModal = document.createElement('div');
@@ -2203,8 +2242,8 @@ function showExerciseDetails(id) {
             </div>
 
             <div class="suggestion-box">
-                <h3>💡 Improvement Suggestion</h3>
-                <p>${generateSuggestion(history)}</p>
+                <h3>💡 ${useRealAI ? 'Gemini AI' : 'Smart'} Improvement Suggestion</h3>
+                <p>${suggestion}</p>
             </div>
 
             <div class="chart-container">
@@ -3297,9 +3336,9 @@ function showAIMode(mode) {
 function generateCombinedAnalysis(period) {
     const resultBox = document.getElementById('aiAnalysisResult');
     resultBox.classList.add('show');
-    resultBox.innerHTML = '<div class="loading-spinner"></div> Analyzing your performance...';
+    resultBox.innerHTML = '<div class="loading-spinner"></div> Gemini AI is analyzing your performance...';
     
-    setTimeout(() => {
+    setTimeout(async () => {
         const userExercises = exercises.filter(ex => ex.users && ex.users[currentUser]);
         
         console.log('Analysis for period:', period);
@@ -3450,10 +3489,104 @@ function generateCombinedAnalysis(period) {
         
         feedback += `</ul>`;
         
-        // Fun fact
-        feedback += generateFunFact(totalVolume, totalSets, period);
+        // Fun fact (async)
+        const funFact = await generateFunFact(totalVolume, totalSets, period);
+        feedback += funFact;
+        
+        // Add AI-powered follow-up questions
+        if (useRealAI && totalWorkouts > 0) {
+            feedback += `<div style="margin-top: 20px; padding: 15px; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1)); border-radius: 8px; border-left: 3px solid #667eea;">
+                <h4 style="margin: 0 0 10px 0;">💬 Want Deeper AI Analysis?</h4>
+                <p style="margin: 0 0 10px 0; color: #666;">Ask Gemini AI any question about your training:</p>
+                <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                    <button onclick="askAIQuestion('Why am I not progressing on bench press?')" class="secondary-btn" style="font-size: 0.85em;">Why no progress?</button>
+                    <button onclick="askAIQuestion('Am I training enough?')" class="secondary-btn" style="font-size: 0.85em;">Training enough?</button>
+                    <button onclick="askAIQuestion('What should I focus on next?')" class="secondary-btn" style="font-size: 0.85em;">What to focus on?</button>
+                </div>
+            </div>`;
+        }
         
         resultBox.innerHTML = feedback;
+    }, 1000);
+}
+
+// AI-powered question answering
+async function askAIQuestion(question) {
+    const resultBox = document.getElementById('aiAnalysisQuestionResult');
+    if (!resultBox) {
+        // Create result box if it doesn't exist
+        const analysisSection = document.querySelector('.ai-section');
+        if (analysisSection) {
+            const newBox = document.createElement('div');
+            newBox.id = 'aiAnalysisQuestionResult';
+            newBox.className = 'ai-result-box';
+            analysisSection.appendChild(newBox);
+        }
+    }
+    
+    const box = document.getElementById('aiAnalysisQuestionResult');
+    box.classList.add('show');
+    box.innerHTML = `<div class="loading-spinner"></div> Gemini AI is thinking about: "${question}"`;
+    
+    setTimeout(async () => {
+        const userExercises = exercises.filter(ex => ex.users && ex.users[currentUser]);
+        
+        // Prepare workout summary for AI
+        const workoutSummary = userExercises.slice(0, 10).map(ex => {
+            const history = ex.users[currentUser]?.history || [];
+            if (history.length === 0) return null;
+            
+            const recent = history.slice(-3);
+            const avgWeight = recent.reduce((sum, s) => sum + s.sets.reduce((s2, set) => s2 + set.weight, 0) / s.sets.length, 0) / recent.length;
+            const avgReps = recent.reduce((sum, s) => sum + s.sets.reduce((s2, set) => s2 + set.reps, 0) / s.sets.length, 0) / recent.length;
+            
+            return `${ex.name} (${ex.muscle}): ${avgWeight.toFixed(1)}kg × ${avgReps.toFixed(0)} reps, ${history.length} sessions`;
+        }).filter(Boolean).join('; ');
+        
+        let answer = '';
+        
+        if (useRealAI && workoutSummary) {
+            const prompt = `You are an expert personal trainer analyzing workout data for a client.
+
+Question: "${question}"
+
+Client's Training Data (last 10 exercises, recent 3 sessions avg):
+${workoutSummary}
+
+Provide a specific, actionable answer (100-150 words):
+- Reference actual exercises and numbers from their data
+- Give concrete recommendations
+- Be encouraging but honest
+- Use fitness expertise
+
+Format as HTML with <strong> tags for emphasis.`;
+
+            const aiResponse = await callGeminiAI(prompt);
+            
+            if (aiResponse) {
+                answer = aiResponse.replace(/```html/g, '').replace(/```/g, '').trim();
+                console.log('✅ Real AI answered question');
+            }
+        }
+        
+        // Fallback if AI fails
+        if (!answer) {
+            answer = answerAnalysisQuestion(question);
+        }
+        
+        box.innerHTML = `
+            <h4>💬 AI Answer</h4>
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0;">
+                <p style="margin: 0; font-style: italic; color: #666; font-size: 0.9em;">"${question}"</p>
+            </div>
+            <div style="padding: 15px; background: white; border-radius: 8px; border: 1px solid #e0e0e0;">
+                ${answer}
+            </div>
+            <div style="margin-top: 15px;">
+                <input type="text" id="customAIQuestion" placeholder="Ask your own question..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                <button onclick="askAIQuestion(document.getElementById('customAIQuestion').value)" class="primary-btn" style="margin-top: 10px; width: 100%;">Ask Gemini AI</button>
+            </div>
+        `;
     }, 1000);
 }
 
@@ -3599,10 +3732,36 @@ function generateFeedback(period) {
     }, 1500);
 }
 
-function generateFunFact(totalVolume, totalSets, period) {
+async function generateFunFact(totalVolume, totalSets, period) {
+    // TRY REAL AI FIRST
+    if (useRealAI) {
+        const prompt = `You are a fitness coach. Generate ONE interesting, motivating fun fact about this workout achievement:
+
+Stats:
+- Total volume: ${totalVolume}kg
+- Total sets: ${totalSets}
+- Period: ${period}
+
+Create a fun comparison or insight (30-50 words). Examples:
+- Compare volume to real-world objects (cars, elephants, etc.)
+- Percentile ranking estimation
+- Athlete comparisons
+- Physiological facts
+
+Be specific, use emojis, and be encouraging! Just return the fact text, no formatting.`;
+
+        const aiResponse = await callGeminiAI(prompt);
+        
+        if (aiResponse) {
+            console.log('✅ Real AI fun fact');
+            const cleanFact = aiResponse.replace(/```html/g, '').replace(/```/g, '').trim();
+            return `<div class="fun-fact-box"><h5>🎉 Gemini AI Fun Fact</h5><p>${cleanFact}</p></div>`;
+        }
+    }
+    
+    // FALLBACK
     const facts = [];
     
-    // Volume comparisons
     if (totalVolume > 0) {
         const elephants = (totalVolume / 6000).toFixed(1);
         const cars = (totalVolume / 1500).toFixed(1);
@@ -3619,18 +3778,15 @@ function generateFunFact(totalVolume, totalSets, period) {
         }
     }
     
-    // Performance percentiles (simulated)
     const percentile = Math.min(95, 50 + (totalSets * 2));
     facts.push(`Based on your volume, you're in the top ${100 - percentile}% of recreational lifters! 🏆`);
     
-    // Athlete comparisons
     if (totalVolume > 10000) {
         facts.push(`Your training volume matches that of competitive powerlifters! 💪`);
     } else if (totalVolume > 5000) {
         facts.push(`You're training like a college athlete! Keep it up! 🎓`);
     }
     
-    // Sets comparison
     if (totalSets > 100) {
         facts.push(`${totalSets} sets ${period === 'week' ? 'this week' : 'this month'}! That's more than most professional bodybuilders! 🏋️‍♂️`);
     }

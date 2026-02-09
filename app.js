@@ -523,15 +523,18 @@ function populateExistingExercises() {
     console.log('Total exercises in database:', exercises.length);
     console.log('Current user:', currentUser);
     
-    // Get all exercises that current user hasn't done yet
-    // This includes exercises done by other users OR exercises with no history at all
+    // Get all exercises that current user hasn't added yet
+    // This means: no user entry OR user entry exists but has no history
     const availableExercises = exercises.filter(ex => {
         // Safety check: ensure users object exists
         if (!ex.users) {
             ex.users = {};
         }
-        const currentUserHistory = ex.users[currentUser]?.history || [];
-        const available = currentUserHistory.length === 0;
+        
+        // Only show if user doesn't have this exercise at all
+        const hasUserEntry = ex.users.hasOwnProperty(currentUser);
+        const available = !hasUserEntry;
+        
         if (available) {
             console.log('Available exercise:', ex.name, 'Users:', Object.keys(ex.users));
         }

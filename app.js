@@ -1,11 +1,12 @@
 // Gym Tracker v2.0 - Separate Exercise Creation & Workout Logging
 
 // AI CONFIGURATION
-// Get API key from config.js (not committed to GitHub)
-// For GitHub Pages: Enter key directly in browser console: localStorage.setItem('geminiKey', 'YOUR_KEY')
-const GEMINI_API_KEY = localStorage.getItem('geminiKey') || 'ENTER_KEY_IN_BROWSER_CONSOLE';
+// API key is restricted to specific websites in Google Cloud Console
+// To set up: https://console.cloud.google.com/apis/credentials
+// Add HTTP referrer restrictions: https://pascalnuijten.github.io/*
+const GEMINI_API_KEY = 'REPLACE_WITH_NEW_RESTRICTED_KEY';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
-let useRealAI = localStorage.getItem('geminiKey') ? true : false; // Auto-enable if key is set
+let useRealAI = true; // AI enabled by default
 
 // Firebase Configuration
 const firebaseConfig = {

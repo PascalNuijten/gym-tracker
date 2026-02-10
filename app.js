@@ -148,6 +148,12 @@ function getUserContext(username) {
     return context;
 }
 
+function applyColorPalette(palette) {
+    const validPalette = palette || 'purple';
+    document.body.setAttribute('data-palette', validPalette);
+    console.log('🎨 Applied color palette:', validPalette);
+}
+
 function promptUserProfileSetup() {
     const profile = getUserProfile(currentUser);
     if (!hasCompleteProfile(currentUser)) {
@@ -171,6 +177,7 @@ function loadUserProfileIntoForm() {
         document.getElementById('userGoal').value = profile.goal || '';
         document.getElementById('userFrequency').value = profile.frequency || '';
         document.getElementById('userInjuries').value = profile.injuries || '';
+        document.getElementById('userPalette').value = profile.palette || 'purple';
     }
 }
 
@@ -374,6 +381,12 @@ function init() {
             btn.classList.add('active');
         }
     });
+    
+    // Apply color palette for current user
+    const profile = getUserProfile(currentUser);
+    if (profile && profile.palette) {
+        applyColorPalette(profile.palette);
+    }
     
     setupEventListeners();
     setupFirebaseListeners();
@@ -645,6 +658,14 @@ function setupEventListeners() {
             currentUser = btn.dataset.user;
             localStorage.setItem('gymTrackerCurrentUser', currentUser);
             renderExercises();
+            
+            // Apply color palette for new user
+            const profile = getUserProfile(currentUser);
+            if (profile && profile.palette) {
+                applyColorPalette(profile.palette);
+            } else {
+                applyColorPalette('purple'); // Default palette
+            }
             
             // Check if new user needs profile setup
             promptUserProfileSetup();
@@ -950,7 +971,8 @@ function setupEventListeners() {
             experience: document.getElementById('userExperience').value || null,
             goal: document.getElementById('userGoal').value || null,
             frequency: document.getElementById('userFrequency').value || null,
-            injuries: document.getElementById('userInjuries').value.trim() || null
+            injuries: document.getElementById('userInjuries').value.trim() || null,
+            palette: document.getElementById('userPalette').value || 'purple'
         };
         
         saveUserProfile(currentUser, profileData);
@@ -4829,12 +4851,72 @@ function processDetectedExercise(detectedExercise, resultBox) {
         return;
     }
     
-    // Step 1: Check if user already has this exercise
-    const userExercise = exercises.find(ex => {
-        const hasUserData = ex.users && ex.users[currentUser] && ex.users[currentUser].history;
-        const nameMatches = ex.name.toLowerCase() === detectedExercise.name.toLowerCase();
-        return hasUserData && nameMatches;
-    });
+    // Step 1: Use AI to check if user already has this exercise (with fuzzy matching)
+    resultBox.innerHTML += `<p style="color: #666;">🤖 AI is checking for similar exercises...</p>`;
+    
+    let userExercise = null;
+    let globalExercise = null;
+    
+    if (useRealAI && exercises.length > 0) {
+        try {
+            const userExerciseNames = exercises
+                .filter(ex => ex.users && ex.users[currentUser] && ex.users[currentUser].history)
+                .map(ex => ex.name)
+                .join(', ');
+            
+            const allExerciseNames = exercises.map(ex => ex.name).join(', ');
+            
+            const matchPrompt = `You are checking if an exercise already exists in a database.
+
+Detected exercise: "${detectedExercise.name}"
+Current user's exercises: ${userExerciseNames || 'None'}
+All exercises in database: ${allExerciseNames || 'None'}
+
+Determine if the detected exercise matches ANY existing exercise (allowing for slight naming variations).
+Examples of matches:
+- "Lat Pulldown" matches "Lat Pull Down" or "Lateral Pulldown"
+- "Bench Press" matches "Barbell Bench Press" or "Flat Bench Press"
+- "Leg Press" matches "Seated Leg Press"
+
+Respond with ONLY a JSON object:
+{
+  "userMatch": "exact name from user's exercises if match found, otherwise null",
+  "globalMatch": "exact name from all exercises if match found, otherwise null",
+  "reasoning": "brief explanation"
+}`;
+
+            const aiResponse = await callGeminiAI(matchPrompt, null, false, 300);
+            
+            if (aiResponse) {
+                const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const matchResult = JSON.parse(jsonMatch[0]);
+                    console.log('AI match result:', matchResult);
+                    
+                    if (matchResult.userMatch) {
+                        userExercise = exercises.find(ex => ex.name === matchResult.userMatch);
+                    } else if (matchResult.globalMatch) {
+                        globalExercise = exercises.find(ex => ex.name === matchResult.globalMatch);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('AI matching failed:', error);
+            // Fall back to exact matching
+            userExercise = exercises.find(ex => {
+                const hasUserData = ex.users && ex.users[currentUser] && ex.users[currentUser].history;
+                const nameMatches = ex.name.toLowerCase() === detectedExercise.name.toLowerCase();
+                return hasUserData && nameMatches;
+            });
+        }
+    } else {
+        // No AI or no exercises - use exact matching
+        userExercise = exercises.find(ex => {
+            const hasUserData = ex.users && ex.users[currentUser] && ex.users[currentUser].history;
+            const nameMatches = ex.name.toLowerCase() === detectedExercise.name.toLowerCase();
+            return hasUserData && nameMatches;
+        });
+    }
     
     if (userExercise) {
         // User already has this exercise - open workout modal
@@ -4861,11 +4943,7 @@ function processDetectedExercise(detectedExercise, resultBox) {
         return;
     }
     
-    // Step 2: Check if exercise exists in global database (other users have it)
-    const globalExercise = exercises.find(ex => 
-        ex.name.toLowerCase() === detectedExercise.name.toLowerCase()
-    );
-    
+    // Step 2: If AI found a global match, use it
     if (globalExercise) {
         // Exercise exists but not for current user - add it automatically
         resultBox.innerHTML = `

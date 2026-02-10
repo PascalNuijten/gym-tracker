@@ -4,9 +4,69 @@
     box-sizing: border-box;
 }
 
+/* Color Palette Variables - Default (Purple) */
+:root {
+    --gradient-start: #667eea;
+    --gradient-end: #764ba2;
+    --accent-color: #667eea;
+    --accent-hover: #5568d3;
+    --btn-gradient-start: #667eea;
+    --btn-gradient-end: #764ba2;
+}
+
+/* Purple Passion (Default) */
+body[data-palette="purple"] {
+    --gradient-start: #667eea;
+    --gradient-end: #764ba2;
+    --accent-color: #667eea;
+    --accent-hover: #5568d3;
+    --btn-gradient-start: #667eea;
+    --btn-gradient-end: #764ba2;
+}
+
+/* Ocean Blue */
+body[data-palette="ocean"] {
+    --gradient-start: #2193b0;
+    --gradient-end: #6dd5ed;
+    --accent-color: #2193b0;
+    --accent-hover: #1a7a94;
+    --btn-gradient-start: #2193b0;
+    --btn-gradient-end: #6dd5ed;
+}
+
+/* Sunset Orange */
+body[data-palette="sunset"] {
+    --gradient-start: #f37335;
+    --gradient-end: #fdc830;
+    --accent-color: #f37335;
+    --accent-hover: #d65d28;
+    --btn-gradient-start: #f37335;
+    --btn-gradient-end: #fdc830;
+}
+
+/* Forest Green */
+body[data-palette="forest"] {
+    --gradient-start: #134e5e;
+    --gradient-end: #71b280;
+    --accent-color: #134e5e;
+    --accent-hover: #0d3642;
+    --btn-gradient-start: #134e5e;
+    --btn-gradient-end: #71b280;
+}
+
+/* Rose Gold */
+body[data-palette="rose"] {
+    --gradient-start: #ed6ea0;
+    --gradient-end: #ec8c69;
+    --accent-color: #ed6ea0;
+    --accent-hover: #d85c8d;
+    --btn-gradient-start: #ed6ea0;
+    --btn-gradient-end: #ec8c69;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 100%);
     min-height: 100vh;
     padding: 20px;
     color: #333;
@@ -56,7 +116,7 @@ h1 {
 
 .user-btn.active {
     background: white;
-    color: #667eea;
+    color: var(--accent-color);
 }
 
 /* User Actions */
@@ -121,7 +181,7 @@ h1 {
 .add-btn {
     width: 100%;
     padding: 15px;
-    background: #667eea;
+    background: var(--accent-color);
     color: white;
     border: none;
     border-radius: 8px;
@@ -133,7 +193,7 @@ h1 {
 }
 
 .add-btn:hover {
-    background: #5568d3;
+    background: var(--accent-hover);
 }
 
 .routine-btn {
@@ -294,12 +354,12 @@ h1 {
 }
 
 .btn-edit {
-    background: #667eea;
+    background: var(--accent-color);
     color: white;
 }
 
 .btn-edit:hover {
-    background: #5568d3;
+    background: var(--accent-hover);
 }
 
 .btn-view {
@@ -440,7 +500,7 @@ select option {
 
 /* Ensure multi-select shows selected items clearly */
 select[multiple] option:checked {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    background: linear-gradient(135deg, var(--btn-gradient-start) 0%, var(--btn-gradient-end) 100%) !important;
     color: white !important;
     font-weight: bold;
 }
@@ -449,7 +509,7 @@ input:focus,
 select:focus,
 textarea:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: var(--accent-color);
 }
 
 textarea {
@@ -475,12 +535,12 @@ textarea {
 }
 
 .btn-primary {
-    background: #667eea;
+    background: var(--accent-color);
     color: white;
 }
 
 .btn-primary:hover {
-    background: #5568d3;
+    background: var(--accent-hover);
 }
 
 .btn-secondary {
@@ -613,7 +673,7 @@ textarea {
 }
 
 .stat-card {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--btn-gradient-start) 0%, var(--btn-gradient-end) 100%);
     color: white;
     padding: 20px;
     border-radius: 12px;
@@ -765,7 +825,7 @@ textarea {
 }
 
 .routine-day {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--btn-gradient-start) 0%, var(--btn-gradient-end) 100%);
     padding: 20px;
     border-radius: 12px;
     color: white;
@@ -798,7 +858,7 @@ textarea {
 }
 
 .routine-ex-number {
-    background: #667eea;
+    background: var(--accent-color);
     color: white;
     width: 30px;
     height: 30px;
@@ -878,7 +938,7 @@ textarea {
 }
 
 .summary-stat {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--btn-gradient-start) 0%, var(--btn-gradient-end) 100%);
     padding: 25px;
     border-radius: 12px;
     color: white;
@@ -1004,13 +1064,13 @@ textarea {
 }
 
 .option-btn:hover {
-    border-color: #667eea;
+    border-color: var(--accent-color);
 }
 
 .option-btn.active {
-    background: #667eea;
+    background: var(--accent-color);
     color: white;
-    border-color: #667eea;
+    border-color: var(--accent-color);
 }
 
 /* AI Floating Button */
@@ -1021,7 +1081,7 @@ textarea {
     width: 60px;
     height: 60px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--btn-gradient-start) 0%, var(--btn-gradient-end) 100%);
     color: white;
     font-size: 2rem;
     border: none;
@@ -1136,13 +1196,13 @@ textarea {
 }
 
 .period-btn:hover {
-    border-color: #667eea;
+    border-color: var(--accent-color);
 }
 
 .period-btn.active {
-    background: #667eea;
+    background: var(--accent-color);
     color: white;
-    border-color: #667eea;
+    border-color: var(--accent-color);
 }
 
 /* Camera Mode */
@@ -1274,7 +1334,7 @@ textarea {
 }
 
 .fun-fact-box {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--btn-gradient-start) 0%, var(--btn-gradient-end) 100%);
     color: white;
     padding: 15px;
     border-radius: 8px;
@@ -1303,7 +1363,7 @@ textarea {
 .primary-btn {
     width: 100%;
     padding: 12px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, var(--btn-gradient-start) 0%, var(--btn-gradient-end) 100%);
     color: white;
     border: none;
     border-radius: 8px;

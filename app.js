@@ -511,13 +511,21 @@ Respond with ONLY a JSON object in this exact format:
 {
   "category": "Chest/Upper Back/Lower Back/Laterals/Shoulders/Biceps/Triceps/Abdominals/Legs",
   "muscles": ["Primary Muscle 1", "Primary Muscle 2"],
-  "equipment": "Equipment description"
+  "equipment": "Equipment description",
+  "imageUrl": "Direct URL to exercise demonstration image"
 }
 
 Rules:
 - category: Must be ONE of the listed categories
 - muscles: Array of 1-3 primary muscles from this list: [Chest, Upper Chest, Lower Chest, Back, Lats, Traps, Lower Back, Shoulders, Front Delts, Side Delts, Rear Delts, Biceps, Triceps, Forearms, Quads, Hamstrings, Glutes, Calves, Abs, Obliques, Core]
 - equipment: Brief description (e.g., "Barbell", "Dumbbells", "Cable Machine", "Bodyweight")
+- imageUrl: Provide a direct image URL from reputable fitness sources like:
+  * images.squarespace-cdn.com (exercise demonstrations)
+  * gymvisual.com
+  * cdn-0.weighttraining.guide
+  * hips.hearstapps.com (Men's Health, Women's Health)
+  * Use high-quality schematic/demonstration images showing proper form
+  * Example format: "https://images.squarespace-cdn.com/content/v1/.../Exercise-Name.jpeg"
 
 Be concise and respond immediately with only the JSON.`;
 
@@ -605,8 +613,20 @@ Be concise and respond immediately with only the JSON.`;
                 console.log('Equipment set:', data.equipment);
             }
             
+            // Auto-fill image URL if provided
+            if (data.imageUrl) {
+                document.getElementById('exerciseImage').value = data.imageUrl;
+                // Trigger preview update
+                const previewImg = document.getElementById('exerciseImagePreview');
+                if (previewImg) {
+                    previewImg.src = data.imageUrl;
+                    previewImg.style.display = 'block';
+                }
+                console.log('Image URL set:', data.imageUrl);
+            }
+            
             statusEl.style.color = '#4CAF50';
-            statusEl.textContent = `✅ AI suggested: ${data.category} targeting ${data.muscles.join(', ')}. Review and modify if needed.`;
+            statusEl.textContent = `✅ AI suggested: ${data.category} targeting ${data.muscles.join(', ')}${data.imageUrl ? ' (image included)' : ''}. Review and modify if needed.`;
             
             console.log('✅ AI auto-filled exercise data successfully');
         }
@@ -5571,7 +5591,9 @@ function findSubstitutes() {
             const equipmentIcon = alt.equipment ? equipmentIcons[alt.equipment.toLowerCase()] || '🏋️' : '';
             
             html += `<div style="background: ${idx < 3 ? '#f0f9ff' : '#f9f9f9'}; padding: 12px; margin-bottom: 10px; border-radius: 8px; border-left: 3px solid ${idx === 0 ? '#4CAF50' : idx === 1 ? '#2196F3' : idx === 2 ? '#FF9800' : '#ddd'};">`;
-            html += `<div style="display: flex; justify-content: space-between; align-items: start;">`;
+            html += `<div style="display: flex; justify-content: space-between; align-items: start; gap: 12px;">`;
+            
+            // Left side - exercise info
             html += `<div style="flex: 1;">`;
             html += `<div style="font-weight: bold; font-size: 1.05rem; margin-bottom: 4px;">${medal} ${alt.name}</div>`;
             
@@ -5588,6 +5610,18 @@ function findSubstitutes() {
             }
             
             html += `<div style="color: #555; font-size: 0.9rem; margin-bottom: 8px;">${alt.reason}</div>`;
+            html += `</div>`;
+            
+            // Right side - exercise image if available
+            if (alt.imageUrl && alt.name !== '⚕️ See a Doctor/PT' && alt.name !== 'Rest & Ice (RICE)') {
+                html += `<div style="flex-shrink: 0;">`;
+                html += `<img src="${alt.imageUrl}" alt="${alt.name}" style="width: 120px; height: 120px; object-fit: cover; border-radius: 8px; border: 2px solid #ddd;" onerror="this.style.display='none'">`;
+                html += `</div>`;
+            }
+            
+            html += `</div>`;
+            
+            // Continue with rest of the content (recommendations, buttons)
             
             // Add workout recommendation if available
             const workoutRec = repRecommendations[idx];
@@ -5630,10 +5664,8 @@ function findSubstitutes() {
                 html += `</div>`;
             }
             
-            html += `</div>`;
-            
-            html += `</div>`;
-            html += `</div>`;
+            html += `</div>`; // Close main card div
+        });
         });
         
         html += `</div>`;
@@ -5699,6 +5731,16 @@ function quickAddExercise(altDataEncoded) {
     
     if (alt.equipment) {
         document.getElementById('machineInfo').value = alt.equipment;
+    }
+    
+    // Pre-fill image URL if available from AI
+    if (alt.imageUrl) {
+        document.getElementById('exerciseImage').value = alt.imageUrl;
+        const previewImg = document.getElementById('exerciseImagePreview');
+        if (previewImg) {
+            previewImg.src = alt.imageUrl;
+            previewImg.style.display = 'block';
+        }
     }
     
     // Enable form fields
@@ -6067,9 +6109,18 @@ Respond with ONLY a JSON array of 5 exercises in this exact format:
     "muscle": "Primary Muscle",
     "equipment": "Barbell/Dumbbell/Machine/Cable/Bodyweight/Mat/Bench/None",
     "reason": "Why this is a good alternative (1 sentence)",
-    "difficulty": "Beginner/Intermediate/Advanced"
+    "difficulty": "Beginner/Intermediate/Advanced",
+    "imageUrl": "Direct URL to exercise demonstration image"
   }
 ]
+
+For imageUrl, provide direct links to high-quality demonstration images from:
+- images.squarespace-cdn.com
+- gymvisual.com  
+- cdn-0.weighttraining.guide
+- hips.hearstapps.com
+
+Example: "https://images.squarespace-cdn.com/content/v1/5ffcea9416aee143500ea103/1638178144643-Y4UD7ZGNSHVCPROJBJ5P/Seated+Incline+Dumbbell+Biceps+Curl.jpeg"
 
 ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), then 3-5 safer exercise alternatives.' : 'Focus on similar movement patterns or same muscle groups.'}`;
 

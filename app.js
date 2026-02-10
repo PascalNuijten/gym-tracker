@@ -976,6 +976,10 @@ function setupEventListeners() {
         };
         
         saveUserProfile(currentUser, profileData);
+        
+        // Apply the new color palette immediately (no reload needed)
+        applyColorPalette(profileData.palette);
+        
         alert('✅ Personal information saved! AI features are now personalized for you.');
         document.getElementById('settingsModal').style.display = 'none';
     });

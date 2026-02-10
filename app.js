@@ -5557,14 +5557,21 @@ function findSubstitutes() {
 function quickAddExercise(altDataEncoded) {
     const alt = JSON.parse(decodeURIComponent(altDataEncoded));
     
+    // Close AI modal if open
+    const aiModal = document.getElementById('aiModal');
+    if (aiModal) {
+        aiModal.style.display = 'none';
+    }
+    
     // Open the add exercise modal
     editingExerciseId = null;
     document.getElementById('modalTitle').textContent = 'Add Exercise';
     exerciseForm.reset();
     
     // Pre-fill with alternative exercise data
-    document.getElementById('exerciseName').value = alt.name;
-    document.getElementById('exerciseName').readOnly = false;
+    const exerciseNameInput = document.getElementById('exerciseName');
+    exerciseNameInput.value = alt.name;
+    exerciseNameInput.readOnly = false;
     
     // Map muscle to category
     const categoryMapping = {
@@ -5621,6 +5628,11 @@ function quickAddExercise(altDataEncoded) {
     if (modal) {
         modal.style.display = 'block';
     }
+    
+    // Trigger AI auto-fill for this exercise
+    setTimeout(() => {
+        aiSuggestExerciseData(alt.name);
+    }, 500);
     
     // Show success message
     const statusEl = document.getElementById('aiSuggestionStatus');

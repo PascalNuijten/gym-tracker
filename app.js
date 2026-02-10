@@ -4830,10 +4830,11 @@ function processDetectedExercise(detectedExercise, resultBox) {
     }
     
     // Step 1: Check if user already has this exercise
-    const userExercise = exercises.find(ex => 
-        ex.user === currentUser && 
-        ex.name.toLowerCase() === detectedExercise.name.toLowerCase()
-    );
+    const userExercise = exercises.find(ex => {
+        const hasUserData = ex.users && ex.users[currentUser] && ex.users[currentUser].history;
+        const nameMatches = ex.name.toLowerCase() === detectedExercise.name.toLowerCase();
+        return hasUserData && nameMatches;
+    });
     
     if (userExercise) {
         // User already has this exercise - open workout modal

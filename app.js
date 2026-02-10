@@ -4806,7 +4806,7 @@ Be honest about confidence (0-100). If you're not sure, give lower confidence.`;
     };
 }
 
-function processDetectedExercise(detectedExercise, resultBox) {
+async function processDetectedExercise(detectedExercise, resultBox) {
     console.log('Detected exercise:', detectedExercise);
     
     // Show detected exercise name and confidence first

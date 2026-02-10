@@ -5666,7 +5666,6 @@ function findSubstitutes() {
             
             html += `</div>`; // Close main card div
         });
-        });
         
         html += `</div>`;
         html += `<p style="margin-top: 15px; padding: 10px; background: #fffbea; border-left: 3px solid #ffc107; border-radius: 4px; color: #666; font-size: 0.9rem;">💡 <strong>Tip:</strong> These exercises are ranked by similarity in muscle activation, movement pattern, and equipment requirements. Click "Watch Tutorial" to see proper form demonstrations on YouTube.</p>`;

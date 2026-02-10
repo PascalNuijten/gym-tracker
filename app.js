@@ -5589,12 +5589,18 @@ function findSubstitutes() {
             
             html += `<div style="color: #555; font-size: 0.9rem; margin-bottom: 8px;">${alt.reason}</div>`;
             
-            // Add rep recommendation if available
-            const repRec = repRecommendations[idx];
-            if (repRec && alt.name !== '⚕️ See a Doctor/PT' && alt.name !== 'Rest & Ice (RICE)') {
-                html += `<div style="background: #e8f5e9; padding: 8px; border-radius: 6px; margin: 8px 0; border-left: 3px solid #4CAF50;">`;
-                html += `<div style="font-weight: bold; color: #2e7d32; font-size: 0.85rem; margin-bottom: 3px;">🎯 Recommended Reps</div>`;
-                html += `<div style="color: #1b5e20; font-size: 0.9rem;">${repRec}</div>`;
+            // Add workout recommendation if available
+            const workoutRec = repRecommendations[idx];
+            if (workoutRec && alt.name !== '⚕️ See a Doctor/PT' && alt.name !== 'Rest & Ice (RICE)') {
+                html += `<div style="background: #e8f5e9; padding: 10px; border-radius: 6px; margin: 8px 0; border-left: 3px solid #4CAF50;">`;
+                html += `<div style="font-weight: bold; color: #2e7d32; font-size: 0.85rem; margin-bottom: 5px;">🎯 AI Recommendation</div>`;
+                html += `<div style="color: #1b5e20; font-size: 0.9rem;">`;
+                html += `<strong>${workoutRec.sets} sets</strong> × <strong>${workoutRec.reps} reps</strong>`;
+                if (workoutRec.weight > 0) {
+                    html += ` @ <strong>${workoutRec.weight}kg</strong>`;
+                }
+                html += `<br><span style="font-size: 0.85rem; color: #558b2f;">${workoutRec.reason}</span>`;
+                html += `</div>`;
                 html += `</div>`;
             }
             
@@ -5608,8 +5614,9 @@ function findSubstitutes() {
                 html += `<div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">`;
                 
                 if (existingExercise) {
-                    // Exercise exists - show "Log Workout" button
-                    html += `<button onclick="quickLogExercise('${existingExercise.id}')" style="background: #4CAF50; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 500;">📝 Log Workout</button>`;
+                    // Exercise exists - show "Apply & Log" button with recommendations
+                    const recData = workoutRec ? encodeURIComponent(JSON.stringify(workoutRec)) : '';
+                    html += `<button onclick="quickLogExerciseWithRec('${existingExercise.id}', '${recData}')" style="background: #4CAF50; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 500;">✅ Apply & Log</button>`;
                 } else {
                     // Exercise doesn't exist - show "Add Exercise" button
                     const altData = encodeURIComponent(JSON.stringify(alt));
@@ -5617,7 +5624,7 @@ function findSubstitutes() {
                 }
                 
                 if (alt.video) {
-                    html += `<a href="${alt.video}" target="_blank" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.85rem; display: inline-block;">📹 Watch Tutorial</a>`;
+                    html += `<a href="${alt.video}" target="_blank" style="background: linear-gradient(135deg, var(--btn-gradient-start) 0%, var(--btn-gradient-end) 100%); color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.85rem; display: inline-block;">📹 Watch Tutorial</a>`;
                 }
                 
                 html += `</div>`;
@@ -5766,6 +5773,93 @@ function quickLogExercise(exerciseId) {
     document.getElementById('resultBox').innerHTML = '<div style="background: #e8f5e9; padding: 12px; border-radius: 8px; border-left: 3px solid #4CAF50; color: #2e7d32; margin-bottom: 15px;">✅ Ready to log workout! Enter your sets and click "Save".</div>' + document.getElementById('resultBox').innerHTML;
 }
 
+// Quick log exercise WITH AI recommendations pre-filled
+function quickLogExerciseWithRec(exerciseId, recDataEncoded) {
+    const exercise = exercises.find(ex => ex.id === exerciseId);
+    if (!exercise) return;
+    
+    // Parse recommendations
+    let recommendations = null;
+    try {
+        recommendations = recDataEncoded ? JSON.parse(decodeURIComponent(recDataEncoded)) : null;
+    } catch (e) {
+        console.error('Failed to parse recommendations:', e);
+    }
+    
+    // Close AI modal
+    const aiModal = document.getElementById('aiModal');
+    if (aiModal) {
+        aiModal.style.display = 'none';
+    }
+    
+    editingExerciseId = exerciseId;
+    document.getElementById('modalTitle').textContent = `Log Workout: ${exercise.name}`;
+    exerciseForm.reset();
+    
+    // Fill exercise info (read-only)
+    document.getElementById('exerciseName').value = exercise.name;
+    document.getElementById('exerciseName').readOnly = true;
+    document.getElementById('exerciseCategory').value = exercise.category;
+    document.getElementById('exerciseCategory').disabled = true;
+    document.getElementById('exerciseMuscle').value = exercise.muscle;
+    document.getElementById('exerciseMuscle').disabled = true;
+    
+    if (exercise.imageUrl) {
+        document.getElementById('exerciseImagePreview').src = exercise.imageUrl;
+        document.getElementById('exerciseImagePreview').style.display = 'block';
+    }
+    
+    // Show log workout section
+    document.getElementById('newExerciseSection').style.display = 'none';
+    document.getElementById('logWorkoutSection').style.display = 'block';
+    
+    // Clear previous sets and add recommended sets
+    const setsContainer = document.getElementById('workoutSetsContainer');
+    setsContainer.innerHTML = '';
+    workoutSetCounter = 0;
+    
+    if (recommendations && recommendations.sets && recommendations.reps) {
+        // Create the recommended number of sets with pre-filled values
+        const numSets = parseInt(recommendations.sets) || 3;
+        const repsValue = recommendations.reps.split('-')[0] || '10'; // Use lower end of range
+        const weightValue = recommendations.weight || 0;
+        
+        for (let i = 0; i < numSets; i++) {
+            workoutSetCounter++;
+            const setDiv = document.createElement('div');
+            setDiv.className = 'set-entry';
+            setDiv.setAttribute('data-set', workoutSetCounter);
+            setDiv.innerHTML = `
+                <h4>Set ${workoutSetCounter} <button type="button" class="btn-remove-set" onclick="removeWorkoutSet(${workoutSetCounter})">✕</button></h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="workout_set${workoutSetCounter}_reps">Reps</label>
+                        <input type="number" id="workout_set${workoutSetCounter}_reps" class="workout-set-reps" min="0" placeholder="${repsValue}" value="${repsValue}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="workout_set${workoutSetCounter}_weight">Weight (kg)</label>
+                        <input type="number" id="workout_set${workoutSetCounter}_weight" class="workout-set-weight" min="0" step="0.25" placeholder="${weightValue}" value="${weightValue}" required>
+                    </div>
+                </div>
+            `;
+            setsContainer.appendChild(setDiv);
+        }
+        
+        // Show AI recommendation message
+        document.getElementById('resultBox').innerHTML = `<div style="background: #e3f2fd; padding: 12px; border-radius: 8px; border-left: 3px solid #2196F3; color: #0d47a1; margin-bottom: 15px;">
+            🤖 <strong>AI Recommendations Applied!</strong><br>
+            <span style="font-size: 0.9rem;">${numSets} sets × ${recommendations.reps} reps @ ${weightValue}kg<br>
+            ${recommendations.reason}</span>
+        </div>` + document.getElementById('resultBox').innerHTML;
+    } else {
+        // Fallback to single set if no recommendations
+        addWorkoutSet();
+    }
+    
+    // Open modal
+    exerciseModal.style.display = 'block';
+}
+
 // Get AI-powered rep recommendations for alternative exercises
 async function getRepRecommendationsForAlternatives(originalExercise, alternatives, userExercises) {
     if (!useRealAI) {
@@ -5781,18 +5875,22 @@ async function getRepRecommendationsForAlternatives(originalExercise, alternativ
             return alternatives.map(() => null);
         }
         
-        // Calculate average reps for original exercise
+        // Calculate average reps and weight for original exercise
         let totalReps = 0;
+        let totalWeight = 0;
         let totalSets = 0;
         history.forEach(workout => {
             workout.sets.forEach(set => {
                 totalReps += parseInt(set.reps) || 0;
+                totalWeight += parseFloat(set.weight) || 0;
                 totalSets++;
             });
         });
         const avgReps = totalSets > 0 ? Math.round(totalReps / totalSets) : 0;
+        const avgWeight = totalSets > 0 ? (totalWeight / totalSets).toFixed(1) : 0;
+        const avgSetsPerWorkout = totalSets / history.length;
         
-        // Get ALL related exercises (same muscle/category) with their rep patterns
+        // Get ALL related exercises (same muscle/category) with their rep and weight patterns
         const relatedExercises = userExercises
             .filter(ex => {
                 const exData = ex.users?.[currentUser];
@@ -5806,16 +5904,20 @@ async function getRepRecommendationsForAlternatives(originalExercise, alternativ
                 const exData = ex.users[currentUser];
                 const exHistory = exData.history;
                 let reps = 0;
+                let weight = 0;
                 let sets = 0;
                 exHistory.forEach(w => {
                     w.sets.forEach(s => {
                         reps += parseInt(s.reps) || 0;
+                        weight += parseFloat(s.weight) || 0;
                         sets++;
                     });
                 });
                 return {
                     name: ex.name,
-                    avgReps: sets > 0 ? Math.round(reps / sets) : 0
+                    avgReps: sets > 0 ? Math.round(reps / sets) : 0,
+                    avgWeight: sets > 0 ? (weight / sets).toFixed(1) : 0,
+                    equipment: ex.equipment
                 };
             })
             .filter(ex => ex.avgReps > 0)
@@ -5835,10 +5937,10 @@ User Profile:
         
         // Build context about user's rep patterns
         const repContext = `
-Original Exercise: ${originalExercise.name} (Average: ${avgReps} reps/set)
+Original Exercise: ${originalExercise.name} (Average: ${avgReps} reps/set, ${avgWeight}kg, ${Math.round(avgSetsPerWorkout)} sets per workout)
 
-Related Exercise Rep Patterns:
-${relatedExercises.map(ex => `- ${ex.name}: ${ex.avgReps} reps/set`).join('\n')}`;
+Related Exercise Patterns:
+${relatedExercises.map(ex => `- ${ex.name}: ${ex.avgReps} reps/set, ${ex.avgWeight}kg (${ex.equipment})`).join('\n')}`;
         
         // Build list of alternatives for AI to analyze
         const alternativesList = alternatives
@@ -5846,53 +5948,58 @@ ${relatedExercises.map(ex => `- ${ex.name}: ${ex.avgReps} reps/set`).join('\n')}
             .map((alt, idx) => `${idx + 1}. ${alt.name} (${alt.equipment}, ${alt.difficulty})`)
             .join('\n');
         
-        const prompt = `You are a strength coach. Based on the user's performance data, recommend optimal rep ranges for these alternative exercises.${profileContext}
+        const prompt = `You are a strength coach. Based on the user's performance data, recommend optimal sets, reps, and weight for these alternative exercises.${profileContext}
 
 ${repContext}
 
-Alternative Exercises to Recommend Reps For:
+Alternative Exercises to Recommend For:
 ${alternativesList}
 
-For EACH alternative exercise listed above, provide a rep recommendation in this format:
-"[number]-[number] reps (reason)"
+For EACH alternative exercise listed above, provide a complete workout recommendation in this format:
+"{\"sets\": number, \"reps\": \"range\", \"weight\": number, \"reason\": \"brief explanation\"}"
 
 Example outputs:
-- "8-12 reps (similar to your squat pattern, hypertrophy range)"
-- "12-15 reps (higher due to bodyweight nature)"
-- "6-10 reps (lower for compound movement strength)"
+- {"sets": 3, "reps": "8-12", "weight": 45.5, "reason": "Similar to your squat pattern, moderate weight for hypertrophy"}
+- {"sets": 4, "reps": "12-15", "weight": 0, "reason": "Bodyweight exercise, higher reps for endurance"}
+- {"sets": 3, "reps": "6-10", "weight": 60.0, "reason": "Compound movement, slightly heavier than bench press"}
 
 Consider:
-1. User's current rep patterns on similar exercises
+1. User's current patterns on similar exercises (weights and reps)
 2. Exercise type (compound vs isolation)
-3. Equipment (bodyweight = higher reps, barbell = lower reps)
+3. Equipment (bodyweight = 0 weight, similar equipment = similar weight)
 4. User's goal (${userProfile?.goal || 'general fitness'})
-5. Difficulty level
-6. Biomechanical similarity to exercises they already do
+5. Difficulty level vs original exercise
+6. Biomechanical similarity
 
-Respond with ONLY a JSON array of strings (one per exercise):
-["8-12 reps (reason)", "12-15 reps (reason)", ...]`;
+For bodyweight exercises, set weight to 0.
+For machine/cable exercises, adjust weight based on leverage differences.
+For barbell/dumbbell, scale from similar exercises.
 
-        const aiResponse = await callGeminiAI(prompt, null, false, 800);
+Respond with ONLY a JSON array of objects (one per exercise):
+[{"sets": 3, "reps": "8-12", "weight": 50, "reason": "..."}, ...]`;
+
+        const aiResponse = await callGeminiAI(prompt, null, false, 1000);
         
         if (aiResponse) {
             const jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
             if (jsonMatch) {
                 const recommendations = JSON.parse(jsonMatch[0]);
-                console.log('✅ AI rep recommendations:', recommendations);
+                console.log('✅ AI workout recommendations:', recommendations);
                 
                 // Map back to include recovery items (which get null)
                 const fullRecommendations = alternatives.map(alt => {
                     if (alt.name === '⚕️ See a Doctor/PT' || alt.name === 'Rest & Ice (RICE)') {
                         return null;
                     }
-                    return recommendations.shift() || null;
+                    const rec = recommendations.shift();
+                    return rec || null;
                 });
                 
                 return fullRecommendations;
             }
         }
     } catch (error) {
-        console.error('Rep recommendation failed:', error);
+        console.error('Workout recommendation failed:', error);
     }
     
     // Fallback: Generate basic recommendations based on exercise type
@@ -5901,20 +6008,36 @@ Respond with ONLY a JSON array of strings (one per exercise):
             return null;
         }
         
-        // Smart fallback based on equipment and difficulty
+        // Smart fallback with sets, reps, and weight
+        let sets = 3;
+        let reps = "8-12";
+        let weight = 0;
+        let reason = "Standard training recommendation";
+        
         if (alt.equipment?.toLowerCase() === 'bodyweight') {
-            return "12-15 reps (bodyweight exercises typically use higher reps)";
+            reps = "12-15";
+            weight = 0;
+            reason = "Bodyweight exercises use higher reps";
         } else if (alt.equipment?.toLowerCase() === 'barbell') {
-            return "6-10 reps (compound barbell movements for strength)";
+            sets = 3;
+            reps = "6-10";
+            weight = 50;
+            reason = "Compound barbell movement for strength";
         } else if (alt.equipment?.toLowerCase() === 'machine') {
-            return "10-12 reps (controlled machine work for hypertrophy)";
+            reps = "10-12";
+            weight = 40;
+            reason = "Controlled machine work for hypertrophy";
         } else if (alt.equipment?.toLowerCase() === 'cable') {
-            return "12-15 reps (constant tension with cables)";
+            reps = "12-15";
+            weight = 30;
+            reason = "Constant tension with cables";
         } else if (alt.equipment?.toLowerCase() === 'dumbbell') {
-            return "8-12 reps (dumbbell work for balanced strength)";
-        } else {
-            return "8-12 reps (standard hypertrophy range)";
+            reps = "8-12";
+            weight = 15;
+            reason = "Dumbbell work for balanced strength";
         }
+        
+        return { sets, reps, weight, reason };
     });
 }
 

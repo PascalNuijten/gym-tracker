@@ -4171,9 +4171,9 @@ Provide a comprehensive analysis (200-300 words) covering:
 
 ${userProfile?.injuries ? `⚠️ CRITICAL: Consider their reported injuries: ${userProfile.injuries}. Suggest safe alternatives if needed.
 ` : ''}
-TONE: Encouraging but honest. If they're off-track from their goals, tell them clearly but supportively.
+TONE: Encouraging but honest. If they are off-track from their goals, tell them clearly but supportively.
 
-Format with HTML: Use <strong> for emphasis, <ul><li> for lists.
+Format with HTML: Use <strong> for emphasis, <ul><li> for lists.`;
 
             console.log('Calling AI for performance analysis...');
             console.log('Prompt length:', prompt.length, 'characters');

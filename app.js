@@ -4856,37 +4856,81 @@ async function analyzeEquipmentAndIdentifyExercise(imageBase64 = null) {
     // TRY REAL AI VISION FIRST
     if (useRealAI && imageBase64) {
         const equipmentList = exerciseDatabase.map(ex => ex.equipment).join(', ');
-        const prompt = `You are a fitness equipment recognition AI. Analyze this gym equipment image and identify what exercise equipment it is.
+        const prompt = `You are a gym equipment recognition expert. Analyze this image and identify the gym equipment.
 
-Available equipment types: ${equipmentList}
+Look for:
+- Machine name/brand labels
+- Seat and pad configuration
+- Cable systems, weight stacks, or free weights
+- Handles, grips, or attachments
+- Overall structure and purpose
 
-Respond with ONLY a JSON object in this exact format:
+Common equipment: ${equipmentList}
+
+Respond ONLY with a JSON object:
 {
-  "equipment": "exact equipment name from the list above",
-  "confidence": 75,
-  "reasoning": "brief description of what you see"
+  "equipment": "name of equipment (or 'Unknown' if unclear)",
+  "confidence": 0-100,
+  "reasoning": "what you see in the image",
+  "suggested_exercise": "exercise name that matches this equipment"
 }
 
-Be honest about confidence (0-100). If you're not sure, give lower confidence.`;
+Be conservative with confidence. Only use 80+ if you're very sure. Use 50-70 if uncertain.`;
 
-        const aiResponse = await callGeminiAI(prompt, imageBase64);
+        console.log('🤖 Calling AI vision for equipment recognition...');
+        const aiResponse = await callGeminiAI(prompt, imageBase64, false, 800);
         
         if (aiResponse) {
             try {
+                console.log('AI vision response:', aiResponse);
                 const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
                     const result = JSON.parse(jsonMatch[0]);
+                    console.log('Parsed result:', result);
                     
-                    // Find matching exercise from database
-                    const matchedExercise = exerciseDatabase.find(ex => 
-                        ex.equipment.toLowerCase() === result.equipment.toLowerCase()
-                    );
-                    
-                    if (matchedExercise) {
-                        detectedExercise = matchedExercise;
-                        confidence = result.confidence || 75;
-                        console.log('✅ Real AI detection:', result.equipment, confidence + '%');
+                    // If AI recognized the equipment
+                    if (result.equipment && result.equipment !== 'Unknown') {
+                        // Try to find matching exercise from database
+                        const matchedExercise = exerciseDatabase.find(ex => 
+                            ex.equipment.toLowerCase().includes(result.equipment.toLowerCase()) ||
+                            result.equipment.toLowerCase().includes(ex.equipment.toLowerCase())
+                        );
+                        
+                        if (matchedExercise) {
+                            detectedExercise = matchedExercise;
+                            confidence = result.confidence || 70;
+                            console.log('✅ AI matched to database:', matchedExercise.name, confidence + '%');
+                            return {
+                                ...detectedExercise,
+                                confidence: confidence,
+                                reasoning: result.reasoning
+                            };
+                        } else if (result.suggested_exercise) {
+                            // AI suggested an exercise not in our database
+                            console.log('✅ AI suggested new exercise:', result.suggested_exercise);
+                            return {
+                                name: result.suggested_exercise,
+                                category: 'Unknown',
+                                muscle: 'Multiple',
+                                equipment: result.equipment,
+                                confidence: result.confidence || 60,
+                                reasoning: result.reasoning,
+                                isNewExercise: true
+                            };
+                        }
                     }
+                    
+                    // AI couldn't identify it clearly
+                    console.warn('⚠️ AI could not identify equipment clearly:', result);
+                    return {
+                        name: '❓ Unknown Equipment',
+                        category: 'Unknown',
+                        muscle: 'Unknown',
+                        equipment: result.equipment || 'Unknown',
+                        confidence: result.confidence || 30,
+                        reasoning: result.reasoning || 'Could not identify equipment',
+                        failed: true
+                    };
                 }
             } catch (e) {
                 console.error('Failed to parse AI vision response:', e);
@@ -4894,61 +4938,57 @@ Be honest about confidence (0-100). If you're not sure, give lower confidence.`;
         }
     }
     
-    // FALLBACK: Smart context-based selection if AI fails
-    if (!detectedExercise) {
-        console.log('⚠️ AI failed, using smart fallback');
-        
-        const recentExercises = exercises
-            .filter(ex => ex.users?.[currentUser]?.history?.length > 0)
-            .sort((a, b) => {
-                const aDate = new Date(a.users[currentUser].history[a.users[currentUser].history.length - 1].date);
-                const bDate = new Date(b.users[currentUser].history[b.users[currentUser].history.length - 1].date);
-                return bDate - aDate;
-            })
-            .slice(0, 5);
-        
-        const recentMuscles = recentExercises.map(ex => ex.muscle.toLowerCase());
-        const needsTraining = ['chest', 'back', 'legs', 'shoulders', 'arms'].filter(
-            muscle => !recentMuscles.some(recent => recent.includes(muscle))
-        );
-        
-        let candidateExercises = [...exerciseDatabase];
-        
-        if (needsTraining.length > 0) {
-            const priorityExercises = exerciseDatabase.filter(ex => 
-                needsTraining.some(muscle => 
-                    ex.category.toLowerCase().includes(muscle) || 
-                    ex.muscle.toLowerCase().includes(muscle)
-                )
-            );
-            
-            if (priorityExercises.length > 0) {
-                candidateExercises = priorityExercises;
-            }
-        }
-        
-        detectedExercise = candidateExercises[Math.floor(Math.random() * candidateExercises.length)];
-        
-        const popularExercises = ['Bench Press', 'Lat Pulldown', 'Leg Press', 'Shoulder Press'];
-        const isPopular = popularExercises.includes(detectedExercise.name);
-        confidence = isPopular ? (80 + Math.floor(Math.random() * 15)) : (65 + Math.floor(Math.random() * 15));
-    }
-    
+    // FALLBACK: If AI completely failed
+    console.error('❌ AI vision failed completely or not enabled');
     return {
-        ...detectedExercise,
-        confidence: confidence
+        name: '❌ Detection Failed',
+        category: 'Unknown',
+        muscle: 'Unknown',
+        equipment: 'Unknown',
+        confidence: 0,
+        reasoning: 'AI service unavailable. Please try again or enter exercise manually.',
+        failed: true
     };
 }
 
 async function processDetectedExercise(detectedExercise, resultBox) {
     console.log('Detected exercise:', detectedExercise);
     
-    // Show detected exercise name and confidence first
-    const confidenceColor = detectedExercise.confidence >= 85 ? '#4caf50' : 
-                           detectedExercise.confidence >= 70 ? '#ff9800' : '#f44336';
+    // Handle failed detection
+    if (detectedExercise.failed) {
+        resultBox.innerHTML = `
+            <h4>📸 Camera Detection Result</h4>
+            <div style="background: #fee; padding: 15px; border-radius: 8px; border-left: 4px solid #f44336; margin: 15px 0;">
+                <h3 style="margin: 0 0 10px 0; color: #d32f2f;">${detectedExercise.name}</h3>
+                <p style="color: #666; margin: 5px 0;">
+                    ${detectedExercise.reasoning || 'AI could not identify the equipment clearly.'}
+                </p>
+                ${detectedExercise.reasoning ? `<p style="color: #999; font-size: 0.85em; margin-top: 10px; font-style: italic;">AI saw: ${detectedExercise.reasoning}</p>` : ''}
+            </div>
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <p style="margin: 0 0 10px 0;"><strong>💡 Tips for Better Detection:</strong></p>
+                <ul style="margin: 5px 0; padding-left: 20px;">
+                    <li>Get closer to the equipment</li>
+                    <li>Ensure good lighting</li>
+                    <li>Center the equipment in frame</li>
+                    <li>Capture equipment labels/name plates if visible</li>
+                    <li>Make sure equipment is in focus</li>
+                </ul>
+            </div>
+            <div style="margin-top: 15px; display: flex; gap: 10px;">
+                <button class="primary-btn" onclick="retryCamera()" style="flex: 1;">📷 Try Again</button>
+                <button class="secondary-btn" onclick="aiModal.style.display='none'; stopCamera(); modal.style.display='block';" style="flex: 1;">➕ Add Manually</button>
+            </div>
+        `;
+        return;
+    }
     
-    const confidenceIcon = detectedExercise.confidence >= 85 ? '✓' : 
-                          detectedExercise.confidence >= 70 ? '⚠' : '⚠';
+    // Show detected exercise name and confidence first
+    const confidenceColor = detectedExercise.confidence >= 80 ? '#4caf50' : 
+                           detectedExercise.confidence >= 60 ? '#ff9800' : '#f44336';
+    
+    const confidenceIcon = detectedExercise.confidence >= 80 ? '✅' : 
+                          detectedExercise.confidence >= 60 ? '⚠️' : '❌';
     
     resultBox.innerHTML = `
         <h4>📸 Camera Detection Result</h4>
@@ -4961,20 +5001,22 @@ async function processDetectedExercise(detectedExercise, resultBox) {
                 Category: <strong>${detectedExercise.category}</strong> | 
                 Muscle: <strong>${detectedExercise.muscle}</strong>
             </p>
+            ${detectedExercise.reasoning ? `<p style="color: #999; font-size: 0.85em; margin-top: 10px; font-style: italic;">AI saw: ${detectedExercise.reasoning}</p>` : ''}
         </div>
         <p style="color: #666; font-style: italic;">Checking your exercise library...</p>
     `;
     
     // Check confidence level
-    if (detectedExercise.confidence < 60) {
+    if (detectedExercise.confidence < 50) {
         resultBox.innerHTML += `
             <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin-top: 15px;">
-                <p style="margin: 0 0 10px 0;"><strong>⚠️ Low Confidence</strong></p>
-                <p style="margin: 5px 0;">The detection accuracy is low. Try:</p>
+                <p style="margin: 0 0 10px 0;"><strong>⚠️ Low Confidence Detection</strong></p>
+                <p style="margin: 5px 0;">AI is not confident about this detection. Try:</p>
                 <ul style="margin: 10px 0; padding-left: 20px;">
                     <li>Getting closer to the equipment</li>
                     <li>Better lighting</li>
                     <li>Centering equipment in frame</li>
+                    <li>Capturing equipment labels or name plates</li>
                 </ul>
             </div>
             <div style="margin-top: 15px; display: flex; gap: 10px;">

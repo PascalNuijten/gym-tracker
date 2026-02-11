@@ -1692,7 +1692,7 @@ async function getAIWeightRecommendation(exercise) {
                 ).join('\n');
         }
         
-        const prompt = `You are an expert strength coach. Recommend a starting weight for ${currentUser}'s next workout session.
+        const prompt = `You are an expert strength coach. Recommend a complete workout plan for ${currentUser}'s next session.
 
 EXERCISE: ${exercise.name}
 - Category: ${exercise.category}
@@ -1701,47 +1701,57 @@ EXERCISE: ${exercise.name}
 
 ${profileContext ? `USER PROFILE:\n${profileContext}\n\n` : ''}${historyContext ? `WORKOUT HISTORY FOR THIS EXERCISE (Last 5 sessions):\n${historyContext}\n\n` : 'NO PREVIOUS HISTORY for this exercise\n\n'}${relatedExercisesContext}
 
-Recommend a weight in kg for their next session. Consider:
-${history.length > 0 ? `- Progressive overload: suggest slightly more than previous sessions if they're progressing well
+Recommend a complete workout including sets, reps, and weight. Consider:
+${history.length > 0 ? `- Progressive overload: suggest slightly more volume or intensity than previous sessions
 - Fatigue management: if they've been consistent, they might need a deload
-- Rep range: assume they'll do 8-12 reps` : `- STRENGTH CORRELATIONS: Use their performance on similar exercises to predict capacity
+- Typical patterns: they usually do ${Math.round(history[history.length - 1]?.sets.length || 3)} sets` : `- STRENGTH CORRELATIONS: Use their performance on similar exercises to predict capacity
   Example: If they squat 100kg, they might hack squat 80-90kg (mechanical advantage difference)
   Example: If they bench 80kg, they might dumbbell press 28-32kg per hand (stability requirement)
   Example: If they barbell row 70kg, they might cable row 60-65kg (different resistance curve)
 - Their experience level and bodyweight
 - Exercise-specific mechanics and difficulty
 - Safe, conservative recommendation for first attempt`}
-${userProfile?.injuries ? `- Their injuries/limitations: ${userProfile.injuries}\n` : ''}- Be specific and realistic based on ALL available data
+${userProfile?.goal ? `- Training goal: ${userProfile.goal}\n` : ''}${userProfile?.injuries ? `- Their injuries/limitations: ${userProfile.injuries}\n` : ''}- Be specific and realistic based on ALL available data
 
 Respond in this EXACT format:
+SETS: [number]
+REPS: [number or range like 8-12]
 WEIGHT: [number]
-REASONING: [one sentence explaining why, referencing related exercises if used]
+REASONING: [one sentence explaining the plan]
 
 Example:
+SETS: 3
+REPS: 8-10
 WEIGHT: 85
-REASONING: Based on your 100kg squat, hack squat typically allows 80-90% of back squat weight.`;
+REASONING: Progressive overload from last session with focus on strength gains.`;
 
         const aiResponse = await callGeminiAI(prompt, null, false);
         
         if (aiResponse) {
             // Parse AI response
+            const setsMatch = aiResponse.match(/SETS:\s*(\d+)/i);
+            const repsMatch = aiResponse.match(/REPS:\s*([\d\-]+)/i);
             const weightMatch = aiResponse.match(/WEIGHT:\s*([\d.]+)/i);
             const reasoningMatch = aiResponse.match(/REASONING:\s*(.+)/i);
             
-            if (weightMatch) {
+            if (setsMatch && repsMatch && weightMatch) {
+                const recommendedSets = parseInt(setsMatch[1]);
+                const recommendedReps = repsMatch[1].trim();
                 const recommendedWeight = parseFloat(weightMatch[1]);
                 const reasoning = reasoningMatch ? reasoningMatch[1].trim() : 'AI recommendation based on your profile and history';
                 
-                recommendationDiv.innerHTML = `<div style="padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; font-size: 0.9em; box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);">
-                    <div style="font-weight: bold; margin-bottom: 5px;">🤖 AI Recommendation</div>
-                    <div style="font-size: 1.3em; font-weight: bold; margin: 8px 0;">${recommendedWeight}kg</div>
-                    <div style="font-size: 0.85em; opacity: 0.95;">${reasoning}</div>
-                    <button onclick="applyRecommendedWeight(${recommendedWeight})" class="secondary-btn" style="margin-top: 8px; font-size: 0.85em; padding: 6px 12px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white;">
-                        Apply ${recommendedWeight}kg
+                recommendationDiv.innerHTML = `<div style="padding: 12px; background: linear-gradient(135deg, var(--btn-gradient-start) 0%, var(--btn-gradient-end) 100%); color: white; border-radius: 8px; font-size: 0.9em; box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);">
+                    <div style="font-weight: bold; margin-bottom: 5px;">🤖 AI Workout Plan</div>
+                    <div style="font-size: 1.2em; font-weight: bold; margin: 8px 0;">
+                        ${recommendedSets} sets × ${recommendedReps} reps @ ${recommendedWeight}kg
+                    </div>
+                    <div style="font-size: 0.85em; opacity: 0.95; margin-bottom: 10px;">${reasoning}</div>
+                    <button onclick="applyRecommendedWorkout(${recommendedSets}, '${recommendedReps}', ${recommendedWeight})" class="secondary-btn" style="width: 100%; font-size: 0.9em; padding: 8px 12px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; font-weight: 600;">
+                        ✅ Apply Workout Plan
                     </button>
                 </div>`;
                 
-                console.log('✅ AI weight recommendation:', recommendedWeight, 'kg');
+                console.log('✅ AI workout recommendation:', recommendedSets, 'sets ×', recommendedReps, 'reps @', recommendedWeight, 'kg');
             } else {
                 throw new Error('Could not parse AI response');
             }
@@ -1784,6 +1794,62 @@ window.applyRecommendedWeight = function(weight) {
         setTimeout(() => {
             weightInput.style.background = '';
         }, 1000);
+    }
+};
+
+// Apply complete recommended workout (sets, reps, weight)
+window.applyRecommendedWorkout = function(sets, reps, weight) {
+    const container = document.getElementById('workoutSetsContainer');
+    if (!container) return;
+    
+    // Clear existing sets
+    container.innerHTML = '';
+    workoutSetCounter = 0;
+    
+    // Parse reps (could be "10" or "8-10")
+    const repsValue = reps.toString().split('-')[0].trim(); // Use lower end of range
+    
+    // Create the recommended number of sets
+    for (let i = 0; i < sets; i++) {
+        workoutSetCounter++;
+        const setDiv = document.createElement('div');
+        setDiv.className = 'set-entry';
+        setDiv.setAttribute('data-set', workoutSetCounter);
+        setDiv.innerHTML = `
+            <h4>Set ${workoutSetCounter} <button type="button" class="btn-remove-set" onclick="removeWorkoutSet(${workoutSetCounter})">✕</button></h4>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="workout_set${workoutSetCounter}_reps">Reps</label>
+                    <input type="number" id="workout_set${workoutSetCounter}_reps" class="workout-set-reps" min="0" placeholder="${repsValue}" value="${repsValue}" required>
+                </div>
+                <div class="form-group">
+                    <label for="workout_set${workoutSetCounter}_weight">Weight (kg)</label>
+                    <input type="number" id="workout_set${workoutSetCounter}_weight" class="workout-set-weight" min="0" step="0.25" placeholder="${weight}" value="${weight}" required>
+                </div>
+            </div>
+        `;
+        container.appendChild(setDiv);
+        
+        // Add visual feedback
+        setDiv.style.background = '#e3f2fd';
+        setTimeout(() => {
+            setDiv.style.background = '';
+        }, 1000);
+    }
+    
+    // Scroll to first set
+    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    
+    // Show success message
+    const aiRec = document.getElementById('aiWeightRecommendation');
+    if (aiRec) {
+        const originalHTML = aiRec.innerHTML;
+        aiRec.innerHTML = `<div style="padding: 12px; background: #4CAF50; color: white; border-radius: 8px; font-weight: 600; text-align: center;">
+            ✅ Workout plan applied! Review and adjust if needed.
+        </div>`;
+        setTimeout(() => {
+            aiRec.innerHTML = originalHTML;
+        }, 3000);
     }
 };
 
@@ -2933,10 +2999,7 @@ async function showExerciseDetails(id) {
     const history = userData.history || [];
     const stats = calculateStats(history);
     
-    // Generate AI suggestion (async)
-    const suggestion = await generateSuggestion(history, exercise.name);
-
-    // Create details modal
+    // Create details modal IMMEDIATELY (don't wait for AI)
     const detailsModal = document.createElement('div');
     detailsModal.className = 'modal';
     detailsModal.style.display = 'block';
@@ -2969,9 +3032,9 @@ async function showExerciseDetails(id) {
                 </div>
             </div>
 
-            <div class="suggestion-box">
+            <div class="suggestion-box" id="aiSuggestionBox">
                 <h3>💡 Improvement Suggestion</h3>
-                <p>${suggestion}</p>
+                <p><div class="loading-spinner" style="width: 20px; height: 20px; border-width: 2px; display: inline-block; vertical-align: middle;"></div> <span style="margin-left: 5px;">Loading AI suggestion...</span></p>
             </div>
 
             <div class="chart-container">
@@ -3008,6 +3071,21 @@ async function showExerciseDetails(id) {
     // Draw chart
     if (history.length > 0) {
         drawProgressChart(history);
+    }
+    
+    // Load AI suggestion asynchronously (won't block popup)
+    try {
+        const suggestion = await generateSuggestion(history, exercise.name);
+        const suggestionBox = document.getElementById('aiSuggestionBox');
+        if (suggestionBox) {
+            suggestionBox.querySelector('p').innerHTML = suggestion;
+        }
+    } catch (error) {
+        console.error('AI suggestion failed:', error);
+        const suggestionBox = document.getElementById('aiSuggestionBox');
+        if (suggestionBox) {
+            suggestionBox.querySelector('p').innerHTML = '⚠️ AI suggestion unavailable. Try again later.';
+        }
     }
 }
 
@@ -4231,7 +4309,7 @@ Format with HTML: Use <strong> for emphasis, <ul><li> for lists.`;
             
             const analysisStart = Date.now();
             const aiAnalysis = await Promise.race([
-                callGeminiAI(prompt, null, true, 3000), // Increased to 3000 tokens for detailed analysis
+                callGeminiAI(prompt, null, true, 4000), // Increased to 4000 tokens for full detailed analysis
                 timeoutPromise
             ]);
             const analysisTime = ((Date.now() - analysisStart) / 1000).toFixed(1);
@@ -4244,7 +4322,7 @@ Format with HTML: Use <strong> for emphasis, <ul><li> for lists.`;
             console.log('AI analysis length:', aiAnalysis.length, 'characters');
             
             feedback = `<h4>📊 ${periodName}'s Complete AI Analysis</h4>`;
-            feedback += `<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea; margin: 15px 0;">`;
+            feedback += `<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea; margin: 15px 0; word-wrap: break-word; overflow-wrap: break-word; white-space: pre-wrap;">`;
             feedback += aiAnalysis.replace(/```html/g, '').replace(/```/g, '').trim();
             feedback += `</div>`;
             console.log('✅ AI-powered performance analysis generated');

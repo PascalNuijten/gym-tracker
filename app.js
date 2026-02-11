@@ -73,7 +73,7 @@ function hashString(str) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v22.4'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v22.6'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -6214,13 +6214,14 @@ Respond with ONLY a JSON array of 4 exercises in this exact format (NO extra tex
 
 CRITICAL: 
 - Keep URLs SHORT (prefer weighttraining.guide and gymvisual.com)
-- Keep "reason" under 100 characters
+- Keep "reason" under 80 characters to avoid truncation
 - Return ONLY the JSON array, no markdown, no extra text
 - Ensure valid JSON with proper closing brackets
+- Be concise in all descriptions
 
 ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), then 2-3 safer exercise alternatives.' : 'Focus on similar movement patterns or same muscle groups.'}`;
 
-        const aiResponse = await callGeminiAI(prompt, null, false, 1000); // Increased token limit
+        const aiResponse = await callGeminiAI(prompt, null, false, 2000); // Increased to 2000 tokens to prevent truncation
         
         if (aiResponse) {
             try {
@@ -6229,6 +6230,17 @@ ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), 
                 
                 console.log('Cleaned AI response (first 500 chars):', cleanedResponse.substring(0, 500));
                 
+                // Try to fix incomplete JSON by completing it
+                if (!cleanedResponse.endsWith(']')) {
+                    console.warn('Response appears truncated, attempting to fix...');
+                    // Find last complete object and close the array
+                    const lastCompleteObject = cleanedResponse.lastIndexOf('}');
+                    if (lastCompleteObject > 0) {
+                        cleanedResponse = cleanedResponse.substring(0, lastCompleteObject + 1) + '\n]';
+                        console.log('Fixed truncated response');
+                    }
+                }
+                
                 // Extract JSON array
                 const jsonMatch = cleanedResponse.match(/\[[\s\S]*\]/);
                 if (jsonMatch) {
@@ -6236,8 +6248,9 @@ ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), 
                     const alternatives = JSON.parse(jsonMatch[0]);
                     console.log('✅ Real AI generated alternatives:', alternatives);
                     
-                    // Validate that we got actual exercises
-                    if (alternatives.length > 0 && alternatives[0].name) {
+                    // Validate that we got actual exercises (not workout recommendations)
+                    if (alternatives.length > 0 && alternatives[0].name && 
+                        !alternatives[0].sets && !alternatives[0].reps) { // Ensure it's exercises, not workout recs
                         console.log('✅ Returning', alternatives.length, 'AI-generated alternatives');
                         
                         // Add YouTube video links
@@ -6247,6 +6260,8 @@ ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), 
                         }));
                         
                         return enhancedAlternatives;
+                    } else if (alternatives[0]?.sets) {
+                        console.error('AI returned workout recommendations instead of exercises - wrong format');
                     } else {
                         console.error('AI returned empty or invalid alternatives');
                     }

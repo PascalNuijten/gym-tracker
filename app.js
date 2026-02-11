@@ -613,8 +613,9 @@ Be concise and respond immediately with only the JSON.`;
                 console.log('Equipment set:', data.equipment);
             }
             
-            // Auto-fill image URL if provided
-            if (data.imageUrl) {
+            // Auto-fill image URL if provided AND no image already exists
+            const currentImageUrl = document.getElementById('exerciseImage').value;
+            if (data.imageUrl && !currentImageUrl) {
                 document.getElementById('exerciseImage').value = data.imageUrl;
                 // Trigger preview update
                 const previewImg = document.getElementById('exerciseImagePreview');
@@ -623,6 +624,8 @@ Be concise and respond immediately with only the JSON.`;
                     previewImg.style.display = 'block';
                 }
                 console.log('Image URL set:', data.imageUrl);
+            } else if (currentImageUrl) {
+                console.log('Skipping image auto-fill - image already exists');
             }
             
             statusEl.style.color = '#4CAF50';
@@ -3227,7 +3230,10 @@ function renderExercises() {
                         <h3 class="exercise-name">${exercise.name}</h3>
                         <div class="exercise-tags">
                             <span class="tag category">${exercise.category}</span>
-                            <span class="tag muscle">${exercise.muscle}</span>
+                            ${Array.isArray(exercise.muscle) ? 
+                                exercise.muscle.map(m => `<span class="tag muscle">${m}</span>`).join('') :
+                                `<span class="tag muscle">${exercise.muscle}</span>`
+                            }
                         </div>
                         ${exercise.machineInfo ? `<div class="machine-info">📍 ${exercise.machineInfo}</div>` : ''}
                         <div class="last-trained" style="color: #888; font-size: 0.9em; margin-top: 5px;">🕐 Last trained: ${lastDateDisplay}</div>

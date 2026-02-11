@@ -71,6 +71,21 @@ function hashString(str) {
     return hash.toString(36);
 }
 
+// Clear cache on version update (to remove old fallback responses)
+function clearOldCache() {
+    const cacheVersion = 'v22.4'; // Update this when making cache-breaking changes
+    const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
+    
+    if (currentVersion !== cacheVersion) {
+        console.log('🔄 Clearing old AI cache due to version update');
+        localStorage.removeItem(AI_CACHE_KEY);
+        localStorage.setItem('gymTrackerCacheVersion', cacheVersion);
+    }
+}
+
+// Run cache check on load
+clearOldCache();
+
 
 // Firebase Configuration
 const firebaseConfig = {
@@ -6221,14 +6236,19 @@ ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), 
                     const alternatives = JSON.parse(jsonMatch[0]);
                     console.log('✅ Real AI generated alternatives:', alternatives);
                     
-                    // Validate that we got actual exercises, not generic fallback
-                    if (alternatives.length > 0 && alternatives[0].name && 
-                        alternatives[0].name !== 'Progressive Overload' && 
-                        alternatives[0].name !== 'Compound Movements') {
+                    // Validate that we got actual exercises
+                    if (alternatives.length > 0 && alternatives[0].name) {
                         console.log('✅ Returning', alternatives.length, 'AI-generated alternatives');
-                        return alternatives;
+                        
+                        // Add YouTube video links
+                        const enhancedAlternatives = alternatives.map(alt => ({
+                            ...alt,
+                            video: `https://www.youtube.com/results?search_query=${encodeURIComponent(alt.name + ' form tutorial')}`
+                        }));
+                        
+                        return enhancedAlternatives;
                     } else {
-                        console.warn('AI returned generic alternatives, using fallback');
+                        console.error('AI returned empty or invalid alternatives');
                     }
                 } else {
                     console.error('No JSON array found in AI response');
@@ -6243,166 +6263,24 @@ ${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), 
         }
     }
     
-    // FALLBACK: Pattern-based alternatives if AI fails
-    console.log('⚠️ Using fallback alternatives');
-    
-    const isCompound = exerciseName.includes('press') || exerciseName.includes('squat') || 
-                       exerciseName.includes('deadlift') || exerciseName.includes('row') || 
-                       exerciseName.includes('pull') || exerciseName.includes('dip');
-    
-    const isIsolation = exerciseName.includes('curl') || exerciseName.includes('extension') || 
-                        exerciseName.includes('raise') || exerciseName.includes('fly');
-    
-    const equipment = exerciseName.includes('dumbbell') ? 'dumbbell' :
-                     exerciseName.includes('barbell') ? 'barbell' :
-                     exerciseName.includes('cable') ? 'cable' :
-                     exerciseName.includes('machine') ? 'machine' :
-                     exerciseName.includes('bodyweight') || exerciseName.includes('push-up') || 
-                     exerciseName.includes('pull-up') || exerciseName.includes('dip') ? 'bodyweight' : 'unknown';
-    
-    let alternatives = [];
-    
-    // INJURY MODE: Add recovery options first, then safer alternatives
-    if (hasInjury) {
-        alternatives.push(
-            { name: '⚕️ See a Doctor/PT', muscle: 'Recovery', equipment: 'None', reason: 'Professional diagnosis recommended for persistent pain', difficulty: 'N/A' },
-            { name: 'Rest & Ice (RICE)', muscle: 'Recovery', equipment: 'None', reason: '48-72 hours for acute injuries', difficulty: 'N/A' }
-        );
-    }
-    
-    // CHEST EXERCISES
-    if (muscle.includes('chest') || exerciseName.includes('bench') || exerciseName.includes('press') && muscle.includes('chest')) {
-        const chestAlts = [
-            { name: 'Dumbbell Bench Press', muscle: 'Full Chest', equipment: 'Dumbbell', reason: 'Greater range of motion, fixes imbalances', difficulty: 'Intermediate' },
-            { name: 'Incline Barbell Press', muscle: 'Upper Chest', equipment: 'Barbell', reason: '30-45° targets clavicular head', difficulty: 'Intermediate' },
-            { name: 'Decline Press', muscle: 'Lower Chest', equipment: 'Barbell', reason: 'Emphasizes lower pec fibers', difficulty: 'Intermediate' },
-            { name: 'Cable Crossovers', muscle: 'Inner Chest', equipment: 'Cable', reason: 'Constant tension, peak contraction', difficulty: 'Beginner' },
-            { name: 'Weighted Dips', muscle: 'Lower Chest + Triceps', equipment: 'Bodyweight', reason: 'Compound movement, lean forward', difficulty: 'Advanced' },
-            { name: 'Landmine Press', muscle: 'Upper Chest', equipment: 'Barbell', reason: 'Shoulder-friendly angle', difficulty: 'Intermediate' },
-            { name: 'Push-ups (Diamond/Decline)', muscle: 'Chest Variations', equipment: 'Bodyweight', reason: 'Bodyweight progression', difficulty: 'Beginner' },
-            { name: 'Pec Deck Machine', muscle: 'Chest Isolation', equipment: 'Machine', reason: 'Easy to control, constant tension', difficulty: 'Beginner' }
-        ];
-        
-        // If injury, prioritize safer options (machine, cable, lighter variations)
-        if (hasInjury) {
-            alternatives.push(
-                ...chestAlts.filter(a => a.name.includes('Machine') || a.name.includes('Cable') || a.name.includes('Push-up')).slice(0, 3)
-            );
-        } else if (lowerReason.includes('busy') || lowerReason.includes('occupied')) {
-            alternatives.push(...chestAlts.filter(a => a.name.toLowerCase().includes('bodyweight') || a.name.toLowerCase().includes('push-up') || a.name.toLowerCase().includes('dip')));
-        } else if (equipment === 'dumbbell') {
-            alternatives.push(...chestAlts.filter(a => a.name.includes('Dumbbell') || a.name.includes('Cable')));
-        } else if (equipment === 'barbell') {
-            alternatives.push(...chestAlts.filter(a => a.name.includes('Barbell') || a.name.includes('Decline') || a.name.includes('Incline')));
-        } else {
-            alternatives.push(...chestAlts.slice(0, 5));
+    // If AI completely fails, return error alternatives
+    console.error('❌ AI alternatives generation failed completely');
+    return [
+        { 
+            name: '⚠️ AI Unavailable', 
+            muscle: 'System', 
+            equipment: 'None', 
+            reason: 'AI service temporarily unavailable. Please try again in a moment.', 
+            difficulty: 'N/A' 
+        },
+        { 
+            name: '🔄 Refresh and Try Again', 
+            muscle: 'Action', 
+            equipment: 'None', 
+            reason: 'Click the substitute button again to retry with AI.', 
+            difficulty: 'N/A' 
         }
-    }
-    
-    // BACK EXERCISES
-    else if (muscle.includes('back') || muscle.includes('lat') || exerciseName.includes('row') || exerciseName.includes('pull')) {
-        const backAlts = [
-            { name: 'Weighted Pull-ups', muscle: 'Lats + Biceps', equipment: 'Bodyweight', reason: 'King of back width', difficulty: 'Advanced' },
-            { name: 'Pendlay Rows', muscle: 'Upper Back', equipment: 'Barbell', reason: 'Explosive power from floor', difficulty: 'Advanced' },
-            { name: 'T-Bar Rows', muscle: 'Mid Back Thickness', equipment: 'Barbell', reason: 'Supported, heavy loads', difficulty: 'Intermediate' },
-            { name: 'Lat Pulldown (Close Grip)', muscle: 'Lower Lats', equipment: 'Cable', reason: 'Targets lower lat fibers', difficulty: 'Beginner' },
-            { name: 'Face Pulls', muscle: 'Rear Delts + Upper Back', equipment: 'Cable', reason: 'Shoulder health essential', difficulty: 'Beginner' },
-            { name: 'Straight Arm Pulldown', muscle: 'Lat Isolation', equipment: 'Cable', reason: 'Removes biceps, pure lat', difficulty: 'Intermediate' },
-            { name: 'Inverted Rows', muscle: 'Mid Back', equipment: 'Bodyweight', reason: 'Bodyweight horizontal pull', difficulty: 'Beginner' },
-            { name: 'Chest-Supported Row', muscle: 'Clean Reps', equipment: 'Machine', reason: 'Eliminates cheating', difficulty: 'Intermediate' }
-        ];
-        
-        if (hasInjury) {
-            alternatives.push(...backAlts.filter(a => a.name.includes('Machine') || a.name.includes('Pulldown') || a.name.includes('Supported')).slice(0, 3));
-        } else {
-            alternatives.push(...backAlts.slice(0, 5));
-        }
-    }
-    
-    // SHOULDER EXERCISES
-    else if (muscle.includes('shoulder') || muscle.includes('delt') || exerciseName.includes('shoulder') || 
-             (exerciseName.includes('press') && !muscle.includes('chest') && !muscle.includes('leg'))) {
-        const shoulderAlts = [
-            { name: 'Arnold Press', muscle: 'All 3 Deltoid Heads', equipment: 'Dumbbell', reason: 'Rotation hits front/side/rear', difficulty: 'Intermediate' },
-            { name: 'Cable Lateral Raises', muscle: 'Side Delts', equipment: 'Cable', reason: 'Constant tension, width builder', difficulty: 'Beginner' },
-            { name: 'Face Pulls', muscle: 'Rear Delts', equipment: 'Cable', reason: 'Shoulder health and posture', difficulty: 'Beginner' },
-            { name: 'Lu Raises', muscle: 'Side + Rear Delts', equipment: 'Dumbbell', reason: 'Overhead finish, unique stimulus', difficulty: 'Advanced' },
-            { name: 'Landmine Press', muscle: 'Front Delts', equipment: 'Barbell', reason: 'Joint-friendly angle', difficulty: 'Intermediate' },
-            { name: 'Pike Push-ups', muscle: 'Shoulders', equipment: 'Bodyweight', reason: 'Bodyweight shoulder builder', difficulty: 'Beginner' },
-            { name: 'Reverse Pec Deck', muscle: 'Rear Delts', equipment: 'Machine', reason: 'Isolation, constant tension', difficulty: 'Beginner' }
-        ];
-        
-        if (hasInjury) {
-            alternatives.push(...shoulderAlts.filter(a => a.name.includes('Cable') || a.name.includes('Face Pull') || a.name.includes('Pec Deck')).slice(0, 3));
-        } else {
-            alternatives.push(...shoulderAlts.slice(0, 5));
-        }
-    }
-    
-    // LEG EXERCISES
-    else if (muscle.includes('leg') || muscle.includes('quad') || muscle.includes('hamstring') || 
-             exerciseName.includes('squat') || exerciseName.includes('leg') || exerciseName.includes('deadlift')) {
-        const legAlts = [
-            { name: 'Bulgarian Split Squats', muscle: 'Quads + Glutes', equipment: 'Dumbbell', reason: 'Best single-leg exercise', difficulty: 'Intermediate' },
-            { name: 'Front Squats', muscle: 'Quads', equipment: 'Barbell', reason: 'More upright, quad emphasis', difficulty: 'Advanced' },
-            { name: 'Romanian Deadlifts', muscle: 'Hamstrings', equipment: 'Barbell', reason: 'Hip hinge, posterior chain', difficulty: 'Intermediate' },
-            { name: 'Nordic Curls', muscle: 'Hamstrings', equipment: 'Bodyweight', reason: 'Eccentric strength, injury prevention', difficulty: 'Advanced' },
-            { name: 'Goblet Squats', muscle: 'Quads', equipment: 'Dumbbell', reason: 'Easy to learn, mobility', difficulty: 'Beginner' },
-            { name: 'Walking Lunges', muscle: 'Functional Legs', equipment: 'Dumbbell', reason: 'Dynamic, real-world strength', difficulty: 'Beginner' },
-            { name: 'Sissy Squats', muscle: 'Quad Isolation', equipment: 'Bodyweight', reason: 'Bodyweight quad killer', difficulty: 'Advanced' }
-        ];
-        
-        if (hasInjury) {
-            alternatives.push(...legAlts.filter(a => a.name.includes('Goblet') || a.name.includes('Split') || a.difficulty === 'Beginner').slice(0, 3));
-        } else {
-            alternatives.push(...legAlts.slice(0, 5));
-        }
-    }
-    
-    // BICEP EXERCISES
-    else if (muscle.includes('bicep') || exerciseName.includes('curl')) {
-        const bicepAlts = [
-            { name: 'Spider Curls', muscle: 'Bicep Peak', equipment: 'Dumbbell', reason: 'Strict form, peak contraction', difficulty: 'Intermediate' },
-            { name: 'Incline Dumbbell Curls', muscle: 'Bicep Stretch', equipment: 'Dumbbell', reason: 'Deep stretch, long head', difficulty: 'Beginner' },
-            { name: 'Hammer Curls', muscle: 'Brachialis', equipment: 'Dumbbell', reason: 'Arm thickness, forearm size', difficulty: 'Beginner' },
-            { name: '21s (7+7+7 Reps)', muscle: 'Complete Bicep', equipment: 'Barbell', reason: 'Time under tension, extreme pump', difficulty: 'Advanced' },
-            { name: 'Drag Curls', muscle: 'Long Head Bicep', equipment: 'Barbell', reason: 'Bar drags up torso, unique angle', difficulty: 'Intermediate' },
-            { name: 'Chin-ups', muscle: 'Biceps + Back', equipment: 'Bodyweight', reason: 'Compound bodyweight movement', difficulty: 'Intermediate' }
-        ];
-        alternatives.push(...bicepAlts.slice(0, 5));
-    }
-    
-    // TRICEP EXERCISES
-    else if (muscle.includes('tricep') || exerciseName.includes('tricep') || 
-             (exerciseName.includes('extension') && !exerciseName.includes('leg'))) {
-        const tricepAlts = [
-            { name: 'JM Press', muscle: 'Tricep Mass', equipment: 'Barbell', reason: 'Hybrid skull crusher + close grip', difficulty: 'Advanced' },
-            { name: 'Overhead Cable Extension', muscle: 'Long Head', equipment: 'Cable', reason: 'Overhead stretches long head', difficulty: 'Beginner' },
-            { name: 'Close Grip Bench Press', muscle: 'Compound Tricep', equipment: 'Barbell', reason: 'Heavy loads, full arm', difficulty: 'Intermediate' },
-            { name: 'Diamond Push-ups', muscle: 'Triceps', equipment: 'Bodyweight', reason: 'Bodyweight, anywhere', difficulty: 'Beginner' },
-            { name: 'Tate Press', muscle: 'Lateral/Medial Head', equipment: 'Dumbbell', reason: 'Unique elbow position', difficulty: 'Advanced' },
-            { name: 'Tricep Dips', muscle: 'Triceps + Chest', equipment: 'Bodyweight', reason: 'Compound bodyweight', difficulty: 'Intermediate' }
-        ];
-        alternatives.push(...tricepAlts.slice(0, 5));
-    }
-    
-    // GENERIC FALLBACK for uncommon exercises
-    else {
-        alternatives.push(
-            { name: 'Progressive Overload', muscle: 'All Muscles', equipment: 'None', reason: 'Gradually increase weight/reps/sets', difficulty: 'All Levels' },
-            { name: 'Compound Movements', muscle: 'Multiple Groups', equipment: 'Barbell', reason: 'Multi-joint efficiency', difficulty: 'All Levels' },
-            { name: 'Bodyweight Variations', muscle: 'Functional', equipment: 'Bodyweight', reason: 'Master bodyweight first', difficulty: 'Beginner' },
-            { name: 'Consult a Trainer', muscle: 'Personalized', equipment: 'None', reason: 'Get exercise-specific recommendations', difficulty: 'All Levels' }
-        );
-    }
-    
-    // AI ENHANCEMENT: Add YouTube video links dynamically
-    const enhancedAlternatives = alternatives.slice(0, 5).map(alt => ({
-        ...alt,
-        video: `https://www.youtube.com/results?search_query=${encodeURIComponent(alt.name + ' form tutorial')}`
-    }));
-    
-    return enhancedAlternatives;
+    ];
 }
 
 // ==================== COMPARE MODE ====================

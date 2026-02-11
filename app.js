@@ -2277,8 +2277,8 @@ function displayWeeklySummaryModal(categorySummary, overall) {
             </div>
             
             <h3 style="margin-top: 30px; margin-bottom: 15px;">📊 Performance History (Last 8 Weeks)</h3>
-            <div class="chart-container" style="width: 100%; overflow-x: auto; margin-bottom: 30px;">
-                <canvas id="weeklyPerformanceChart" style="height: 300px; min-width: 600px;"></canvas>
+            <div class="chart-container" style="width: 100%; height: 300px; margin-bottom: 30px; position: relative;">
+                <canvas id="weeklyPerformanceChart"></canvas>
             </div>
             
             <h3 style="margin-top: 30px; margin-bottom: 15px;">Progress by Category</h3>
@@ -2425,7 +2425,8 @@ function displayWeeklySummaryModal(categorySummary, overall) {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+                maintainAspectRatio: true,
+                aspectRatio: 2.5,
                 plugins: {
                     legend: {
                         display: true,
@@ -2448,11 +2449,21 @@ function displayWeeklySummaryModal(categorySummary, overall) {
                         },
                         grid: {
                             color: 'rgba(0, 0, 0, 0.05)'
+                        },
+                        ticks: {
+                            font: {
+                                size: 11
+                            }
                         }
                     },
                     x: {
                         grid: {
                             display: false
+                        },
+                        ticks: {
+                            font: {
+                                size: 11
+                            }
                         }
                     }
                 }

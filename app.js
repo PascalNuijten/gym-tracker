@@ -6175,45 +6175,65 @@ async function getAIExerciseAlternatives(exercise, reason) {
             `IMPORTANT: The user mentioned pain/injury ("${reason}"). Include recovery advice AND 3-5 safer alternative exercises (machines, cables, lighter variations) that avoid the painful area.` :
             `User wants alternatives because: "${reason}"`;
         
-        const prompt = `You are a certified personal trainer. Generate 5 alternative exercises for "${exercise.name}" (targets: ${muscle}).
+        const prompt = `You are a certified personal trainer. Generate 4 alternative exercises for "${exercise.name}" (targets: ${muscle}).
 
 ${injuryContext}
 
-Respond with ONLY a JSON array of 5 exercises in this exact format:
+Respond with ONLY a JSON array of 4 exercises in this exact format (NO extra text, NO markdown):
 [
   {
     "name": "Exercise Name",
     "muscle": "Primary Muscle",
     "equipment": "Barbell/Dumbbell/Machine/Cable/Bodyweight/Mat/Bench/None",
-    "reason": "Why this is a good alternative (1 sentence)",
+    "reason": "Why this is a good alternative (1 sentence, max 100 characters)",
     "difficulty": "Beginner/Intermediate/Advanced",
-    "imageUrl": "Direct URL to exercise demonstration image"
+    "imageUrl": "Direct URL to image (use short URLs from weighttraining.guide or gymvisual.com)"
   }
 ]
 
-For imageUrl, provide direct links to high-quality demonstration images from:
-- images.squarespace-cdn.com
-- gymvisual.com  
-- cdn-0.weighttraining.guide
-- hips.hearstapps.com
+CRITICAL: 
+- Keep URLs SHORT (prefer weighttraining.guide and gymvisual.com)
+- Keep "reason" under 100 characters
+- Return ONLY the JSON array, no markdown, no extra text
+- Ensure valid JSON with proper closing brackets
 
-Example: "https://images.squarespace-cdn.com/content/v1/5ffcea9416aee143500ea103/1638178144643-Y4UD7ZGNSHVCPROJBJ5P/Seated+Incline+Dumbbell+Biceps+Curl.jpeg"
+${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), then 2-3 safer exercise alternatives.' : 'Focus on similar movement patterns or same muscle groups.'}`;
 
-${hasInjury ? 'First 2 items should be recovery advice (See Doctor, Rest/RICE), then 3-5 safer exercise alternatives.' : 'Focus on similar movement patterns or same muscle groups.'}`;
-
-        const aiResponse = await callGeminiAI(prompt);
+        const aiResponse = await callGeminiAI(prompt, null, false, 1000); // Increased token limit
         
         if (aiResponse) {
             try {
-                const jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
+                // Remove markdown code blocks if present
+                let cleanedResponse = aiResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+                
+                console.log('Cleaned AI response (first 500 chars):', cleanedResponse.substring(0, 500));
+                
+                // Extract JSON array
+                const jsonMatch = cleanedResponse.match(/\[[\s\S]*\]/);
                 if (jsonMatch) {
+                    console.log('JSON match found, attempting to parse...');
                     const alternatives = JSON.parse(jsonMatch[0]);
                     console.log('✅ Real AI generated alternatives:', alternatives);
-                    return alternatives;
+                    
+                    // Validate that we got actual exercises, not generic fallback
+                    if (alternatives.length > 0 && alternatives[0].name && 
+                        alternatives[0].name !== 'Progressive Overload' && 
+                        alternatives[0].name !== 'Compound Movements') {
+                        console.log('✅ Returning', alternatives.length, 'AI-generated alternatives');
+                        return alternatives;
+                    } else {
+                        console.warn('AI returned generic alternatives, using fallback');
+                    }
+                } else {
+                    console.error('No JSON array found in AI response');
+                    console.log('Full cleaned response:', cleanedResponse);
                 }
             } catch (e) {
                 console.error('Failed to parse AI alternatives:', e);
+                console.log('Raw AI response (first 1000 chars):', aiResponse.substring(0, 1000));
             }
+        } else {
+            console.warn('No AI response received');
         }
     }
     

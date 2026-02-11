@@ -73,7 +73,7 @@ function hashString(str) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v22.6'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v22.7'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -5711,13 +5711,6 @@ function findSubstitutes() {
             html += `<div style="color: #555; font-size: 0.9rem; margin-bottom: 8px;">${alt.reason}</div>`;
             html += `</div>`;
             
-            // Right side - exercise image if available
-            if (alt.imageUrl && alt.name !== '⚕️ See a Doctor/PT' && alt.name !== 'Rest & Ice (RICE)') {
-                html += `<div style="flex-shrink: 0;">`;
-                html += `<img src="${alt.imageUrl}" alt="${alt.name}" style="width: 120px; height: 120px; object-fit: cover; border-radius: 8px; border: 2px solid #ddd;" onerror="this.style.display='none'">`;
-                html += `</div>`;
-            }
-            
             html += `</div>`;
             
             // Continue with rest of the content (recommendations, buttons)
@@ -6206,14 +6199,12 @@ Respond with ONLY a JSON array of 4 exercises in this exact format (NO extra tex
     "name": "Exercise Name",
     "muscle": "Primary Muscle",
     "equipment": "Barbell/Dumbbell/Machine/Cable/Bodyweight/Mat/Bench/None",
-    "reason": "Why this is a good alternative (1 sentence, max 100 characters)",
-    "difficulty": "Beginner/Intermediate/Advanced",
-    "imageUrl": "Direct URL to image (use short URLs from weighttraining.guide or gymvisual.com)"
+    "reason": "Why this is a good alternative (1 sentence, max 80 characters)",
+    "difficulty": "Beginner/Intermediate/Advanced"
   }
 ]
 
 CRITICAL: 
-- Keep URLs SHORT (prefer weighttraining.guide and gymvisual.com)
 - Keep "reason" under 80 characters to avoid truncation
 - Return ONLY the JSON array, no markdown, no extra text
 - Ensure valid JSON with proper closing brackets

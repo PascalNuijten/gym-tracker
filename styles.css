@@ -1590,6 +1590,11 @@ textarea {
 .dot-arms { background: #f39c12; }
 .dot-core { background: #1abc9c; }
 .dot-other { background: #95a5a6; }
+.dot-planned {
+    background: transparent;
+    border: 2px solid #667eea;
+    opacity: 0.75;
+}
 
 .calendar-day-detail {
     background: #f8f9fa;
@@ -1635,6 +1640,98 @@ textarea {
     .cal-day-number {
         font-size: 0.72em;
     }
+}
+
+.cal-day.future-day {
+    cursor: pointer;
+}
+
+.cal-day.future-day:hover {
+    background: rgba(102, 126, 234, 0.08);
+    border-color: #aaa;
+}
+
+.cal-day.has-plan {
+    cursor: pointer;
+    border-style: dashed;
+    border-color: #667eea;
+    background: rgba(102, 126, 234, 0.04);
+}
+
+.cal-day.has-plan:hover {
+    background: rgba(102, 126, 234, 0.12);
+}
+
+.cal-plan-indicator {
+    font-size: 0.62em;
+    color: #667eea;
+    font-weight: 700;
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.plan-exercise-result-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 0.9em;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background 0.1s;
+}
+
+.plan-exercise-result-item:hover {
+    background: rgba(102, 126, 234, 0.08);
+}
+
+.plan-exercise-item {
+    background: #f8f9fa;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.plan-exercise-item .plan-ex-name {
+    font-weight: 600;
+    font-size: 0.9em;
+    flex: 1;
+}
+
+.plan-exercise-meta {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.plan-sets-input {
+    width: 46px;
+    padding: 4px 6px;
+    border: 1.5px solid #ddd;
+    border-radius: 5px;
+    font-size: 0.85em;
+    text-align: center;
+}
+
+.plan-invite-chip {
+    padding: 5px 12px;
+    border-radius: 20px;
+    border: 2px solid #e0e0e0;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.85em;
+    font-weight: 600;
+    transition: all 0.15s;
+    color: #555;
+}
+
+.plan-invite-chip.selected {
+    border-color: var(--accent-color);
+    background: var(--accent-color);
+    color: white;
 }
 
 

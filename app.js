@@ -73,7 +73,7 @@ function hashString(str) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.1'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.2'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -116,6 +116,7 @@ let editingExerciseId = null;
 let setCounter = 1;
 let currentChart = null;
 let users = ['Fran', 'Pascal', 'Cicci']; // Track all users
+let plannedWorkouts = []; // Workout plans stored in Firebase
 let isNewlyAddedFromCamera = false; // Track if exercise was just added from camera
 let userProfiles = JSON.parse(localStorage.getItem('gymTrackerUserProfiles') || '{}'); // Store personal data per user
 
@@ -1952,6 +1953,8 @@ function saveWorkout() {
     
     exercise.users[currentUser].history.push(session);
     saveToFirebase();
+    // Auto-sync today's workout to Trello (if configured)
+    autoSyncDayToTrello();
     
     // Show celebration if new record!
     if (isNewRecord) {
@@ -3982,6 +3985,12 @@ function setupFirebaseListeners() {
                     exercises = data;
                     renderExercises();
                 }
+            });
+
+            // Load planned workouts and keep them in sync
+            database.ref('plannedWorkouts').on('value', (snap) => {
+                const pd = snap.val();
+                plannedWorkouts = (pd && Array.isArray(pd)) ? pd : [];
             });
         }, (error) => {
             console.error('Firebase read error:', error);
@@ -6572,6 +6581,324 @@ document.addEventListener('DOMContentLoaded', () => {
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', init);
 
+// ==================== WORKOUT PLANNING (CALENDAR) ====================
+
+// Transient state for the plan workout modal
+let currentPlanDate = null;   // 'YYYY-MM-DD'
+let currentPlanId = null;     // id of plan being edited (null = new)
+let currentPlanExercises = []; // [{name, category, plannedSets, plannedReps, plannedWeight}]
+
+function planCalendarDay(day) {
+    const dateISO = `${calendarYear}-${String(calendarMonth + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    currentPlanDate = dateISO;
+    currentPlanExercises = [];
+
+    // Check for existing plan
+    const existing = plannedWorkouts.find(p => p.date === dateISO && p.createdBy === currentUser);
+    if (existing) {
+        currentPlanId = existing.id;
+        currentPlanExercises = JSON.parse(JSON.stringify(existing.exercises || []));
+        document.getElementById('planWorkoutNote').value = existing.note || '';
+        document.getElementById('deletePlanBtn').style.display = 'block';
+    } else {
+        currentPlanId = null;
+        document.getElementById('planWorkoutNote').value = '';
+        document.getElementById('deletePlanBtn').style.display = 'none';
+    }
+
+    document.getElementById('planWorkoutDateLabel').textContent =
+        `📅 ${MONTH_NAMES[calendarMonth]} ${day}, ${calendarYear}`;
+
+    // Populate invite checkboxes (other users)
+    const inviteContainer = document.getElementById('planInviteUsers');
+    const invited = existing?.invitedUsers || [];
+    inviteContainer.innerHTML = users
+        .filter(u => u !== currentUser)
+        .map(u => `<button class="plan-invite-chip ${invited.includes(u) ? 'selected' : ''}" onclick="this.classList.toggle('selected')" data-user="${u}">${u}</button>`)
+        .join('');
+
+    renderPlanExercises();
+    document.getElementById('planExerciseResults').style.display = 'none';
+    document.getElementById('planExerciseInput').value = '';
+    document.getElementById('planWorkoutModal').style.display = 'block';
+}
+
+function searchPlanExercises(value) {
+    const resultsEl = document.getElementById('planExerciseResults');
+    if (!value || value.length < 1) {
+        resultsEl.style.display = 'none';
+        return;
+    }
+    const q = value.toLowerCase();
+    const matches = exercises.filter(ex => ex.name.toLowerCase().includes(q)).slice(0, 8);
+    if (!matches.length) {
+        resultsEl.style.display = 'none';
+        return;
+    }
+    resultsEl.innerHTML = matches.map(ex =>
+        `<div class="plan-exercise-result-item" onclick="addExerciseToPlan('${ex.name.replace(/'/g,"\\'")}','${ex.category}')">${ex.name} <span style="color:#aaa;font-size:0.85em;">${ex.category}</span></div>`
+    ).join('');
+    resultsEl.style.display = 'block';
+}
+
+function addExerciseToPlan(name, category) {
+    if (!currentPlanExercises.find(e => e.name === name)) {
+        currentPlanExercises.push({ name, category, plannedSets: 4, plannedReps: 10, plannedWeight: 0 });
+    }
+    document.getElementById('planExerciseResults').style.display = 'none';
+    document.getElementById('planExerciseInput').value = '';
+    renderPlanExercises();
+}
+
+function removePlanExercise(idx) {
+    currentPlanExercises.splice(idx, 1);
+    renderPlanExercises();
+}
+
+function renderPlanExercises() {
+    const list = document.getElementById('planExerciseList');
+    if (!currentPlanExercises.length) {
+        list.innerHTML = '<p style="color:#aaa;font-size:0.85em;text-align:center;padding:8px;">No exercises added yet — search above to add some.</p>';
+        return;
+    }
+    list.innerHTML = currentPlanExercises.map((ex, i) => `
+        <div class="plan-exercise-item">
+            <span class="plan-ex-name">${ex.name} <span style="color:#aaa;font-size:0.78em;">${ex.category}</span></span>
+            <div class="plan-exercise-meta">
+                <input class="plan-sets-input" type="number" min="1" max="20" value="${ex.plannedSets}" placeholder="sets"
+                    onchange="currentPlanExercises[${i}].plannedSets=+this.value" title="Sets">
+                <span style="font-size:0.8em;color:#888;">sets</span>
+                <input class="plan-sets-input" type="number" min="1" max="100" value="${ex.plannedReps}" placeholder="reps"
+                    onchange="currentPlanExercises[${i}].plannedReps=+this.value" title="Reps">
+                <span style="font-size:0.8em;color:#888;">reps</span>
+                <input class="plan-sets-input" style="width:54px;" type="number" min="0" step="0.5" value="${ex.plannedWeight}" placeholder="kg"
+                    onchange="currentPlanExercises[${i}].plannedWeight=+this.value" title="Weight (kg)">
+                <span style="font-size:0.8em;color:#888;">kg</span>
+                <button onclick="removePlanExercise(${i})" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:1em;padding:0 4px;">✕</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function savePlannedWorkout() {
+    if (!currentPlanDate) return;
+
+    const note = document.getElementById('planWorkoutNote').value.trim();
+    const invitedChips = document.querySelectorAll('#planInviteUsers .plan-invite-chip.selected');
+    const invitedUsers = Array.from(invitedChips).map(b => b.dataset.user);
+
+    const plan = {
+        id: currentPlanId || Date.now(),
+        date: currentPlanDate,
+        createdBy: currentUser,
+        invitedUsers,
+        note,
+        exercises: currentPlanExercises
+    };
+
+    // Remove existing plan for this date by this user (if editing)
+    plannedWorkouts = plannedWorkouts.filter(p => !(p.date === currentPlanDate && p.createdBy === currentUser));
+    plannedWorkouts.push(plan);
+
+    // Save to Firebase
+    if (database) {
+        database.ref('plannedWorkouts').set(plannedWorkouts)
+            .then(() => console.log('✅ Plan saved to Firebase'))
+            .catch(err => console.error('Plan save failed:', err));
+    }
+
+    document.getElementById('planWorkoutModal').style.display = 'none';
+    renderCalendar();
+
+    // Offer to add to Google Calendar
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const [y, m, d] = currentPlanDate.split('-');
+    const gcDate = currentPlanDate.replace(/-/g, '');
+    const gcTitle = encodeURIComponent(`📋 ${note || currentUser + ' Workout Plan'}`);
+    const gcDetails = encodeURIComponent(currentPlanExercises.map(ex => `${ex.name}: ${ex.plannedSets}×${ex.plannedReps}@${ex.plannedWeight}kg`).join('\n'));
+    const gcUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${gcTitle}&dates=${gcDate}/${gcDate}&details=${gcDetails}`;
+
+    const addToGcal = confirm(`✅ Plan saved for ${MONTH_NAMES[parseInt(m)-1]} ${parseInt(d)}, ${y}!\n\nAdd to Google Calendar?`);
+    if (addToGcal) window.open(gcUrl, '_blank');
+}
+
+function deletePlannedWorkoutAndClose() {
+    if (currentPlanId) {
+        deletePlanByDate(currentPlanDate);
+    }
+    document.getElementById('planWorkoutModal').style.display = 'none';
+}
+
+function deletePlanByDate(dateISO) {
+    if (!confirm(`Delete workout plan for ${dateISO}?`)) return;
+    plannedWorkouts = plannedWorkouts.filter(p => !(p.date === dateISO && p.createdBy === currentUser));
+    if (database) {
+        database.ref('plannedWorkouts').set(plannedWorkouts);
+    }
+    document.getElementById('calendarDayDetail').style.display = 'none';
+    selectedCalendarDay = null;
+    renderCalendar();
+}
+
+// ==================== DATABASE TOOLS ====================
+
+function cleanupDatabase() {
+    const statusEl = document.getElementById('dbToolsStatus');
+
+    const unused = exercises.filter(ex => {
+        const myData = ex.users?.[currentUser];
+        return !myData?.history || myData.history.length === 0;
+    });
+
+    if (unused.length === 0) {
+        statusEl.textContent = `✅ No unused exercises found — you've logged every exercise!`;
+        return;
+    }
+
+    const preview = unused.slice(0, 15).map(ex => `• ${ex.name} (${ex.category})`).join('\n');
+    const extra = unused.length > 15 ? `\n… and ${unused.length - 15} more` : '';
+    const confirmed = confirm(
+        `Found ${unused.length} exercises ${currentUser} has never logged:\n\n${preview}${extra}\n\nPermanently delete all of these?`
+    );
+    if (!confirmed) {
+        statusEl.textContent = '❌ Cleanup cancelled.';
+        return;
+    }
+
+    const idsToDelete = new Set(unused.map(ex => ex.id));
+    exercises = exercises.filter(ex => !idsToDelete.has(ex.id));
+    saveToFirebase();
+    renderExercises();
+    statusEl.innerHTML = `✅ Deleted <strong>${unused.length}</strong> exercises. Database cleaned up!`;
+}
+
+async function aiFixAllMuscles() {
+    const statusEl = document.getElementById('dbToolsStatus');
+
+    if (!useRealAI) {
+        statusEl.textContent = '❌ AI not enabled. Cannot fix muscle groups without AI.';
+        return;
+    }
+
+    const confirmed = confirm(
+        `This will use AI to analyze and fix the primary muscle groups for all ${exercises.length} exercises.\n\nThis may take 1-2 minutes. Proceed?`
+    );
+    if (!confirmed) return;
+
+    let fixed = 0;
+    let errors = 0;
+
+    for (let i = 0; i < exercises.length; i++) {
+        const ex = exercises[i];
+        statusEl.innerHTML = `🤖 Analyzing: <strong>${ex.name}</strong> (${i + 1} / ${exercises.length})…`;
+
+        try {
+            const prompt = `You are a fitness expert. For the exercise "${ex.name}", respond with ONLY valid JSON:
+{"muscles":["Muscle1","Muscle2"],"category":"Category"}
+
+muscles: 1-3 from [Chest, Upper Chest, Lower Chest, Inner Chest, Back, Lats, Traps, Lower Back, Rhomboids, Middle Back, Serratus Anterior, Spinal Erectors, Shoulders, Front Delts, Side Delts, Rear Delts, Rotator Cuff, Biceps, Triceps, Forearms, Quads, Hamstrings, Glutes, Glute Medius, Calves, Adductors, Abductors, Hip Flexors, Tibialis, Abs, Obliques, Core, Transverse Abdominis]
+category: one of [Chest, Upper Back, Lower Back, Laterals, Shoulders, Biceps, Triceps, Abdominals, Legs]`;
+
+            const aiResponse = await callGeminiAI(prompt, null, true, 80);
+            if (aiResponse) {
+                const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const data = JSON.parse(jsonMatch[0]);
+                    if (data.muscles && data.muscles.length > 0) {
+                        ex.muscle = data.muscles;
+                        if (data.category) ex.category = data.category;
+                        fixed++;
+                    }
+                }
+            }
+        } catch (err) {
+            console.error(`aiFixAllMuscles: failed for ${ex.name}:`, err);
+            errors++;
+        }
+
+        // Small delay to avoid rate-limiting
+        await new Promise(r => setTimeout(r, 250));
+    }
+
+    saveToFirebase();
+    renderExercises();
+    statusEl.innerHTML = `✅ AI updated <strong>${fixed}</strong> exercises${errors ? `, ${errors} skipped due to errors` : ''}. Saved!`;
+}
+
+// ==================== TRELLO AUTO-SYNC ====================
+
+function getTrelloCardCache() {
+    try { return JSON.parse(localStorage.getItem('trelloCardCache') || '{}'); } catch { return {}; }
+}
+
+function setTrelloCardCache(cache) {
+    localStorage.setItem('trelloCardCache', JSON.stringify(cache));
+}
+
+async function autoSyncDayToTrello() {
+    const key = localStorage.getItem('trelloApiKey');
+    const token = localStorage.getItem('trelloToken');
+    const listId = localStorage.getItem('trelloListId');
+    if (!key || !token || !listId) return; // not configured - silently skip
+
+    const today = new Date();
+    const dateKey = `${currentUser}_${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    const dateStr = today.toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short', year:'numeric' });
+
+    // Collect ALL workouts logged today for current user
+    const workouts = [];
+    exercises.forEach(ex => {
+        (ex.users?.[currentUser]?.history || []).forEach(session => {
+            if (new Date(session.date).toDateString() === today.toDateString()) {
+                workouts.push({ name: ex.name, category: ex.category, sets: session.sets, notes: session.notes || '' });
+            }
+        });
+    });
+    if (!workouts.length) return;
+
+    const totalSets = workouts.reduce((s, w) => s + w.sets.length, 0);
+    const totalVol  = workouts.reduce((s, w) => s + w.sets.reduce((sv, set) => sv + set.reps * set.weight, 0), 0);
+    const cardName  = `💪 ${currentUser} — ${dateStr}`;
+    const lines = [
+        `**${currentUser}'s Workout — ${dateStr}**`,
+        `Total: ${workouts.length} exercises | ${totalSets} sets | ${totalVol.toLocaleString()}kg volume`,
+        ''
+    ];
+    workouts.forEach(w => {
+        lines.push(`**${w.name}** (${w.category})`);
+        lines.push(w.sets.map((s, i) => `Set ${i+1}: ${s.reps} reps @ ${s.weight}kg`).join(' | '));
+        if (w.notes) lines.push(`> ${w.notes}`);
+        lines.push('');
+    });
+
+    const cache = getTrelloCardCache();
+    try {
+        if (cache[dateKey]) {
+            await fetch(`https://api.trello.com/1/cards/${cache[dateKey]}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ key, token, name: cardName, desc: lines.join('\n') })
+            });
+            console.log('✅ Trello card updated:', dateKey);
+        } else {
+            const resp = await fetch('https://api.trello.com/1/cards', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ key, token, idList: listId, name: cardName, desc: lines.join('\n'), due: today.toISOString() })
+            });
+            if (resp.ok) {
+                const card = await resp.json();
+                cache[dateKey] = card.id;
+                setTrelloCardCache(cache);
+                console.log('✅ Trello card created:', dateKey);
+            }
+        }
+    } catch (err) {
+        console.error('autoSyncDayToTrello failed:', err);
+    }
+}
+
 // ==================== WORKOUT CALENDAR ====================
 
 let calendarYear = new Date().getFullYear();
@@ -6627,7 +6954,7 @@ function renderCalendar() {
     const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     document.getElementById('calendarMonthTitle').textContent = `${MONTH_NAMES[calendarMonth]} ${calendarYear}`;
 
-    // Build workout-day map: day-of-month → [{name, category, sets, notes}]
+    // --- Build workout-day map (current user only) ---
     const workoutDays = {};
     exercises.forEach(ex => {
         const userData = ex.users?.[currentUser];
@@ -6637,64 +6964,83 @@ function renderCalendar() {
             if (d.getFullYear() === calendarYear && d.getMonth() === calendarMonth) {
                 const key = d.getDate();
                 if (!workoutDays[key]) workoutDays[key] = [];
-                workoutDays[key].push({
-                    name: ex.name,
-                    category: ex.category,
-                    muscle: ex.muscle,
-                    sets: session.sets,
-                    notes: session.notes || ''
-                });
+                workoutDays[key].push({ name: ex.name, category: ex.category, muscle: ex.muscle, sets: session.sets, notes: session.notes || '' });
             }
         });
+    });
+
+    // --- Build plan-day map (plans involving current user) ---
+    const planDays = {};
+    plannedWorkouts.forEach(plan => {
+        if (plan.createdBy !== currentUser && !(plan.invitedUsers || []).includes(currentUser)) return;
+        const d = new Date(plan.date + 'T00:00:00');
+        if (d.getFullYear() === calendarYear && d.getMonth() === calendarMonth) {
+            planDays[d.getDate()] = plan;
+        }
     });
 
     const firstDow = (new Date(calendarYear, calendarMonth, 1).getDay() + 6) % 7; // Mon=0
     const totalDays = new Date(calendarYear, calendarMonth + 1, 0).getDate();
     const today = new Date();
+    const todayStr = today.toDateString();
 
     let html = '';
-
-    // Day-of-week headers
     ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(d => {
         html += `<div class="cal-day-header">${d}</div>`;
     });
 
-    // Leading empty cells (previous month)
+    // Leading filler cells
     for (let i = 0; i < firstDow; i++) {
         const prevDate = new Date(calendarYear, calendarMonth, -(firstDow - i - 1));
         html += `<div class="cal-day other-month"><div class="cal-day-number">${prevDate.getDate()}</div></div>`;
     }
 
-    // Current month days
     for (let day = 1; day <= totalDays; day++) {
-        const isToday = today.getFullYear() === calendarYear && today.getMonth() === calendarMonth && today.getDate() === day;
+        const cellDate = new Date(calendarYear, calendarMonth, day);
+        const isToday = cellDate.toDateString() === todayStr;
         const isSelected = selectedCalendarDay === day;
         const workouts = workoutDays[day] || [];
         const hasWorkout = workouts.length > 0;
+        const plan = planDays[day];
+        const hasPlan = !!plan;
 
-        // One dot per unique category
+        // Colour dots for actual workouts
         const uniqueCats = [...new Set(workouts.map(w => w.category))];
-        const dots = uniqueCats.map(cat => {
-            const cls = CAT_DOT_CLASS[cat] || 'dot-other';
-            return `<div class="cal-dot ${cls}" title="${cat}"></div>`;
-        }).join('');
+        let dots = uniqueCats.map(cat => `<div class="cal-dot ${CAT_DOT_CLASS[cat] || 'dot-other'}" title="${cat}"></div>`).join('');
+
+        // Outlined dot for planned workouts (if no actual workout yet)
+        if (hasPlan && !hasWorkout) {
+            dots += `<div class="cal-dot dot-planned" title="Planned"></div>`;
+        }
+
+        // Short plan label
+        let planLabel = '';
+        if (hasPlan && !hasWorkout && plan.note) {
+            planLabel = `<div class="cal-plan-indicator">📋 ${plan.note}</div>`;
+        }
 
         const classes = [
             'cal-day',
             isToday ? 'today' : '',
             hasWorkout ? 'has-workout' : '',
+            hasPlan && !hasWorkout ? 'has-plan' : '',
+            !hasWorkout && !hasPlan ? 'future-day' : '',
             isSelected ? 'selected' : ''
         ].filter(Boolean).join(' ');
 
-        const onClick = hasWorkout ? `onclick="showCalendarDay(${day})"` : '';
+        // All days are clickable
+        const onClick = (hasWorkout || hasPlan)
+            ? `onclick="showCalendarDay(${day})"`
+            : `onclick="planCalendarDay(${day})"`;
 
         html += `<div class="${classes}" ${onClick}>
             <div class="cal-day-number">${day}</div>
             <div class="cal-day-dots">${dots}</div>
+            ${planLabel}
         </div>`;
     }
 
-    // Trailing empty cells
+    // Trailing filler
     const filled = firstDow + totalDays;
     const remainder = filled % 7;
     if (remainder > 0) {
@@ -6705,7 +7051,6 @@ function renderCalendar() {
 
     document.getElementById('calendarGrid').innerHTML = html;
 
-    // Keep day detail open if it's still in current month
     if (selectedCalendarDay) {
         showCalendarDay(selectedCalendarDay);
     }
@@ -6731,7 +7076,11 @@ function goToTodayCalendar() {
 function showCalendarDay(day) {
     selectedCalendarDay = day;
 
-    // Collect all sessions logged on this day
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const dateLabel = `${MONTH_NAMES[calendarMonth]} ${day}, ${calendarYear}`;
+    const dateISO = `${calendarYear}-${String(calendarMonth + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+
+    // --- Collect actual workouts ---
     const workouts = [];
     exercises.forEach(ex => {
         const userData = ex.users?.[currentUser];
@@ -6739,48 +7088,100 @@ function showCalendarDay(day) {
         userData.history.forEach(session => {
             const d = new Date(session.date);
             if (d.getFullYear() === calendarYear && d.getMonth() === calendarMonth && d.getDate() === day) {
-                workouts.push({
-                    name: ex.name,
-                    category: ex.category,
-                    muscle: ex.muscle,
-                    sets: session.sets,
-                    notes: session.notes || ''
-                });
+                workouts.push({ name: ex.name, category: ex.category, muscle: ex.muscle, sets: session.sets, notes: session.notes || '' });
             }
         });
     });
 
-    if (!workouts.length) return;
+    // --- Find plan for this day (visible to current user) ---
+    const plan = plannedWorkouts.find(p => {
+        if (p.createdBy !== currentUser && !(p.invitedUsers || []).includes(currentUser)) return false;
+        return p.date === dateISO;
+    });
 
-    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const dateLabel = `${MONTH_NAMES[calendarMonth]} ${day}, ${calendarYear}`;
-    const totalSets = workouts.reduce((s, w) => s + w.sets.length, 0);
-    const totalVol = workouts.reduce((s, w) => s + w.sets.reduce((sv, set) => sv + (set.reps * set.weight), 0), 0);
+    if (!workouts.length && !plan) {
+        planCalendarDay(day);
+        return;
+    }
 
     let html = `<h4>📅 ${dateLabel}</h4>`;
-    html += `<p style="color:#666;font-size:0.88em;margin-bottom:10px;">${workouts.length} exercise${workouts.length > 1 ? 's' : ''} · ${totalSets} sets · ${totalVol.toLocaleString()} kg total volume</p>`;
 
-    workouts.forEach(w => {
-        const bestSet = w.sets.reduce((best, s) => s.weight > best.weight ? s : best, w.sets[0]);
-        const totalExVol = w.sets.reduce((sv, s) => sv + s.reps * s.weight, 0);
-        const accent = getCategoryAccent(w.category);
-        html += `<div style="margin:7px 0;padding:10px 12px;background:white;border-radius:8px;border-left:3px solid ${accent};">`;
-        html += `<strong>${w.name}</strong> <span style="color:#888;font-size:0.82em;">${w.category}${w.muscle ? ' · ' + (Array.isArray(w.muscle) ? w.muscle.join(', ') : w.muscle) : ''}</span><br>`;
-        html += `<span style="font-size:0.85em;color:#555;">${w.sets.length} sets · Best: <strong>${bestSet.weight}kg × ${bestSet.reps}</strong> reps · Vol: ${totalExVol.toLocaleString()}kg</span>`;
-        if (w.notes) html += `<br><span style="font-size:0.8em;color:#777;">💭 ${w.notes}</span>`;
+    // --- Workout section ---
+    if (workouts.length > 0) {
+        const totalSets = workouts.reduce((s, w) => s + w.sets.length, 0);
+        const totalVol = workouts.reduce((s, w) => s + w.sets.reduce((sv, set) => sv + (set.reps * set.weight), 0), 0);
+        html += `<p style="color:#666;font-size:0.88em;margin-bottom:8px;">✅ ${workouts.length} exercise${workouts.length > 1 ? 's' : ''} · ${totalSets} sets · ${totalVol.toLocaleString()} kg volume</p>`;
+
+        workouts.forEach(w => {
+            const bestSet = w.sets.reduce((best, s) => s.weight > best.weight ? s : best, w.sets[0]);
+            const totalExVol = w.sets.reduce((sv, s) => sv + s.reps * s.weight, 0);
+            const accent = getCategoryAccent(w.category);
+            const muscles = Array.isArray(w.muscle) ? w.muscle.join(', ') : (w.muscle || '');
+            html += `<div style="margin:6px 0;padding:9px 12px;background:white;border-radius:8px;border-left:3px solid ${accent};">`;
+            html += `<strong>${w.name}</strong> <span style="color:#888;font-size:0.82em;">${w.category}${muscles ? ' · ' + muscles : ''}</span><br>`;
+            html += `<span style="font-size:0.85em;color:#555;">${w.sets.length} sets · Best: <strong>${bestSet.weight}kg × ${bestSet.reps}</strong> · Vol: ${totalExVol.toLocaleString()}kg</span>`;
+            if (w.notes) html += `<br><span style="font-size:0.8em;color:#777;">💭 ${w.notes}</span>`;
+            html += `</div>`;
+        });
+
+        // Google Calendar link for completed workout
+        const gcDate = dateISO.replace(/-/g, '');
+        const gcTitle = encodeURIComponent(`💪 ${currentUser} Workout`);
+        const gcDetails = encodeURIComponent(workouts.map(w => `${w.name}: ${w.sets.map(s => `${s.reps}×${s.weight}kg`).join(', ')}`).join('\n'));
+        const gcUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${gcTitle}&dates=${gcDate}/${gcDate}&details=${gcDetails}`;
+        html += `<a href="${gcUrl}" target="_blank" style="display:inline-block;margin-top:8px;font-size:0.82em;color:#4285F4;text-decoration:none;">📅 Add to Google Calendar</a>`;
+    }
+
+    // --- Plan section ---
+    if (plan) {
+        html += `<div style="margin-top:${workouts.length ? '14px' : '0'};padding:10px 12px;background:rgba(102,126,234,0.06);border-radius:8px;border:1.5px dashed #667eea;">`;
+        html += `<strong>📋 Planned${plan.createdBy !== currentUser ? ` by ${plan.createdBy}` : ''}</strong>`;
+        if (plan.note) html += `<span style="color:#555;font-size:0.9em;"> — ${plan.note}</span>`;
+        if ((plan.invitedUsers || []).length > 0) {
+            html += `<br><span style="font-size:0.82em;color:#888;">👥 ${[plan.createdBy, ...plan.invitedUsers].filter(u => u !== currentUser).join(', ')} also invited</span>`;
+        }
+        if ((plan.exercises || []).length > 0) {
+            html += `<ul style="margin:8px 0 4px;padding-left:18px;font-size:0.86em;color:#444;">`;
+            plan.exercises.forEach(ex => {
+                let meta = '';
+                if (ex.plannedSets) meta += ` ${ex.plannedSets} sets`;
+                if (ex.plannedReps) meta += ` × ${ex.plannedReps} reps`;
+                if (ex.plannedWeight) meta += ` @ ${ex.plannedWeight}kg`;
+                html += `<li><strong>${ex.name}</strong>${meta ? ` <span style="color:#888;">${meta.trim()}</span>` : ''}</li>`;
+            });
+            html += `</ul>`;
+        }
+        // Google Calendar link for plan
+        const gcDateP = dateISO.replace(/-/g, '');
+        const gcTitleP = encodeURIComponent(`📋 ${plan.note || currentUser + ' Workout Plan'}`);
+        const gcDetailsP = encodeURIComponent((plan.exercises || []).map(ex => ex.name).join('\n'));
+        const gcUrlP = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${gcTitleP}&dates=${gcDateP}/${gcDateP}&details=${gcDetailsP}`;
+        html += `<div style="display:flex;gap:10px;margin-top:8px;align-items:center;flex-wrap:wrap;">`;
+        html += `<a href="${gcUrlP}" target="_blank" style="font-size:0.82em;color:#4285F4;text-decoration:none;">📅 Add to Google Calendar</a>`;
+        if (plan.createdBy === currentUser) {
+            html += `<button onclick="planCalendarDay(${day})" style="font-size:0.82em;background:none;border:none;color:#667eea;cursor:pointer;padding:0;">✏️ Edit Plan</button>`;
+            html += `<button onclick="deletePlanByDate('${dateISO}')" style="font-size:0.82em;background:none;border:none;color:#e74c3c;cursor:pointer;padding:0;">🗑️ Delete Plan</button>`;
+        }
+        html += `</div></div>`;
+    } else if (workouts.length > 0) {
+        // Has workout, no plan — offer to plan a different day or nothing
+    }
+
+    if (!plan) {
+        html += `<div style="margin-top:10px;">`;
+        html += `<button onclick="planCalendarDay(${day})" style="font-size:0.85em;background:none;border:1.5px dashed #667eea;color:#667eea;border-radius:6px;padding:5px 12px;cursor:pointer;">📋 Add Plan for this day</button>`;
         html += `</div>`;
-    });
+    }
 
     const detail = document.getElementById('calendarDayDetail');
     detail.innerHTML = html;
     detail.style.display = 'block';
     detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-    // Update grid highlight without recursion - just toggle selected class on cells
-    document.querySelectorAll('#calendarGrid .cal-day').forEach((cell, idx) => {
+    // Update selected highlight
+    document.querySelectorAll('#calendarGrid .cal-day').forEach(cell => {
         const dayNum = parseInt(cell.querySelector('.cal-day-number')?.textContent);
-        const isOtherMonth = cell.classList.contains('other-month');
-        if (!isOtherMonth && dayNum === day) {
+        if (!cell.classList.contains('other-month') && dayNum === day) {
             cell.classList.add('selected');
         } else {
             cell.classList.remove('selected');

@@ -73,7 +73,7 @@ function hashString(str) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v22.7'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.0'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -2024,6 +2024,14 @@ function showAddUserModal() {
     userToggle.appendChild(newBtn);
     
     saveToFirebase();
+    
+    // Save updated users list to Firebase separately so it persists on reload
+    if (database) {
+        database.ref('users').set(users)
+            .then(() => console.log('✅ Users list saved to Firebase'))
+            .catch(err => console.error('Failed to save users to Firebase:', err));
+    }
+    
     alert(`User "${userName}" added successfully!`);
 }
 
@@ -3020,7 +3028,7 @@ function editSet(exerciseId, historyIndex, setIndex) {
 }
 
 // Show Exercise Details Modal
-async function showExerciseDetails(id) {
+function showExerciseDetails(id) {
     const exercise = exercises.find(ex => ex.id === id);
     if (!exercise) return;
 
@@ -3061,11 +3069,6 @@ async function showExerciseDetails(id) {
                 </div>
             </div>
 
-            <div class="suggestion-box" id="aiSuggestionBox">
-                <h3>💡 Improvement Suggestion</h3>
-                <p><div class="loading-spinner" style="width: 20px; height: 20px; border-width: 2px; display: inline-block; vertical-align: middle;"></div> <span style="margin-left: 5px;">Loading AI suggestion...</span></p>
-            </div>
-
             <div class="chart-container">
                 <canvas id="progressChart" style="max-height: 450px;"></canvas>
             </div>
@@ -3100,21 +3103,6 @@ async function showExerciseDetails(id) {
     // Draw chart
     if (history.length > 0) {
         drawProgressChart(history);
-    }
-    
-    // Load AI suggestion asynchronously (won't block popup)
-    try {
-        const suggestion = await generateSuggestion(history, exercise.name);
-        const suggestionBox = document.getElementById('aiSuggestionBox');
-        if (suggestionBox) {
-            suggestionBox.querySelector('p').innerHTML = suggestion;
-        }
-    } catch (error) {
-        console.error('AI suggestion failed:', error);
-        const suggestionBox = document.getElementById('aiSuggestionBox');
-        if (suggestionBox) {
-            suggestionBox.querySelector('p').innerHTML = '⚠️ AI suggestion unavailable. Try again later.';
-        }
     }
 }
 
@@ -3953,6 +3941,39 @@ function setupFirebaseListeners() {
             
             renderExercises();
             
+            // Load custom users from Firebase (users added via showAddUserModal)
+            database.ref('users').once('value', (userSnapshot) => {
+                const savedUsers = userSnapshot.val();
+                if (savedUsers && Array.isArray(savedUsers)) {
+                    const userToggle = document.querySelector('.user-toggle');
+                    savedUsers.forEach(userName => {
+                        if (!users.includes(userName)) {
+                            users.push(userName);
+                            // Ensure exercise entries exist for this user
+                            exercises.forEach(exercise => {
+                                if (!exercise.users[userName]) {
+                                    exercise.users[userName] = { history: [] };
+                                }
+                            });
+                            // Add user button to UI
+                            const newBtn = document.createElement('button');
+                            newBtn.className = 'user-btn';
+                            newBtn.dataset.user = userName;
+                            newBtn.textContent = userName;
+                            newBtn.addEventListener('click', function() {
+                                document.querySelectorAll('.user-btn').forEach(b => b.classList.remove('active'));
+                                this.classList.add('active');
+                                currentUser = userName;
+                                localStorage.setItem('gymTrackerCurrentUser', currentUser);
+                                renderExercises();
+                            });
+                            userToggle.appendChild(newBtn);
+                            console.log(`✅ Loaded dynamic user: ${userName}`);
+                        }
+                    });
+                }
+            });
+            
             // Now listen for future changes
             exercisesRef.on('value', (snapshot) => {
                 const data = snapshot.val();
@@ -4158,6 +4179,7 @@ function showAIMode(mode) {
     switch(mode) {
         case 'analysis':
             aiAnalysisMode.style.display = 'block';
+            updateSuggestionButtons(); // Personalize questions based on user data
             generateCombinedAnalysis('day'); // Default to today
             break;
         case 'camera':
@@ -4168,6 +4190,98 @@ function showAIMode(mode) {
             populateSubstituteExercises(); // Populate when mode is shown
             break;
     }
+}
+
+// Personalize the common question buttons based on the user's actual workout data
+function updateSuggestionButtons() {
+    const suggestions = document.querySelectorAll('.suggestion-btn');
+    if (!suggestions.length) return;
+
+    const userExercises = exercises.filter(ex =>
+        ex.users && ex.users[currentUser] &&
+        ex.users[currentUser].history && ex.users[currentUser].history.length > 0
+    );
+
+    if (userExercises.length === 0) return; // Keep defaults if no data
+
+    // Analyze recent data (last 4 weeks)
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 28);
+
+    const categoryVolume = {};
+    userExercises.forEach(ex => {
+        (ex.users[currentUser].history || []).forEach(session => {
+            if (new Date(session.date) >= cutoff) {
+                categoryVolume[ex.category] = (categoryVolume[ex.category] || 0) + session.sets.length;
+            }
+        });
+    });
+
+    const categories = Object.keys(categoryVolume);
+    const sortedByVolume = [...categories].sort((a, b) => categoryVolume[b] - categoryVolume[a]);
+    const topCategory = sortedByVolume[0];
+    const bottomCategory = sortedByVolume[sortedByVolume.length - 1];
+
+    // Detect plateaus (same max weight for last 3+ sessions)
+    let plateauExercise = null;
+    for (const ex of userExercises) {
+        const history = ex.users[currentUser].history || [];
+        if (history.length >= 3) {
+            const recent = history.slice(-3);
+            const maxWeights = recent.map(s => Math.max(...s.sets.map(set => set.weight)));
+            if (maxWeights[0] === maxWeights[1] && maxWeights[1] === maxWeights[2]) {
+                plateauExercise = ex.name;
+                break;
+            }
+        }
+    }
+
+    // Build personalized question list
+    const questions = [];
+
+    if (plateauExercise) {
+        questions.push({
+            text: `Break my ${plateauExercise} plateau?`,
+            full: `My ${plateauExercise} weight has been stuck for the last 3 sessions. How do I break through this plateau?`
+        });
+    } else {
+        questions.push({ text: 'How do I keep progressing?', full: 'How do I keep progressing in weight and avoid hitting a plateau?' });
+    }
+
+    if (bottomCategory && categoryVolume[bottomCategory] <= 5) {
+        questions.push({
+            text: `Am I neglecting ${bottomCategory}?`,
+            full: `I've only done ${categoryVolume[bottomCategory]} sets of ${bottomCategory} exercises in the last 4 weeks. Am I neglecting this muscle group?`
+        });
+    } else {
+        questions.push({ text: 'Is my training balanced?', full: 'Is my current training balanced across all muscle groups?' });
+    }
+
+    if (topCategory) {
+        questions.push({
+            text: `Is my ${topCategory} volume right?`,
+            full: `${topCategory} is my most trained area with ${categoryVolume[topCategory]} sets recently. Is this the right volume for my goal?`
+        });
+    } else {
+        questions.push({ text: 'What should I focus on?', full: 'What should I focus on in my next training session?' });
+    }
+
+    questions.push({ text: 'What is my biggest weakness?', full: 'Based on my training data, what is my biggest weakness and how do I fix it?' });
+
+    // Apply personalized questions to buttons
+    suggestions.forEach((btn, i) => {
+        if (questions[i]) {
+            const q = questions[i];
+            btn.textContent = q.text;
+            btn.dataset.question = q.full;
+            // Re-bind click to use the full question text
+            btn.onclick = () => {
+                document.getElementById('aiAnalysisQuestionInput').value = q.full;
+                answerAnalysisQuestion(q.full);
+            };
+        }
+    });
+    console.log('✅ Updated suggestion buttons with personalized questions');
 }
 
 // ==================== COMBINED ANALYSIS MODE ====================
@@ -4286,7 +4400,7 @@ function generateCombinedAnalysis(period) {
             }
             
             let frequencyGuidance = '';
-            if (userProfile?.frequency) {
+            if (period !== 'day' && userProfile?.frequency) {
                 const targetDays = parseInt(userProfile.frequency);
                 if (!isNaN(targetDays)) {
                     const underTarget = targetDays - uniqueDays;
@@ -4309,7 +4423,7 @@ ${frequencyGuidance ? `📅 TRAINING FREQUENCY CHECK:
 ${frequencyGuidance}
 ` : ''}
 WORKOUT DATA SUMMARY:
-- Training Days: ${uniqueDays} days ${userProfile?.frequency ? `(Target: ${userProfile.frequency} days/week)` : ''}
+- Training Days: ${uniqueDays} days ${period !== 'day' && userProfile?.frequency ? `(Target: ${userProfile.frequency} days/week)` : ''}
 - Different Exercises: ${uniqueExercises} exercises
 - Total Sets: ${totalSets} sets
 - Total Volume: ${totalVolume.toLocaleString()}kg
@@ -4320,7 +4434,7 @@ ${workoutSummary}
 
 Provide a comprehensive analysis (200-300 words) covering:
 1. **Goal Progress**: ${goalGuidance ? 'MOST IMPORTANT - Are they training correctly for their specific goal? Be specific about what they need to do differently.' : 'Assess overall training approach'}
-2. **Frequency Check**: ${frequencyGuidance ? 'Did they hit their planned training frequency? Praise or encourage accordingly.' : 'Is training frequency optimal?'}
+2. **Session Quality**: ${period === 'day' ? "Evaluate today's workout: was the exercise selection, volume, and intensity appropriate? Focus only on this session, not weekly targets." : (frequencyGuidance ? 'Did they hit their planned training frequency? Praise or encourage accordingly.' : 'Is training frequency optimal?')}
 3. **Muscle Group Balance**: Analyze if training is balanced (push/pull/legs ratio) considering their goal
 4. **Specific Insights**: Identify strengths and weaknesses based on actual data
 5. **Actionable Recommendations**: 2-3 specific things to improve considering their experience level, goals, and any injuries
@@ -4713,33 +4827,30 @@ User Profile:
 - ${userProfile.experience || 'Unknown'} experience level
 - Goal: ${userProfile.goal || 'General fitness'}` : '';
     
-    const prompt = `You are an enthusiastic fitness coach. Generate ONE unique, creative fun fact about this workout achievement:${profileContext}
+    const prompt = `You are a fitness science expert. Generate ONE surprising and fascinating fitness or exercise science fact.
 
-Workout Stats:
-- Total volume: ${totalVolume.toLocaleString()}kg
-- Total sets: ${totalSets}
-- Period: ${period}
+The user just completed a workout (${totalSets} sets, ${totalVolume.toLocaleString()}kg total volume${profileContext ? `, ${userProfile?.goal || 'general fitness'} goal` : ''}).
 
-Create a SUPER FUN and UNIQUE comparison (25-40 words max) that will make them smile! 🎉
+Choose a RANDOM topic from this variety (pick one you haven't used recently - be unpredictable!):
+- Muscle fiber science (fast-twitch vs slow-twitch, hypertrophy mechanisms)
+- Exercise physiology (VO2 max, lactate threshold, EPOC)
+- Recovery science (sleep, protein synthesis windows, supercompensation)
+- Surprising historical athletic facts
+- Biomechanics and movement science
+- Nutrition and performance science
+- Brain-body connection, mind-muscle link
+- Records and extreme athletic feats
+- Little-known benefits of specific exercises
+- Circadian rhythms and training timing
 
-Ideas for comparisons:
-- "You lifted the equivalent of ${Math.floor(totalVolume / 1000)} grand pianos!" 🎹
-- "That's like doing a bench press with ${Math.floor(totalVolume / 70)} average humans on the bar!" 👥
-- Compare to their bodyweight: "You moved ${Math.floor(totalVolume / (userProfile?.weight || 70))}x your own bodyweight!"
-- Compare to animals: "That's heavier than ${Math.floor(totalVolume / 5000)} elephants!" 🐘
-- Compare to everyday objects: cars, washing machines, vending machines
-- Athletic achievements: "Olympic powerlifters would be proud!"
-- Historical facts: "Ancient Greeks trained with less!"
+Requirements:
+✅ 1-2 sentences (30-50 words max)
+✅ Must include a specific number or statistic to make it feel credible
+✅ Should be genuinely surprising - not common knowledge
+✅ Include 1-2 fitting emojis
+✅ End with why this matters for their training
 
-MUST:
-✅ Use specific numbers from their data (${totalVolume}kg, ${totalSets} sets)
-✅ Include 2-3 emojis
-✅ Be surprising and memorable
-✅ Make them want to share it
-❌ NO boring/generic statements like "great work" or "keep it up"
-❌ NO technical jargon
-
-Return ONLY the fun fact text, nothing else.`;
+Return ONLY the fun fact text, nothing else. No intro phrases like "Did you know" or "Fun fact:".`;
 
     try {
         // Add timeout
@@ -4748,7 +4859,7 @@ Return ONLY the fun fact text, nothing else.`;
         );
         
         const aiResponse = await Promise.race([
-            callGeminiAI(prompt, null, true, 200), // 200 tokens for fun facts
+            callGeminiAI(prompt, null, false, 200), // false = no cache so every fact is fresh/random
             timeoutPromise
         ]);
         
@@ -5905,21 +6016,10 @@ function quickAddExercise(altDataEncoded) {
         modal.style.display = 'block';
     }
     
-    // Trigger AI auto-fill for this exercise
+    // Trigger AI auto-fill for this exercise (handles its own status display)
     setTimeout(() => {
         aiSuggestExerciseData(alt.name);
     }, 500);
-    
-    // Show success message
-    const statusEl = document.getElementById('aiSuggestionStatus');
-    if (statusEl) {
-        statusEl.style.display = 'block';
-        statusEl.style.color = '#2196F3';
-        statusEl.textContent = '✅ Exercise details pre-filled! Review and click "Add Exercise".';
-        setTimeout(() => {
-            if (statusEl) statusEl.style.display = 'none';
-        }, 3000);
-    }
 }
 
 // Quick log workout for existing exercise

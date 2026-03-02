@@ -170,6 +170,10 @@ h1 {
     border-radius: 8px;
     font-size: 0.95rem;
     transition: border-color 0.3s ease;
+    color: #333;
+    background-color: #fff;
+    -webkit-appearance: none;
+    appearance: none;
 }
 
 .filter-select:focus,

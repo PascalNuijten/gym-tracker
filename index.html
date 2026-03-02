@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gym Progress Tracker</title>
-    <link rel="stylesheet" href="styles.css?v=23.2">
+    <link rel="stylesheet" href="styles.css?v=23.3">
 </head>
 <body>
     <div class="container">
@@ -503,19 +503,23 @@
             <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
 
             <div class="calendar-trello-section">
-                <h4>🟦 Sync to Trello</h4>
-                <p style="font-size:0.85em;color:#666;margin-bottom:10px;">Export this month's workouts as Trello cards. You need a free Trello account.</p>
-                <div class="trello-inputs">
-                    <input type="text" id="trelloApiKey" placeholder="Trello API Key (from trello.com/app-key)" style="width:100%;margin-bottom:8px;">
-                    <input type="text" id="trelloToken" placeholder="Trello Token (generate after entering key)" style="width:100%;margin-bottom:8px;">
-                    <input type="text" id="trelloListId" placeholder="Trello List ID (see instructions below)" style="width:100%;margin-bottom:8px;">
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                        <button onclick="openTrelloAuth()" class="secondary-btn">🔑 Generate Token</button>
-                        <button onclick="saveTrelloSettings()" class="secondary-btn">💾 Save Settings</button>
+                <button onclick="toggleTrelloSettings()" style="background:none;border:none;cursor:pointer;font-size:0.95em;font-weight:600;color:#555;padding:6px 0;display:flex;align-items:center;gap:6px;width:100%;text-align:left;">
+                    🟦 Trello Sync Settings <span id="trelloToggleArrow" style="font-size:0.75em;margin-left:4px;">▼ show</span>
+                </button>
+                <div id="trelloSettingsBody" style="display:none;margin-top:10px;">
+                    <p style="font-size:0.85em;color:#666;margin-bottom:10px;">Export this month's workouts as Trello cards. You need a free Trello account.</p>
+                    <div class="trello-inputs">
+                        <input type="text" id="trelloApiKey" placeholder="Trello API Key (from trello.com/app-key)" style="width:100%;margin-bottom:8px;">
+                        <input type="text" id="trelloToken" placeholder="Trello Token (generate after entering key)" style="width:100%;margin-bottom:8px;">
+                        <input type="text" id="trelloListId" placeholder="Trello List ID (see instructions below)" style="width:100%;margin-bottom:8px;">
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button onclick="openTrelloAuth()" class="secondary-btn">🔑 Generate Token</button>
+                            <button onclick="saveTrelloSettings()" class="secondary-btn">💾 Save Settings</button>
+                        </div>
+                        <p style="font-size:0.8em;color:#888;margin-top:8px;">How to get List ID: Open your Trello board, click on a list menu (…) → Copy List Link. The ID is the part after "/l/" in the URL.</p>
                     </div>
-                    <p style="font-size:0.8em;color:#888;margin-top:8px;">How to get List ID: Open your Trello board, click on a list menu (…) → Copy List Link. The ID is the part after "/l/" in the URL.</p>
+                    <button id="syncTrelloBtn" onclick="syncCalendarToTrello()" class="primary-btn" style="width:100%;margin-top:12px;">🔄 Sync This Month to Trello</button>
                 </div>
-                <button id="syncTrelloBtn" onclick="syncCalendarToTrello()" class="primary-btn" style="width:100%;margin-top:12px;">🔄 Sync This Month to Trello</button>
             </div>
         </div>
     </div>
@@ -525,11 +529,17 @@
         <div class="modal-content" style="max-width: 580px;">
             <span class="close" onclick="document.getElementById('planWorkoutModal').style.display='none'">&times;</span>
             <h2>📋 Plan Workout</h2>
-            <p id="planWorkoutDateLabel" style="font-size:1.05em;font-weight:600;color:var(--accent-color);margin-bottom:18px;"></p>
+            <p id="planWorkoutDateLabel" style="font-size:1.05em;font-weight:600;color:var(--accent-color);margin-bottom:14px;"></p>
+
+            <!-- Mode tabs -->
+            <div style="display:flex;gap:8px;margin-bottom:18px;">
+                <button id="planModeBtn_self" class="plan-mode-btn active-mode" onclick="setPlanMode('self')">📝 Plan Myself</button>
+                <button id="planModeBtn_ai" class="plan-mode-btn" onclick="setPlanMode('ai')">🤖 AI Plan</button>
+            </div>
 
             <div class="form-group">
-                <label>Session note (optional)</label>
-                <input type="text" id="planWorkoutNote" placeholder="e.g. Leg day, Push session, Chest focus…">
+                <label id="planNoteLabel">Workout name / note <span style="color:#aaa;font-weight:400;font-size:0.88em;">(AI uses this to identify the type)</span></label>
+                <input type="text" id="planWorkoutNote" placeholder="e.g. Chest Day, Leg Day, Push Session, Back &amp; Biceps…">
             </div>
 
             <div class="form-group">
@@ -537,10 +547,23 @@
                 <div id="planInviteUsers" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;"></div>
             </div>
 
-            <div class="form-group">
-                <label>Add exercises to plan</label>
-                <input type="text" id="planExerciseInput" placeholder="Type to search exercises…" oninput="searchPlanExercises(this.value)">
-                <div id="planExerciseResults" style="max-height:130px;overflow-y:auto;border:1.5px solid #e0e0e0;border-top:none;border-radius:0 0 7px 7px;display:none;background:#fff;"></div>
+            <!-- AI mode section (hidden by default) -->
+            <div id="planAISection" style="display:none;">
+                <div class="form-group" style="margin-bottom:10px;">
+                    <label>Number of exercises</label>
+                    <input type="number" id="planNumExercises" value="6" min="2" max="12" style="width:80px;padding:6px 10px;border:1.5px solid #ddd;border-radius:6px;">
+                </div>
+                <button id="aiGeneratePlanBtn" onclick="aiGeneratePlan()" class="primary-btn" style="width:100%;margin-bottom:8px;">🤖 Generate Training Plan</button>
+                <div id="planAIStatus" style="font-size:0.85em;color:#555;padding:4px 0;display:none;"></div>
+            </div>
+
+            <!-- Self mode: exercise search (shown by default) -->
+            <div id="planSelfSection">
+                <div class="form-group">
+                    <label>Add exercises to plan <span style="color:#aaa;font-weight:400;font-size:0.88em;">(AI suggests weights &amp; reps at workout time)</span></label>
+                    <input type="text" id="planExerciseInput" placeholder="Type to search exercises…" oninput="searchPlanExercises(this.value)">
+                    <div id="planExerciseResults" style="max-height:130px;overflow-y:auto;border:1.5px solid #e0e0e0;border-top:none;border-radius:0 0 7px 7px;display:none;background:#fff;"></div>
+                </div>
             </div>
 
             <div id="planExerciseList" style="margin-top:4px;display:flex;flex-direction:column;gap:6px;"></div>
@@ -558,6 +581,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <!-- Chart.js for progress visualization -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=23.2"></script>
+    <script src="app.js?v=23.3"></script>
 </body>
 </html>

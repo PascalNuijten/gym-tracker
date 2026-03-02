@@ -73,7 +73,7 @@ function hashString(str) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.2'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -1663,16 +1663,19 @@ async function getAIWeightRecommendation(exercise) {
         const userProfile = getUserProfile(currentUser);
         const profileContext = userProfile ? getUserContext(currentUser) : '';
         
-        // Get ALL user's exercises with history to find related movements
+        // Get ALL user's exercises with history to find related movements (same muscle/category, NOT the same exercise)
         const userExercises = exercises.filter(ex => ex.users && ex.users[currentUser]);
         const relatedExercises = userExercises
             .filter(ex => {
                 const exHistory = ex.users[currentUser]?.history || [];
-                return exHistory.length > 0 && (
-                    ex.muscle === exercise.muscle || // Same muscle group
-                    ex.category === exercise.category || // Same category
-                    ex.id !== exercise.id // Not the same exercise
-                );
+                const isSame = ex.id === exercise.id || ex.name === exercise.name;
+                if (isSame || !exHistory.length) return false;
+                // Only include truly related exercises (same muscle group OR same category)
+                const sameMuscleSingle = ex.muscle === exercise.muscle;
+                const sameMuscleArr = Array.isArray(ex.muscle) && Array.isArray(exercise.muscle) &&
+                    ex.muscle.some(m => exercise.muscle.includes(m));
+                const sameCategory = ex.category === exercise.category;
+                return sameMuscleSingle || sameMuscleArr || sameCategory;
             })
             .map(ex => {
                 const exHistory = ex.users[currentUser].history;
@@ -1711,39 +1714,74 @@ async function getAIWeightRecommendation(exercise) {
                     `${ex.name} (${ex.muscle}, ${ex.equipment || 'unknown'}): avg ${ex.avgWeight}kg, max ${ex.maxWeight}kg`
                 ).join('\n');
         }
-        
-        const prompt = `You are an expert strength coach. Recommend a complete workout plan for ${currentUser}'s next session.
+
+        // ─── FAST FALLBACK: if we have direct history, show it instantly ──────────────
+        // Also build context for the AI prompt
+        const hasDirectHistory = history.length > 0;
+        const hasRelated = relatedExercises.length > 0;
+
+        // If no AI, or no history AND no related data — use simple fallback immediately
+        if (!useRealAI) {
+            if (hasDirectHistory) {
+                const lastSession = history[history.length - 1];
+                const lastAvgWeight = lastSession.sets.reduce((s, set) => s + set.weight, 0) / lastSession.sets.length;
+                const lastAvgReps   = lastSession.sets.reduce((s, set) => s + set.reps, 0) / lastSession.sets.length;
+                recommendationDiv.innerHTML = `<div style="padding:10px;background:#fff3cd;border-radius:6px;font-size:0.9em;">
+                    <strong>💡 Last session:</strong> ~${lastAvgWeight.toFixed(1)}kg × ${Math.round(lastAvgReps)} reps
+                    <button onclick="applyRecommendedWeight(${lastAvgWeight.toFixed(1)})" class="secondary-btn" style="margin-left:10px;font-size:0.85em;padding:4px 10px;">Use ${lastAvgWeight.toFixed(1)}kg</button>
+                </div>`;
+            } else {
+                recommendationDiv.innerHTML = `<div style="padding:10px;background:#f0f0f0;border-radius:5px;font-size:0.9em;color:#666;">💡 Enable AI for smart weight recommendations.</div>`;
+            }
+            return;
+        }
+
+        // Build priority-ordered prompt
+        let dataSection = '';
+
+        if (hasDirectHistory) {
+            // ── PRIORITY 1: Direct training history (MUST be used as primary reference) ──
+            dataSection = `
+DIRECT TRAINING HISTORY FOR THIS EXERCISE (use as PRIMARY reference — do NOT ignore):
+${historyContext}
+
+⚠️ IMPORTANT: Base your recommendation on this history. Apply progressive overload (2-5% weight increase, or add 1 rep, or 1 set) compared to the most recent session.
+Do NOT suggest a weight dramatically different from the history unless there's a strong reason (injury, long break, etc.).`;
+        } else if (hasRelated) {
+            // ── PRIORITY 2: Related exercises (same muscle/category) ──
+            dataSection = `
+NO DIRECT HISTORY for this exercise.
+RELATED EXERCISES (same muscle group — use for strength correlation):
+${relatedExercisesContext}
+
+Use the related exercise data to estimate a starting weight. Apply these real-world ratios:
+- Barbell → Dumbbell per hand: roughly ×0.35 of barbell weight (e.g. bench 80kg → DB press 28kg each)
+- Machine → Free weight: typically 80-90% of machine weight
+- Compound to isolation (e.g. cable fly from bench): roughly 30-40% of chest press weight
+- Be CONSERVATIVE — this is their first time with this exercise.`;
+        } else {
+            // ── PRIORITY 3: Absolutely no data — do NOT fabricate ──
+            dataSection = `
+NO TRAINING DATA available (no history and no related exercises with data).
+DO NOT guess a random weight. Set WEIGHT to 0 and REPS to a safe beginner range.
+The user will fill in weight manually.`;
+        }
+
+        const prompt = `You are an expert strength coach recommending the NEXT session for ${currentUser}.
 
 EXERCISE: ${exercise.name}
-- Category: ${exercise.category}
-- Muscle Group: ${exercise.muscle}
-- Equipment: ${exercise.equipment || 'unknown'}
+Category: ${exercise.category} | Muscle: ${Array.isArray(exercise.muscle) ? exercise.muscle.join(', ') : (exercise.muscle || '?')} | Equipment: ${exercise.equipment || 'unknown'}
 
-${profileContext ? `USER PROFILE:\n${profileContext}\n\n` : ''}${historyContext ? `WORKOUT HISTORY FOR THIS EXERCISE (Last 5 sessions):\n${historyContext}\n\n` : 'NO PREVIOUS HISTORY for this exercise\n\n'}${relatedExercisesContext}
+USER PERSONAL SETTINGS:${profileContext || ' (no profile set)'}
+${dataSection}
+${userProfile?.goal    ? `\nTRAINING GOAL: ${userProfile.goal}` : ''}
+${userProfile?.injuries ? `INJURIES/LIMITATIONS: ${userProfile.injuries}` : ''}
 
-Recommend a complete workout including sets, reps, and weight. Consider:
-${history.length > 0 ? `- Progressive overload: suggest slightly more volume or intensity than previous sessions
-- Fatigue management: if they've been consistent, they might need a deload
-- Typical patterns: they usually do ${Math.round(history[history.length - 1]?.sets.length || 3)} sets` : `- STRENGTH CORRELATIONS: Use their performance on similar exercises to predict capacity
-  Example: If they squat 100kg, they might hack squat 80-90kg (mechanical advantage difference)
-  Example: If they bench 80kg, they might dumbbell press 28-32kg per hand (stability requirement)
-  Example: If they barbell row 70kg, they might cable row 60-65kg (different resistance curve)
-- Their experience level and bodyweight
-- Exercise-specific mechanics and difficulty
-- Safe, conservative recommendation for first attempt`}
-${userProfile?.goal ? `- Training goal: ${userProfile.goal}\n` : ''}${userProfile?.injuries ? `- Their injuries/limitations: ${userProfile.injuries}\n` : ''}- Be specific and realistic based on ALL available data
-
-Respond in this EXACT format:
+Respond in this EXACT format (no extra text):
 SETS: [number]
 REPS: [number or range like 8-12]
-WEIGHT: [number]
-REASONING: [one sentence explaining the plan]
-
-Example:
-SETS: 3
-REPS: 8-10
-WEIGHT: 85
-REASONING: Progressive overload from last session with focus on strength gains.`;
+WEIGHT: [number — use 0 if no data available]
+REASONING: [one sentence]`;
 
         const aiResponse = await callGeminiAI(prompt, null, false);
         
@@ -6587,6 +6625,7 @@ document.addEventListener('DOMContentLoaded', init);
 let currentPlanDate = null;   // 'YYYY-MM-DD'
 let currentPlanId = null;     // id of plan being edited (null = new)
 let currentPlanExercises = []; // [{name, category, plannedSets, plannedReps, plannedWeight}]
+let planMode = 'self'; // 'self' = manual exercise selection, 'ai' = AI-generated plan
 
 function planCalendarDay(day) {
     const dateISO = `${calendarYear}-${String(calendarMonth + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
@@ -6621,6 +6660,8 @@ function planCalendarDay(day) {
     renderPlanExercises();
     document.getElementById('planExerciseResults').style.display = 'none';
     document.getElementById('planExerciseInput').value = '';
+    if (document.getElementById('planAIStatus')) { document.getElementById('planAIStatus').style.display = 'none'; }
+    setPlanMode('self');
     document.getElementById('planWorkoutModal').style.display = 'block';
 }
 
@@ -6658,27 +6699,64 @@ function removePlanExercise(idx) {
 
 function renderPlanExercises() {
     const list = document.getElementById('planExerciseList');
+    const selfMode = planMode !== 'ai';
     if (!currentPlanExercises.length) {
-        list.innerHTML = '<p style="color:#aaa;font-size:0.85em;text-align:center;padding:8px;">No exercises added yet — search above to add some.</p>';
+        const hint = selfMode
+            ? 'No exercises added yet — search above to add some.'
+            : 'Click "Generate Training Plan" to let AI build your workout.';
+        list.innerHTML = `<p style="color:#aaa;font-size:0.85em;text-align:center;padding:8px;">${hint}</p>`;
         return;
     }
-    list.innerHTML = currentPlanExercises.map((ex, i) => `
+    list.innerHTML = currentPlanExercises.map((ex, i) => {
+        const weight = ex.perUserWeights?.[currentUser] ?? ex.plannedWeight ?? 0;
+        const reps   = ex.perUserReps?.[currentUser]    ?? ex.plannedReps   ?? 10;
+        const sets   = ex.plannedSets ?? 4;
+
+        // Build per-user weight badges for invited users (AI mode, read-only)
+        let invitedBadges = '';
+        if (!selfMode && ex.perUserWeights) {
+            const others = Object.entries(ex.perUserWeights)
+                .filter(([u]) => u !== currentUser)
+                .map(([u, w]) => {
+                    const r = ex.perUserReps?.[u] || reps;
+                    return `<span style="font-size:0.75em;background:#f0f4ff;border-radius:4px;padding:2px 6px;color:#555;">${u}: ${w}kg×${r}</span>`;
+                }).join(' ');
+            if (others) invitedBadges = `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">${others}</div>`;
+        }
+
+        return `
         <div class="plan-exercise-item">
-            <span class="plan-ex-name">${ex.name} <span style="color:#aaa;font-size:0.78em;">${ex.category}</span></span>
+            <span class="plan-ex-name">${ex.name} <span style="color:#aaa;font-size:0.78em;">${ex.category || ''}</span></span>
             <div class="plan-exercise-meta">
-                <input class="plan-sets-input" type="number" min="1" max="20" value="${ex.plannedSets}" placeholder="sets"
+                <input class="plan-sets-input" type="number" min="1" max="20" value="${sets}" placeholder="sets"
                     onchange="currentPlanExercises[${i}].plannedSets=+this.value" title="Sets">
                 <span style="font-size:0.8em;color:#888;">sets</span>
-                <input class="plan-sets-input" type="number" min="1" max="100" value="${ex.plannedReps}" placeholder="reps"
-                    onchange="currentPlanExercises[${i}].plannedReps=+this.value" title="Reps">
+                ${!selfMode ? `
+                <input class="plan-sets-input" type="number" min="1" max="100" value="${reps}" placeholder="reps"
+                    onchange="currentPlanExercises[${i}].plannedReps=+this.value;if(currentPlanExercises[${i}].perUserReps)currentPlanExercises[${i}].perUserReps['${currentUser}']=+this.value;" title="Reps">
                 <span style="font-size:0.8em;color:#888;">reps</span>
-                <input class="plan-sets-input" style="width:54px;" type="number" min="0" step="0.5" value="${ex.plannedWeight}" placeholder="kg"
-                    onchange="currentPlanExercises[${i}].plannedWeight=+this.value" title="Weight (kg)">
+                <input class="plan-sets-input" style="width:54px;" type="number" min="0" step="0.5" value="${weight}" placeholder="kg"
+                    onchange="currentPlanExercises[${i}].plannedWeight=+this.value;if(currentPlanExercises[${i}].perUserWeights)currentPlanExercises[${i}].perUserWeights['${currentUser}']=+this.value;" title="Weight (kg)">
                 <span style="font-size:0.8em;color:#888;">kg</span>
+                ` : `<span style="font-size:0.78em;color:#aaa;font-style:italic;">AI suggests at workout time</span>`}
                 <button onclick="removePlanExercise(${i})" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:1em;padding:0 4px;">✕</button>
             </div>
-        </div>
-    `).join('');
+            ${invitedBadges}
+        </div>`;
+    }).join('');
+}
+
+function setPlanMode(mode) {
+    planMode = mode;
+    const selfBtn = document.getElementById('planModeBtn_self');
+    const aiBtn   = document.getElementById('planModeBtn_ai');
+    if (selfBtn) selfBtn.classList.toggle('active-mode', mode === 'self');
+    if (aiBtn)   aiBtn.classList.toggle('active-mode', mode === 'ai');
+    const selfSec = document.getElementById('planSelfSection');
+    const aiSec   = document.getElementById('planAISection');
+    if (selfSec) selfSec.style.display = mode === 'self' ? 'block' : 'none';
+    if (aiSec)   aiSec.style.display   = mode === 'ai'   ? 'block' : 'none';
+    renderPlanExercises();
 }
 
 function savePlannedWorkout() {
@@ -6739,6 +6817,262 @@ function deletePlanByDate(dateISO) {
     document.getElementById('calendarDayDetail').style.display = 'none';
     selectedCalendarDay = null;
     renderCalendar();
+}
+
+// ==================== AI TRAINING PLAN GENERATOR ====================
+
+async function aiGeneratePlan() {
+    const note = document.getElementById('planWorkoutNote').value.trim();
+    if (!note) {
+        alert('Please enter a workout name first (e.g. "Chest Day", "Push Day", "Leg Day").');
+        return;
+    }
+    const numEl = document.getElementById('planNumExercises');
+    const numExercises = Math.min(12, Math.max(2, parseInt(numEl?.value) || 6));
+
+    const genBtn = document.getElementById('aiGeneratePlanBtn');
+    const statusEl = document.getElementById('planAIStatus');
+    genBtn.disabled = true;
+    genBtn.textContent = '⏳ Generating...';
+    statusEl.style.display = 'block';
+    statusEl.style.color = '#555';
+    statusEl.textContent = '🤖 AI is creating your personalized training plan…';
+
+    // Collect invited users
+    const invitedChips = document.querySelectorAll('#planInviteUsers .plan-invite-chip.selected');
+    const invitedUsers = Array.from(invitedChips).map(b => b.dataset.user);
+    const allParticipants = [currentUser, ...invitedUsers];
+
+    // Build compact training summary per user for AI context
+    function buildUserContext(username) {
+        const profile = getUserProfile(username);
+        const profileStr = profile
+            ? `${profile.height || '?'}cm, ${profile.weight || '?'}kg, ${profile.gender || ''}, ${profile.experience || ''} level, goal: ${profile.goal || 'general'}`
+            : 'No profile';
+        const hist = exercises
+            .filter(ex => (ex.users?.[username]?.history?.length || 0) > 0)
+            .slice(0, 20)
+            .map(ex => {
+                const sessions = ex.users[username].history.slice(-3);
+                const maxW = Math.max(0, ...sessions.flatMap(s => s.sets.map(s2 => s2.weight)));
+                const avgR = sessions.flatMap(s => s.sets).reduce((a, s, _, arr) => a + s.reps / arr.length, 0);
+                return `${ex.name} (${ex.category}): max ${maxW}kg, avg ${Math.round(avgR)} reps`;
+            }).join('\n') || 'No training history';
+        return { profileStr, hist };
+    }
+
+    const usersContext = allParticipants.map(u => {
+        const { profileStr, hist } = buildUserContext(u);
+        return `=== ${u} (${profileStr}) ===\n${hist}`;
+    }).join('\n\n');
+
+    const perUserWeightFields = allParticipants.map(u => `"${u}": <weight>`).join(', ');
+    const perUserRepsFields   = allParticipants.map(u => `"${u}": <reps>`).join(', ');
+
+    const prompt = `You are an expert strength coach. Create a ${numExercises}-exercise workout plan.
+
+WORKOUT NAME: "${note}"
+(Identify the type automatically — "chestday", "Chest Day", "chest training", "push" all mean chest/push day)
+
+PARTICIPANTS: ${allParticipants.join(', ')}
+${allParticipants.length > 1 ? '(Generate INDIVIDUAL weights & reps for each person based on THEIR history)\n' : ''}
+TRAINING DATA:
+${usersContext}
+
+RULES:
+1. Pick ${numExercises} exercises covering DIFFERENT muscle sub-groups of the identified workout type
+2. For each exercise & each participant:
+   - If they have DIRECT history with that exercise → add 2-5% progressive overload from their last session
+   - If NO direct history → estimate from similar same-muscle exercises they DO have data for
+   - If NO related data at all → suggest a safe beginner weight (or 0 if truly uncertain)
+3. Sets: typically 3-4. Reps: aligned with goal (strength=3-6, hypertrophy=8-12, endurance=15+)
+4. ALWAYS cover the full muscle group (e.g. chest day: flat + incline + fly/cable; leg day: squat + hinge + isolation)
+
+Respond ONLY with valid JSON — a list of exercise objects like this (replace <placeholders>):
+[
+  {
+    "name": "<Exercise Name>",
+    "category": "<Category>",
+    "muscle": "<Primary Muscle>",
+    "plannedSets": <sets>,
+    "plannedReps": <reps>,
+    "plannedWeight": <weight for ${currentUser}>,
+    "perUserWeights": {${perUserWeightFields}},
+    "perUserReps": {${perUserRepsFields}}
+  }
+]`;
+
+    try {
+        const aiResponse = await callGeminiAI(prompt, null, false, 1800);
+        if (!aiResponse) throw new Error('No AI response');
+
+        const jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) throw new Error('Could not find JSON in AI response');
+
+        const planData = JSON.parse(jsonMatch[0]);
+        currentPlanExercises = planData.map(ex => ({
+            name: ex.name || 'Unknown',
+            category: ex.category || '',
+            muscle: ex.muscle || '',
+            plannedSets: ex.plannedSets || 4,
+            plannedReps: ex.perUserReps?.[currentUser] ?? ex.plannedReps ?? 10,
+            plannedWeight: ex.perUserWeights?.[currentUser] ?? ex.plannedWeight ?? 0,
+            perUserWeights: ex.perUserWeights || {},
+            perUserReps: ex.perUserReps || {}
+        }));
+
+        statusEl.textContent = `✅ AI created ${currentPlanExercises.length} exercises! Review below and adjust if needed.`;
+        statusEl.style.color = '#27ae60';
+
+        // Show the exercise search section too so user can add/remove
+        const selfSec = document.getElementById('planSelfSection');
+        if (selfSec) selfSec.style.display = 'block';
+        renderPlanExercises();
+
+    } catch (err) {
+        console.error('AI plan generation failed:', err);
+        statusEl.textContent = `⚠️ Failed: ${err.message}. Try again or add exercises manually.`;
+        statusEl.style.color = '#e74c3c';
+    } finally {
+        genBtn.disabled = false;
+        genBtn.textContent = '🤖 Generate Training Plan';
+    }
+}
+
+// ==================== AI TRAINING DAY EVALUATION ====================
+
+async function aiEvaluateCalendarDay(day) {
+    const evalId = `aiEvalResult_${day}`;
+    const evalDiv = document.getElementById(evalId);
+    if (!evalDiv) return;
+
+    evalDiv.style.display = 'block';
+    evalDiv.innerHTML = `<div style="padding:10px 12px;background:#e3f2fd;border-radius:8px;font-size:0.85em;margin-top:6px;">
+        <div class="loading-spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;"></div>
+        <span style="margin-left:7px;">🤖 AI is analysing your training session…</span>
+    </div>`;
+
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const dateISO = `${calendarYear}-${String(calendarMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const dateLabel = `${MONTH_NAMES[calendarMonth]} ${day}, ${calendarYear}`;
+
+    // Collect today's workouts
+    const workouts = [];
+    exercises.forEach(ex => {
+        const userData = ex.users?.[currentUser];
+        if (!userData?.history) return;
+        userData.history.forEach(session => {
+            const d = new Date(session.date);
+            if (d.getFullYear() === calendarYear && d.getMonth() === calendarMonth && d.getDate() === day) {
+                workouts.push({ name: ex.name, category: ex.category, muscle: ex.muscle, sets: session.sets, exRef: ex });
+            }
+        });
+    });
+
+    if (!workouts.length) {
+        evalDiv.innerHTML = '<div style="color:#888;font-size:0.85em;padding:6px;">No workout data found.</div>';
+        return;
+    }
+
+    // Metrics
+    const totalSets = workouts.reduce((s, w) => s + w.sets.length, 0);
+    const totalVol  = workouts.reduce((s, w) => s + w.sets.reduce((sv, set) => sv + set.reps * set.weight, 0), 0);
+    const muscleGroups = [...new Set(workouts.flatMap(w => Array.isArray(w.muscle) ? w.muscle.slice(0,1) : [w.muscle]).filter(Boolean))];
+    const categories   = [...new Set(workouts.map(w => w.category))];
+
+    // Detect PRs
+    const prs = [];
+    workouts.forEach(w => {
+        if (!w.exRef) return;
+        const allSessions = w.exRef.users?.[currentUser]?.history || [];
+        const todayMax = Math.max(0, ...w.sets.map(s => s.weight));
+        const prevMax  = Math.max(0, ...allSessions
+            .filter(s => new Date(s.date).toDateString() !== new Date(dateISO + 'T12:00:00').toDateString())
+            .flatMap(s => s.sets.map(s2 => s2.weight)));
+        if (todayMax > prevMax && todayMax > 0) prs.push(`${w.name}: ${todayMax}kg`);
+    });
+
+    // Avg volume of previous similar sessions (same categories)
+    const volByDate = {};
+    exercises.forEach(ex => {
+        if (!categories.includes(ex.category)) return;
+        (ex.users?.[currentUser]?.history || []).forEach(session => {
+            if (new Date(session.date).toDateString() === new Date(dateISO + 'T12:00:00').toDateString()) return;
+            const key = new Date(session.date).toDateString();
+            volByDate[key] = (volByDate[key] || 0) + session.sets.reduce((s, set) => s + set.reps * set.weight, 0);
+        });
+    });
+    const prevVols = Object.values(volByDate).slice(-10);
+    const avgPrevVol = prevVols.length ? prevVols.reduce((a, v) => a + v, 0) / prevVols.length : 0;
+    const volDiff = avgPrevVol > 0 ? Math.round(((totalVol / avgPrevVol) - 1) * 100) : null;
+
+    const exerciseDetails = workouts.map(w => {
+        const bestSet = w.sets.reduce((b, s) => s.weight > b.weight ? s : b, w.sets[0]);
+        const vol = w.sets.reduce((sv, s) => sv + s.reps * s.weight, 0);
+        return `• ${w.name}: ${w.sets.length} sets, best ${bestSet.weight}kg×${bestSet.reps} reps, vol ${vol}kg`;
+    }).join('\n');
+
+    const profileContext = getUserContext(currentUser);
+
+    const prompt = `You are an expert strength coach. Rate this training session.
+
+Date: ${dateLabel} | Athlete: ${currentUser}
+${profileContext}
+
+SESSION SUMMARY:
+- ${workouts.length} exercises · ${totalSets} sets · ${totalVol.toLocaleString()}kg total volume
+- Muscle groups: ${muscleGroups.join(', ') || categories.join(', ')}
+
+EXERCISE DETAILS:
+${exerciseDetails}
+${prs.length > 0 ? `\nPERSONAL RECORDS: ${prs.join(' | ')}` : ''}
+${volDiff !== null ? `\nVOLUME vs. PREVIOUS SIMILAR SESSIONS: ${volDiff >= 0 ? '+' : ''}${volDiff}% (avg prev: ${Math.round(avgPrevVol).toLocaleString()}kg)` : ''}
+
+Rate 1-10 and give a short analysis. Respond EXACTLY:
+SCORE: [1-10]
+RATING: [Excellent/Great/Good/Average/Below Average]
+HIGHLIGHTS: [1 sentence about what went well]
+SUGGESTIONS: [1 concrete tip for next time]`;
+
+    try {
+        const aiResponse = await callGeminiAI(prompt, null, false, 300);
+        if (!aiResponse) throw new Error('No AI response');
+
+        const scoreMatch     = aiResponse.match(/SCORE:\s*(\d+)/i);
+        const ratingMatch    = aiResponse.match(/RATING:\s*([^\n]+)/i);
+        const highlightMatch = aiResponse.match(/HIGHLIGHTS:\s*([^\n]+)/i);
+        const suggestMatch   = aiResponse.match(/SUGGESTIONS:\s*([^\n]+)/i);
+
+        const score      = scoreMatch ? Math.min(10, Math.max(1, parseInt(scoreMatch[1]))) : null;
+        const rating     = ratingMatch    ? ratingMatch[1].trim()    : '';
+        const highlights = highlightMatch ? highlightMatch[1].trim() : '';
+        const suggestion = suggestMatch   ? suggestMatch[1].trim()   : '';
+
+        const scoreColor = score >= 8 ? '#27ae60' : score >= 6 ? '#e67e22' : '#e74c3c';
+
+        evalDiv.innerHTML = `<div style="padding:12px;background:white;border-radius:8px;border:1.5px solid ${scoreColor};margin-top:8px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                <div style="font-size:2em;font-weight:bold;color:${scoreColor};line-height:1;">${score !== null ? score + '/10' : '–'}</div>
+                <div style="font-weight:700;color:${scoreColor};">${rating}</div>
+                ${prs.length > 0 ? `<div style="font-size:0.78em;background:#fff3cd;border-radius:4px;padding:2px 7px;color:#856404;margin-left:auto;">🏆 ${prs.length} PR${prs.length > 1 ? 's' : ''}</div>` : ''}
+            </div>
+            ${highlights ? `<p style="font-size:0.87em;color:#333;margin:0 0 5px;">✨ ${highlights}</p>` : ''}
+            ${suggestion ? `<p style="font-size:0.85em;color:#666;margin:0;">💡 ${suggestion}</p>` : ''}
+        </div>`;
+
+    } catch (err) {
+        console.error('AI eval failed:', err);
+        evalDiv.innerHTML = `<div style="padding:8px;color:#888;font-size:0.85em;margin-top:6px;">⚠️ AI evaluation unavailable (${err.message || 'unknown error'}).</div>`;
+    }
+}
+
+function toggleTrelloSettings() {
+    const body  = document.getElementById('trelloSettingsBody');
+    const arrow = document.getElementById('trelloToggleArrow');
+    if (!body) return;
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : 'block';
+    if (arrow) arrow.textContent = isOpen ? '▼' : '▲';
 }
 
 // ==================== DATABASE TOOLS ====================
@@ -7013,10 +7347,11 @@ function renderCalendar() {
             dots += `<div class="cal-dot dot-planned" title="Planned"></div>`;
         }
 
-        // Short plan label
+        // Short plan label — show emoji only, full note on hover
         let planLabel = '';
-        if (hasPlan && !hasWorkout && plan.note) {
-            planLabel = `<div class="cal-plan-indicator">📋 ${plan.note}</div>`;
+        if (hasPlan && !hasWorkout) {
+            const planTitle = plan.note ? plan.note.replace(/"/g, '&quot;') : 'Planned workout';
+            planLabel = `<div class="cal-plan-indicator" title="${planTitle}">📋</div>`;
         }
 
         const classes = [
@@ -7130,6 +7465,8 @@ function showCalendarDay(day) {
         const gcDetails = encodeURIComponent(workouts.map(w => `${w.name}: ${w.sets.map(s => `${s.reps}×${s.weight}kg`).join(', ')}`).join('\n'));
         const gcUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${gcTitle}&dates=${gcDate}/${gcDate}&details=${gcDetails}`;
         html += `<a href="${gcUrl}" target="_blank" style="display:inline-block;margin-top:8px;font-size:0.82em;color:#4285F4;text-decoration:none;">📅 Add to Google Calendar</a>`;
+        html += `<div style="margin-top:10px;display:flex;align-items:center;gap:10px;"><button onclick="aiEvaluateCalendarDay(${day})" style="font-size:0.82em;background:linear-gradient(135deg,var(--btn-gradient-start),var(--btn-gradient-end));color:white;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-weight:600;">🤖 AI Evaluate Training</button></div>`;
+        html += `<div id="aiEvalResult_${day}"></div>`;
     }
 
     // --- Plan section ---

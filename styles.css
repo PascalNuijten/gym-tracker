@@ -1734,4 +1734,30 @@ textarea {
     color: white;
 }
 
+/* Plan modal mode tabs */
+.plan-mode-btn {
+    flex: 1;
+    padding: 9px 12px;
+    border-radius: 8px;
+    border: 2px solid #e0e0e0;
+    background: #f7f7f7;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 600;
+    color: #666;
+    transition: all 0.15s;
+}
+
+.plan-mode-btn:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.plan-mode-btn.active-mode {
+    border-color: var(--accent-color);
+    background: linear-gradient(135deg, var(--btn-gradient-start), var(--btn-gradient-end));
+    color: white;
+}
+
+
 

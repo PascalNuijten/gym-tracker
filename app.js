@@ -7115,49 +7115,102 @@ async function aiFixAllMuscles() {
         return;
     }
 
+    // Only process exercises that genuinely lack muscle data
+    const toFix = exercises.filter(ex =>
+        !ex.muscle || (Array.isArray(ex.muscle) ? ex.muscle.length === 0 : ex.muscle.trim() === '')
+    );
+
+    if (toFix.length === 0) {
+        statusEl.textContent = '✅ All exercises already have muscle group data — nothing to fix!';
+        return;
+    }
+
+    const estMinutes = Math.ceil((toFix.length * 6.5) / 60);
     const confirmed = confirm(
-        `This will use AI to analyze and fix the primary muscle groups for all ${exercises.length} exercises.\n\nThis may take 1-2 minutes. Proceed?`
+        `AI will fix muscle groups for ${toFix.length} exercises that are missing data.\n\n` +
+        `To avoid API rate limits, there is a 6-second delay between each call.\n` +
+        `Estimated time: ~${estMinutes} minute${estMinutes > 1 ? 's' : ''}.\n\nProceed?`
     );
     if (!confirmed) return;
 
     let fixed = 0;
-    let errors = 0;
+    let skipped = 0;
+    let consecutiveErrors = 0;
 
-    for (let i = 0; i < exercises.length; i++) {
-        const ex = exercises[i];
-        statusEl.innerHTML = `🤖 Analyzing: <strong>${ex.name}</strong> (${i + 1} / ${exercises.length})…`;
+    for (let i = 0; i < toFix.length; i++) {
+        const ex = toFix[i];
+        const pct = Math.round(((i + 1) / toFix.length) * 100);
+        statusEl.innerHTML = `🤖 <strong>${i + 1}/${toFix.length}</strong> — Analysing: <em>${ex.name}</em>&nbsp;&nbsp;<span style="color:#aaa;font-size:0.88em;">(${pct}%)</span>`;
 
-        try {
-            const prompt = `You are a fitness expert. For the exercise "${ex.name}", respond with ONLY valid JSON:
+        const prompt = `You are a fitness expert. For the exercise "${ex.name}", respond with ONLY valid JSON (no other text):
 {"muscles":["Muscle1","Muscle2"],"category":"Category"}
 
-muscles: 1-3 from [Chest, Upper Chest, Lower Chest, Inner Chest, Back, Lats, Traps, Lower Back, Rhomboids, Middle Back, Serratus Anterior, Spinal Erectors, Shoulders, Front Delts, Side Delts, Rear Delts, Rotator Cuff, Biceps, Triceps, Forearms, Quads, Hamstrings, Glutes, Glute Medius, Calves, Adductors, Abductors, Hip Flexors, Tibialis, Abs, Obliques, Core, Transverse Abdominis]
+muscles: pick 1-3 from [Chest, Upper Chest, Lower Chest, Back, Lats, Traps, Lower Back, Shoulders, Front Delts, Side Delts, Rear Delts, Biceps, Triceps, Forearms, Quads, Hamstrings, Glutes, Calves, Abs, Obliques, Core]
 category: one of [Chest, Upper Back, Lower Back, Laterals, Shoulders, Biceps, Triceps, Abdominals, Legs]`;
 
-            const aiResponse = await callGeminiAI(prompt, null, true, 80);
-            if (aiResponse) {
-                const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    const data = JSON.parse(jsonMatch[0]);
-                    if (data.muscles && data.muscles.length > 0) {
-                        ex.muscle = data.muscles;
-                        if (data.category) ex.category = data.category;
-                        fixed++;
+        let success = false;
+        let attempts = 0;
+
+        while (!success && attempts < 2) {
+            attempts++;
+            try {
+                const aiResponse = await callGeminiAI(prompt, null, false, 100);
+                if (aiResponse) {
+                    const jsonMatch = aiResponse.match(/\{[\s\S]*?\}/);
+                    if (jsonMatch) {
+                        const data = JSON.parse(jsonMatch[0]);
+                        if (Array.isArray(data.muscles) && data.muscles.length > 0) {
+                            ex.muscle = data.muscles;
+                            if (data.category) ex.category = data.category;
+                            fixed++;
+                            consecutiveErrors = 0;
+                            success = true;
+                        }
                     }
                 }
+                if (!success) {
+                    console.warn(`aiFixAllMuscles: no usable response for ${ex.name}`);
+                    skipped++;
+                    consecutiveErrors++;
+                }
+            } catch (err) {
+                const is429 = err.message?.includes('429') || err.message?.includes('quota') || err.message?.toLowerCase().includes('rate');
+                console.error(`aiFixAllMuscles error for ${ex.name} (attempt ${attempts}):`, err.message);
+
+                if (is429 && attempts < 2) {
+                    // Rate limited — wait 35 seconds then retry
+                    for (let s = 35; s >= 1; s--) {
+                        statusEl.innerHTML = `⏳ Rate limit hit — waiting ${s}s before retry&hellip; (${i + 1}/${toFix.length})`;
+                        await new Promise(r => setTimeout(r, 1000));
+                    }
+                } else {
+                    skipped++;
+                    consecutiveErrors++;
+                    success = true; // exit while loop, continue to next
+                }
             }
-        } catch (err) {
-            console.error(`aiFixAllMuscles: failed for ${ex.name}:`, err);
-            errors++;
         }
 
-        // Small delay to avoid rate-limiting
-        await new Promise(r => setTimeout(r, 250));
+        // Bail out if 5+ consecutive failures (quota likely exhausted for today)
+        if (consecutiveErrors >= 5) {
+            statusEl.innerHTML = `⚠️ Too many consecutive errors (quota likely exhausted). Fixed <strong>${fixed}</strong> exercises so far. Saving progress…`;
+            break;
+        }
+
+        // Incremental save every 10 fixes
+        if (fixed > 0 && fixed % 10 === 0) {
+            saveToFirebase();
+        }
+
+        // Delay between API calls to respect rate limits (6 seconds = ~10 RPM)
+        if (i < toFix.length - 1 && success) {
+            await new Promise(r => setTimeout(r, 6000));
+        }
     }
 
     saveToFirebase();
     renderExercises();
-    statusEl.innerHTML = `✅ AI updated <strong>${fixed}</strong> exercises${errors ? `, ${errors} skipped due to errors` : ''}. Saved!`;
+    statusEl.innerHTML = `✅ Done! Updated <strong>${fixed}</strong> exercises${skipped ? `, <span style="color:#e67e22;">${skipped} skipped</span>` : ''}. All saved!`;
 }
 
 // ==================== TRELLO AUTO-SYNC ====================

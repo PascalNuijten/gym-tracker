@@ -73,7 +73,7 @@ function hashString(str) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.0'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.1'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -974,6 +974,7 @@ function setupEventListeners() {
     
     // Weekly Summary Button
     document.getElementById('weeklySummaryBtn').addEventListener('click', showWeeklySummary);
+    document.getElementById('calendarBtn').addEventListener('click', showCalendar);
     
     // Settings Button
     document.getElementById('settingsBtn').addEventListener('click', () => {
@@ -6570,3 +6571,348 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', init);
+
+// ==================== WORKOUT CALENDAR ====================
+
+let calendarYear = new Date().getFullYear();
+let calendarMonth = new Date().getMonth();
+let selectedCalendarDay = null;
+
+// Category → dot CSS class mapping
+const CAT_DOT_CLASS = {
+    'Chest': 'dot-chest',
+    'Upper Back': 'dot-back',
+    'Lower Back': 'dot-back',
+    'Laterals': 'dot-back',
+    'Shoulders': 'dot-shoulders',
+    'Legs': 'dot-legs',
+    'Biceps': 'dot-arms',
+    'Triceps': 'dot-arms',
+    'Abdominals': 'dot-core'
+};
+
+// Category → accent colour for detail cards
+const CAT_ACCENT = {
+    'Chest': '#e74c3c',
+    'Upper Back': '#3498db',
+    'Lower Back': '#2980b9',
+    'Laterals': '#1a6fa0',
+    'Shoulders': '#9b59b6',
+    'Legs': '#27ae60',
+    'Biceps': '#f39c12',
+    'Triceps': '#e67e22',
+    'Abdominals': '#1abc9c'
+};
+
+function getCategoryAccent(cat) {
+    return CAT_ACCENT[cat] || '#667eea';
+}
+
+function showCalendar() {
+    calendarYear = new Date().getFullYear();
+    calendarMonth = new Date().getMonth();
+    selectedCalendarDay = null;
+
+    // Restore saved Trello settings if any
+    document.getElementById('trelloApiKey').value = localStorage.getItem('trelloApiKey') || '';
+    document.getElementById('trelloToken').value = localStorage.getItem('trelloToken') || '';
+    document.getElementById('trelloListId').value = localStorage.getItem('trelloListId') || '';
+
+    document.getElementById('calendarModal').style.display = 'block';
+    document.getElementById('calendarDayDetail').style.display = 'none';
+    renderCalendar();
+}
+
+function renderCalendar() {
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    document.getElementById('calendarMonthTitle').textContent = `${MONTH_NAMES[calendarMonth]} ${calendarYear}`;
+
+    // Build workout-day map: day-of-month → [{name, category, sets, notes}]
+    const workoutDays = {};
+    exercises.forEach(ex => {
+        const userData = ex.users?.[currentUser];
+        if (!userData?.history) return;
+        userData.history.forEach(session => {
+            const d = new Date(session.date);
+            if (d.getFullYear() === calendarYear && d.getMonth() === calendarMonth) {
+                const key = d.getDate();
+                if (!workoutDays[key]) workoutDays[key] = [];
+                workoutDays[key].push({
+                    name: ex.name,
+                    category: ex.category,
+                    muscle: ex.muscle,
+                    sets: session.sets,
+                    notes: session.notes || ''
+                });
+            }
+        });
+    });
+
+    const firstDow = (new Date(calendarYear, calendarMonth, 1).getDay() + 6) % 7; // Mon=0
+    const totalDays = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const today = new Date();
+
+    let html = '';
+
+    // Day-of-week headers
+    ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(d => {
+        html += `<div class="cal-day-header">${d}</div>`;
+    });
+
+    // Leading empty cells (previous month)
+    for (let i = 0; i < firstDow; i++) {
+        const prevDate = new Date(calendarYear, calendarMonth, -(firstDow - i - 1));
+        html += `<div class="cal-day other-month"><div class="cal-day-number">${prevDate.getDate()}</div></div>`;
+    }
+
+    // Current month days
+    for (let day = 1; day <= totalDays; day++) {
+        const isToday = today.getFullYear() === calendarYear && today.getMonth() === calendarMonth && today.getDate() === day;
+        const isSelected = selectedCalendarDay === day;
+        const workouts = workoutDays[day] || [];
+        const hasWorkout = workouts.length > 0;
+
+        // One dot per unique category
+        const uniqueCats = [...new Set(workouts.map(w => w.category))];
+        const dots = uniqueCats.map(cat => {
+            const cls = CAT_DOT_CLASS[cat] || 'dot-other';
+            return `<div class="cal-dot ${cls}" title="${cat}"></div>`;
+        }).join('');
+
+        const classes = [
+            'cal-day',
+            isToday ? 'today' : '',
+            hasWorkout ? 'has-workout' : '',
+            isSelected ? 'selected' : ''
+        ].filter(Boolean).join(' ');
+
+        const onClick = hasWorkout ? `onclick="showCalendarDay(${day})"` : '';
+
+        html += `<div class="${classes}" ${onClick}>
+            <div class="cal-day-number">${day}</div>
+            <div class="cal-day-dots">${dots}</div>
+        </div>`;
+    }
+
+    // Trailing empty cells
+    const filled = firstDow + totalDays;
+    const remainder = filled % 7;
+    if (remainder > 0) {
+        for (let i = 1; i <= 7 - remainder; i++) {
+            html += `<div class="cal-day other-month"><div class="cal-day-number">${i}</div></div>`;
+        }
+    }
+
+    document.getElementById('calendarGrid').innerHTML = html;
+
+    // Keep day detail open if it's still in current month
+    if (selectedCalendarDay) {
+        showCalendarDay(selectedCalendarDay);
+    }
+}
+
+function changeCalendarMonth(delta) {
+    calendarMonth += delta;
+    if (calendarMonth < 0) { calendarMonth = 11; calendarYear--; }
+    if (calendarMonth > 11) { calendarMonth = 0; calendarYear++; }
+    selectedCalendarDay = null;
+    document.getElementById('calendarDayDetail').style.display = 'none';
+    renderCalendar();
+}
+
+function goToTodayCalendar() {
+    calendarYear = new Date().getFullYear();
+    calendarMonth = new Date().getMonth();
+    selectedCalendarDay = null;
+    document.getElementById('calendarDayDetail').style.display = 'none';
+    renderCalendar();
+}
+
+function showCalendarDay(day) {
+    selectedCalendarDay = day;
+
+    // Collect all sessions logged on this day
+    const workouts = [];
+    exercises.forEach(ex => {
+        const userData = ex.users?.[currentUser];
+        if (!userData?.history) return;
+        userData.history.forEach(session => {
+            const d = new Date(session.date);
+            if (d.getFullYear() === calendarYear && d.getMonth() === calendarMonth && d.getDate() === day) {
+                workouts.push({
+                    name: ex.name,
+                    category: ex.category,
+                    muscle: ex.muscle,
+                    sets: session.sets,
+                    notes: session.notes || ''
+                });
+            }
+        });
+    });
+
+    if (!workouts.length) return;
+
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const dateLabel = `${MONTH_NAMES[calendarMonth]} ${day}, ${calendarYear}`;
+    const totalSets = workouts.reduce((s, w) => s + w.sets.length, 0);
+    const totalVol = workouts.reduce((s, w) => s + w.sets.reduce((sv, set) => sv + (set.reps * set.weight), 0), 0);
+
+    let html = `<h4>📅 ${dateLabel}</h4>`;
+    html += `<p style="color:#666;font-size:0.88em;margin-bottom:10px;">${workouts.length} exercise${workouts.length > 1 ? 's' : ''} · ${totalSets} sets · ${totalVol.toLocaleString()} kg total volume</p>`;
+
+    workouts.forEach(w => {
+        const bestSet = w.sets.reduce((best, s) => s.weight > best.weight ? s : best, w.sets[0]);
+        const totalExVol = w.sets.reduce((sv, s) => sv + s.reps * s.weight, 0);
+        const accent = getCategoryAccent(w.category);
+        html += `<div style="margin:7px 0;padding:10px 12px;background:white;border-radius:8px;border-left:3px solid ${accent};">`;
+        html += `<strong>${w.name}</strong> <span style="color:#888;font-size:0.82em;">${w.category}${w.muscle ? ' · ' + (Array.isArray(w.muscle) ? w.muscle.join(', ') : w.muscle) : ''}</span><br>`;
+        html += `<span style="font-size:0.85em;color:#555;">${w.sets.length} sets · Best: <strong>${bestSet.weight}kg × ${bestSet.reps}</strong> reps · Vol: ${totalExVol.toLocaleString()}kg</span>`;
+        if (w.notes) html += `<br><span style="font-size:0.8em;color:#777;">💭 ${w.notes}</span>`;
+        html += `</div>`;
+    });
+
+    const detail = document.getElementById('calendarDayDetail');
+    detail.innerHTML = html;
+    detail.style.display = 'block';
+    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    // Update grid highlight without recursion - just toggle selected class on cells
+    document.querySelectorAll('#calendarGrid .cal-day').forEach((cell, idx) => {
+        const dayNum = parseInt(cell.querySelector('.cal-day-number')?.textContent);
+        const isOtherMonth = cell.classList.contains('other-month');
+        if (!isOtherMonth && dayNum === day) {
+            cell.classList.add('selected');
+        } else {
+            cell.classList.remove('selected');
+        }
+    });
+}
+
+// ---- Trello Sync ----
+
+function saveTrelloSettings() {
+    const key = document.getElementById('trelloApiKey').value.trim();
+    const token = document.getElementById('trelloToken').value.trim();
+    const listId = document.getElementById('trelloListId').value.trim();
+
+    if (!key || !token || !listId) {
+        alert('Please fill in all three Trello fields before saving.');
+        return;
+    }
+
+    localStorage.setItem('trelloApiKey', key);
+    localStorage.setItem('trelloToken', token);
+    localStorage.setItem('trelloListId', listId);
+    alert('✅ Trello settings saved!');
+}
+
+function openTrelloAuth() {
+    const key = document.getElementById('trelloApiKey').value.trim();
+    if (!key) {
+        alert('Enter your Trello API Key first.\n\nGet it from: https://trello.com/app-key');
+        return;
+    }
+    const authUrl = `https://trello.com/1/authorize?expiration=never&name=GymTracker&scope=read,write&response_type=token&key=${encodeURIComponent(key)}`;
+    window.open(authUrl, '_blank');
+}
+
+async function syncCalendarToTrello() {
+    const key = localStorage.getItem('trelloApiKey');
+    const token = localStorage.getItem('trelloToken');
+    const listId = localStorage.getItem('trelloListId');
+
+    if (!key || !token || !listId) {
+        alert('Please save your Trello settings first (API Key, Token, and List ID).');
+        return;
+    }
+
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const monthLabel = `${MONTH_NAMES[calendarMonth]} ${calendarYear}`;
+
+    // Collect all workout days for current calendar month
+    const dayMap = {};
+    exercises.forEach(ex => {
+        const userData = ex.users?.[currentUser];
+        if (!userData?.history) return;
+        userData.history.forEach(session => {
+            const d = new Date(session.date);
+            if (d.getFullYear() === calendarYear && d.getMonth() === calendarMonth) {
+                const dateKey = d.toDateString();
+                if (!dayMap[dateKey]) dayMap[dateKey] = { date: d, workouts: [] };
+                dayMap[dateKey].workouts.push({
+                    name: ex.name,
+                    category: ex.category,
+                    sets: session.sets,
+                    notes: session.notes || ''
+                });
+            }
+        });
+    });
+
+    const days = Object.values(dayMap).sort((a, b) => a.date - b.date);
+
+    if (!days.length) {
+        alert(`No workouts recorded for ${monthLabel}.`);
+        return;
+    }
+
+    const btn = document.getElementById('syncTrelloBtn');
+    btn.disabled = true;
+    btn.textContent = `⏳ Syncing ${days.length} day(s)...`;
+
+    let successCount = 0;
+    const errors = [];
+
+    for (const dayData of days) {
+        const dateStr = dayData.date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+        const totalSets = dayData.workouts.reduce((s, w) => s + w.sets.length, 0);
+        const totalVol = dayData.workouts.reduce((s, w) => s + w.sets.reduce((sv, set) => sv + set.reps * set.weight, 0), 0);
+
+        const cardName = `💪 ${currentUser} — ${dateStr}`;
+        const lines = [
+            `**${currentUser}'s Workout — ${dateStr}**`,
+            `Total: ${dayData.workouts.length} exercises | ${totalSets} sets | ${totalVol.toLocaleString()} kg volume`,
+            ''
+        ];
+        dayData.workouts.forEach(w => {
+            const setsStr = w.sets.map((s, i) => `Set ${i + 1}: ${s.reps} reps @ ${s.weight} kg`).join(' | ');
+            lines.push(`**${w.name}** (${w.category})`);
+            lines.push(setsStr);
+            if (w.notes) lines.push(`> ${w.notes}`);
+            lines.push('');
+        });
+
+        try {
+            const resp = await fetch('https://api.trello.com/1/cards', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    key,
+                    token,
+                    idList: listId,
+                    name: cardName,
+                    desc: lines.join('\n'),
+                    due: dayData.date.toISOString()
+                })
+            });
+
+            if (resp.ok) {
+                successCount++;
+            } else {
+                const err = await resp.json().catch(() => ({}));
+                errors.push(`${dateStr}: ${err.message || `HTTP ${resp.status}`}`);
+            }
+        } catch (err) {
+            errors.push(`${dateStr}: ${err.message}`);
+        }
+    }
+
+    btn.disabled = false;
+    btn.textContent = '🔄 Sync This Month to Trello';
+
+    if (errors.length) {
+        alert(`Synced ${successCount}/${days.length} days.\n\nErrors:\n${errors.join('\n')}`);
+    } else {
+        alert(`✅ Synced ${successCount} workout day(s) to Trello for ${monthLabel}!`);
+    }
+}

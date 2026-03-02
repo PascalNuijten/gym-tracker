@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gym Progress Tracker</title>
-    <link rel="stylesheet" href="styles.css?v=23.0">
+    <link rel="stylesheet" href="styles.css?v=23.1">
 </head>
 <body>
     <div class="container">
@@ -22,6 +22,7 @@
             <div class="user-actions">
                 <button id="addUserBtn" class="action-btn" title="Add New User">👤 Add User</button>
                 <button id="weeklySummaryBtn" class="action-btn" title="View Weekly Summary">📊 Weekly Summary</button>
+                <button id="calendarBtn" class="action-btn" title="Workout Calendar">📅 Calendar</button>
                 <button id="settingsBtn" class="action-btn" title="Settings">⚙️ Settings</button>
             </div>
         </header>
@@ -459,11 +460,59 @@
         </div>
     </div>
 
+    <!-- Calendar Modal -->
+    <div id="calendarModal" class="modal">
+        <div class="modal-content" style="max-width: 640px;">
+            <span class="close" onclick="document.getElementById('calendarModal').style.display='none'">&times;</span>
+            <h2>📅 Workout Calendar</h2>
+
+            <div class="calendar-nav">
+                <button class="cal-nav-btn" onclick="changeCalendarMonth(-1)">&#8249;</button>
+                <h3 id="calendarMonthTitle">Loading...</h3>
+                <button class="cal-nav-btn" onclick="changeCalendarMonth(1)">&#8250;</button>
+                <button class="cal-today-btn" onclick="goToTodayCalendar()">Today</button>
+            </div>
+
+            <div class="calendar-legend">
+                <span class="cal-legend-item"><span class="cal-dot dot-chest"></span>Chest</span>
+                <span class="cal-legend-item"><span class="cal-dot dot-back"></span>Back</span>
+                <span class="cal-legend-item"><span class="cal-dot dot-shoulders"></span>Shoulders</span>
+                <span class="cal-legend-item"><span class="cal-dot dot-legs"></span>Legs</span>
+                <span class="cal-legend-item"><span class="cal-dot dot-arms"></span>Arms</span>
+                <span class="cal-legend-item"><span class="cal-dot dot-core"></span>Core</span>
+            </div>
+
+            <div class="calendar-grid" id="calendarGrid">
+                <!-- Rendered by JS -->
+            </div>
+
+            <div id="calendarDayDetail" class="calendar-day-detail" style="display:none;"></div>
+
+            <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
+
+            <div class="calendar-trello-section">
+                <h4>🟦 Sync to Trello</h4>
+                <p style="font-size:0.85em;color:#666;margin-bottom:10px;">Export this month's workouts as Trello cards. You need a free Trello account.</p>
+                <div class="trello-inputs">
+                    <input type="text" id="trelloApiKey" placeholder="Trello API Key (from trello.com/app-key)" style="width:100%;margin-bottom:8px;">
+                    <input type="text" id="trelloToken" placeholder="Trello Token (generate after entering key)" style="width:100%;margin-bottom:8px;">
+                    <input type="text" id="trelloListId" placeholder="Trello List ID (see instructions below)" style="width:100%;margin-bottom:8px;">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button onclick="openTrelloAuth()" class="secondary-btn">🔑 Generate Token</button>
+                        <button onclick="saveTrelloSettings()" class="secondary-btn">💾 Save Settings</button>
+                    </div>
+                    <p style="font-size:0.8em;color:#888;margin-top:8px;">How to get List ID: Open your Trello board, click on a list menu (…) → Copy List Link. The ID is the part after "/l/" in the URL.</p>
+                </div>
+                <button id="syncTrelloBtn" onclick="syncCalendarToTrello()" class="primary-btn" style="width:100%;margin-top:12px;">🔄 Sync This Month to Trello</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <!-- Chart.js for progress visualization -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=23.0"></script>
+    <script src="app.js?v=23.1"></script>
 </body>
 </html>

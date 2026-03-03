@@ -8,8 +8,8 @@ const GEMINI_API_KEY = 'AIzaSyCy8L-GZkUhNfaoG3JQ3d26IBN1s8M12lU';
 
 // Model rotation: Only use models that actually exist and work
 const GEMINI_MODELS = [
-    'gemini-2.5-flash',           // 20 RPD
-    'gemini-2.5-flash-lite'       // 20 RPD
+    'gemini-1.5-flash',           // stable, widely available
+    'gemini-1.5-flash-latest'     // latest stable flash
 ];
 let currentModelIndex = parseInt(localStorage.getItem('gymTrackerModelIndex') || '0');
 
@@ -73,7 +73,7 @@ function hashString(str) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.3'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4031,7 +4031,18 @@ function setupFirebaseListeners() {
             // Load planned workouts and keep them in sync
             database.ref('plannedWorkouts').on('value', (snap) => {
                 const pd = snap.val();
-                plannedWorkouts = (pd && Array.isArray(pd)) ? pd : [];
+                if (!pd) {
+                    plannedWorkouts = [];
+                } else if (Array.isArray(pd)) {
+                    plannedWorkouts = pd.filter(Boolean);
+                } else if (typeof pd === 'object') {
+                    // Firebase can return an object with numeric keys instead of array
+                    plannedWorkouts = Object.values(pd).filter(v => v && v.id);
+                } else {
+                    plannedWorkouts = [];
+                }
+                // Check for unacknowledged invites after each sync
+                checkPendingInvites();
             });
         }, (error) => {
             console.error('Firebase read error:', error);
@@ -6630,7 +6641,7 @@ let currentPlanId = null;     // id of plan being edited (null = new)
 let currentPlanExercises = []; // [{name, category, plannedSets, plannedReps, plannedWeight}]
 let planMode = 'self'; // 'self' = manual exercise selection, 'ai' = AI-generated plan
 
-function planCalendarDay(day) {
+function planCalendarDay(day, forceAiMode = false) {
     const dateISO = `${calendarYear}-${String(calendarMonth + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     currentPlanDate = dateISO;
@@ -6641,10 +6652,23 @@ function planCalendarDay(day) {
     if (existing) {
         currentPlanId = existing.id;
         currentPlanExercises = JSON.parse(JSON.stringify(existing.exercises || []));
-        document.getElementById('planWorkoutNote').value = existing.note || '';
+        // Restore workout type
+        const typeSelect = document.getElementById('planWorkoutType');
+        if (typeSelect) {
+            const savedType = existing.workoutType || 'custom';
+            const opt = [...typeSelect.options].find(o => o.value === savedType);
+            typeSelect.value = opt ? savedType : 'custom';
+            typeSelect.dispatchEvent(new Event('change'));
+        }
+        document.getElementById('planWorkoutNote').value = existing.customNote || '';
+        // Show custom note input if type is custom
+        const noteInp = document.getElementById('planWorkoutNote');
+        if (noteInp) noteInp.style.display = (existing.workoutType === 'custom' || !existing.workoutType) ? 'block' : 'none';
         document.getElementById('deletePlanBtn').style.display = 'block';
     } else {
         currentPlanId = null;
+        const typeSelect = document.getElementById('planWorkoutType');
+        if (typeSelect) { typeSelect.value = ''; typeSelect.dispatchEvent(new Event('change')); }
         document.getElementById('planWorkoutNote').value = '';
         document.getElementById('deletePlanBtn').style.display = 'none';
     }
@@ -6664,7 +6688,7 @@ function planCalendarDay(day) {
     document.getElementById('planExerciseResults').style.display = 'none';
     document.getElementById('planExerciseInput').value = '';
     if (document.getElementById('planAIStatus')) { document.getElementById('planAIStatus').style.display = 'none'; }
-    setPlanMode('self');
+    setPlanMode(forceAiMode ? 'ai' : 'self');
     document.getElementById('planWorkoutModal').style.display = 'block';
 }
 
@@ -6762,10 +6786,23 @@ function setPlanMode(mode) {
     renderPlanExercises();
 }
 
+function onPlanTypeChange(select) {
+    const noteInput = document.getElementById('planWorkoutNote');
+    if (!noteInput) return;
+    noteInput.style.display = select.value === 'custom' ? 'block' : 'none';
+    if (select.value !== 'custom') noteInput.value = '';
+}
+
 function savePlannedWorkout() {
     if (!currentPlanDate) return;
 
+    const typeSelect = document.getElementById('planWorkoutType');
+    const workoutType = typeSelect ? typeSelect.value : 'custom';
     const note = document.getElementById('planWorkoutNote').value.trim();
+    // Use the type label as display name, fallback to custom note
+    const typeLabel = typeSelect ? (typeSelect.options[typeSelect.selectedIndex]?.text || '') : '';
+    const displayName = workoutType && workoutType !== 'custom' ? typeLabel : (note || 'Workout');
+
     const invitedChips = document.querySelectorAll('#planInviteUsers .plan-invite-chip.selected');
     const invitedUsers = Array.from(invitedChips).map(b => b.dataset.user);
 
@@ -6774,7 +6811,9 @@ function savePlannedWorkout() {
         date: currentPlanDate,
         createdBy: currentUser,
         invitedUsers,
-        note,
+        workoutType,
+        note: displayName,    // keep 'note' for backward compat / display
+        customNote: note,
         exercises: currentPlanExercises
     };
 
@@ -6786,7 +6825,12 @@ function savePlannedWorkout() {
     if (database) {
         database.ref('plannedWorkouts').set(plannedWorkouts)
             .then(() => console.log('✅ Plan saved to Firebase'))
-            .catch(err => console.error('Plan save failed:', err));
+            .catch(err => {
+                console.error('Plan save failed:', err);
+                alert(`⚠️ Plan could not be saved to the cloud: ${err.message}\nYour plan is saved locally but may not appear on other devices.`);
+            });
+    } else {
+        alert('⚠️ No database connection. Plan saved locally only.');
     }
 
     document.getElementById('planWorkoutModal').style.display = 'none';
@@ -6815,12 +6859,85 @@ function deletePlanByDate(dateISO) {
     renderCalendar();
 }
 
+// ==================== INVITE NOTIFICATIONS ====================
+
+function checkPendingInvites() {
+    if (!currentUser) return;
+    const ackKey = `inviteAck_${currentUser}`;
+    const acked = JSON.parse(localStorage.getItem(ackKey) || '[]');
+
+    const pending = plannedWorkouts.filter(p => {
+        if (p.createdBy === currentUser) return false; // own plan
+        if (!(p.invitedUsers || []).includes(currentUser)) return false; // not invited
+        if (acked.includes(String(p.id))) return false; // already acked
+        return true;
+    });
+
+    if (pending.length > 0) {
+        showInviteModal(pending);
+    }
+}
+
+function showInviteModal(pendingPlans) {
+    let modal = document.getElementById('inviteNotificationModal');
+    if (!modal) return;
+
+    const plan = pendingPlans[0]; // show one at a time
+    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const [y, m, d] = plan.date.split('-').map(Number);
+    const dateLabel = `${MONTH_NAMES[m - 1]} ${d}, ${y}`;
+    const planName = plan.note || plan.workoutType || 'Workout';
+
+    document.getElementById('inviteModalDate').textContent = dateLabel;
+    document.getElementById('inviteModalPlanName').textContent = planName;
+    document.getElementById('inviteModalCreator').textContent = plan.createdBy;
+    document.getElementById('inviteModalExercises').textContent =
+        (plan.exercises || []).map(ex => ex.name).join(', ') || 'No exercises listed yet';
+
+    // Store remaining pending on the modal for 'next' dismiss
+    modal.dataset.pendingIds = pendingPlans.map(p => p.id).join(',');
+    modal.dataset.currentPlanId = plan.id;
+    modal.dataset.currentPlanDate = plan.date;
+    modal.style.display = 'flex';
+}
+
+function dismissInvite(planId) {
+    const ackKey = `inviteAck_${currentUser}`;
+    const acked = JSON.parse(localStorage.getItem(ackKey) || '[]');
+    if (!acked.includes(String(planId))) acked.push(String(planId));
+    localStorage.setItem(ackKey, JSON.stringify(acked));
+
+    // Check if there are more pending
+    const modal = document.getElementById('inviteNotificationModal');
+    if (modal) modal.style.display = 'none';
+
+    // Re-check for remaining invites
+    checkPendingInvites();
+}
+
+function acceptInvite(planId, dateISO) {
+    dismissInvite(planId); // ack it first
+    // Navigate to the calendar and open that day
+    const [y, m, d] = dateISO.split('-').map(Number);
+    calendarYear  = y;
+    calendarMonth = m - 1;
+    renderCalendar();
+    setTimeout(() => showCalendarDay(d), 150);
+}
+
 // ==================== AI TRAINING PLAN GENERATOR ====================
 
 async function aiGeneratePlan() {
-    const note = document.getElementById('planWorkoutNote').value.trim();
-    if (!note) {
-        alert('Please enter a workout name first (e.g. "Chest Day", "Push Day", "Leg Day").');
+    const typeSelect = document.getElementById('planWorkoutType');
+    const workoutType = typeSelect ? typeSelect.value : 'custom';
+    const typeLabel = typeSelect ? (typeSelect.options[typeSelect.selectedIndex]?.text || '') : '';
+    const customNote = document.getElementById('planWorkoutNote').value.trim();
+    // Combine type + custom note for the AI
+    const trainingName = workoutType && workoutType !== 'custom'
+        ? typeLabel + (customNote ? ` (${customNote})` : '')
+        : (customNote || '');
+    if (!trainingName) {
+        alert('Please select a training type first.');
         return;
     }
     const numEl = document.getElementById('planNumExercises');
@@ -6844,17 +6961,23 @@ async function aiGeneratePlan() {
         const profile = getUserProfile(username);
         const profileStr = profile
             ? `${profile.height || '?'}cm, ${profile.weight || '?'}kg, ${profile.gender || ''}, ${profile.experience || ''} level, goal: ${profile.goal || 'general'}`
-            : 'No profile';
-        const hist = exercises
+            : 'No profile set';
+        // Include ALL exercises with history for this user (full breadth)
+        const allHistory = exercises
             .filter(ex => (ex.users?.[username]?.history?.length || 0) > 0)
-            .slice(0, 20)
             .map(ex => {
-                const sessions = ex.users[username].history.slice(-3);
+                const sessions = ex.users[username].history.slice(-5);
                 const maxW = Math.max(0, ...sessions.flatMap(s => s.sets.map(s2 => s2.weight)));
-                const avgR = sessions.flatMap(s => s.sets).reduce((a, s, _, arr) => a + s.reps / arr.length, 0);
-                return `${ex.name} (${ex.category}): max ${maxW}kg, avg ${Math.round(avgR)} reps`;
-            }).join('\n') || 'No training history';
-        return { profileStr, hist };
+                const lastSession = sessions[sessions.length - 1];
+                const lastAvgW = lastSession
+                    ? lastSession.sets.reduce((a, s) => a + s.weight, 0) / lastSession.sets.length
+                    : maxW;
+                const lastAvgR = lastSession
+                    ? lastSession.sets.reduce((a, s) => a + s.reps, 0) / lastSession.sets.length
+                    : 10;
+                return `${ex.name} (${ex.category}/${Array.isArray(ex.muscle) ? ex.muscle.join('+') : ex.muscle}): last avg ${lastAvgW.toFixed(1)}kg×${Math.round(lastAvgR)}reps, max ${maxW}kg`;
+            }).join('\n') || 'No training history yet — use conservative beginner weights';
+        return { profileStr, hist: allHistory };
     }
 
     const usersContext = allParticipants.map(u => {
@@ -6867,32 +6990,33 @@ async function aiGeneratePlan() {
 
     const prompt = `You are an expert strength coach. Create a ${numExercises}-exercise workout plan.
 
-WORKOUT NAME: "${note}"
-(Identify the type automatically — "chestday", "Chest Day", "chest training", "push" all mean chest/push day)
+TRAINING TYPE: "${trainingName}"
 
 PARTICIPANTS: ${allParticipants.join(', ')}
-${allParticipants.length > 1 ? '(Generate INDIVIDUAL weights & reps for each person based on THEIR history)\n' : ''}
-TRAINING DATA:
+${allParticipants.length > 1 ? '(You MUST generate INDIVIDUAL weights & reps for EACH person based on THEIR history below)\n' : ''}
+⚠️ CRITICAL RULES:
+1. ALWAYS use history data as primary source for weights/reps. DO NOT make up weights.
+2. For each exercise, check if a participant has history for it:
+   - HAS HISTORY → use their last session's avg weight + 2-5% progressive overload
+   - NO DIRECT HISTORY but similar exercises exist → estimate using real-world strength ratios (e.g. machine press 80% of barbel press)  
+   - NO DATA AT ALL → use weight=0 (participant fills in manually)
+3. Pick ${numExercises} exercises hitting DIFFERENT muscle sub-groups of "${trainingName}"
+   (e.g. chest day = flat press + incline + fly/cable + optional dips; leg day = squat + hinge + extension + curl)
+4. Prioritize exercises the user(s) ALREADY DO (from history below) — use their familiar exercises first
+5. Sets: 3-4 per exercise. Reps match their goal (strength=3-6, hypertrophy=8-12, endurance=12-20)
+
+COMPLETE TRAINING HISTORY + PERSONAL DATA:
 ${usersContext}
 
-RULES:
-1. Pick ${numExercises} exercises covering DIFFERENT muscle sub-groups of the identified workout type
-2. For each exercise & each participant:
-   - If they have DIRECT history with that exercise → add 2-5% progressive overload from their last session
-   - If NO direct history → estimate from similar same-muscle exercises they DO have data for
-   - If NO related data at all → suggest a safe beginner weight (or 0 if truly uncertain)
-3. Sets: typically 3-4. Reps: aligned with goal (strength=3-6, hypertrophy=8-12, endurance=15+)
-4. ALWAYS cover the full muscle group (e.g. chest day: flat + incline + fly/cable; leg day: squat + hinge + isolation)
-
-Respond ONLY with valid JSON — a list of exercise objects like this (replace <placeholders>):
+Respond ONLY with a valid JSON array (no other text):
 [
   {
-    "name": "<Exercise Name>",
+    "name": "<Exercise Name from history if possible>",
     "category": "<Category>",
     "muscle": "<Primary Muscle>",
     "plannedSets": <sets>,
-    "plannedReps": <reps>,
-    "plannedWeight": <weight for ${currentUser}>,
+    "plannedReps": <reps for ${currentUser}>,
+    "plannedWeight": <weight kg for ${currentUser}>,
     "perUserWeights": {${perUserWeightFields}},
     "perUserReps": {${perUserRepsFields}}
   }
@@ -7520,33 +7644,39 @@ function showCalendarDay(day) {
 
     // --- Plan section ---
     if (plan) {
+        const planTypeLabel = plan.note || (plan.workoutType && plan.workoutType !== 'custom' ? plan.workoutType : 'Planned Workout');
         html += `<div style="margin-top:${workouts.length ? '14px' : '0'};padding:10px 12px;background:rgba(102,126,234,0.06);border-radius:8px;border:1.5px dashed #667eea;">`;
-        html += `<strong>📋 Planned${plan.createdBy !== currentUser ? ` by ${plan.createdBy}` : ''}</strong>`;
-        if (plan.note) html += `<span style="color:#555;font-size:0.9em;"> — ${plan.note}</span>`;
+        html += `<strong>📋 ${planTypeLabel}</strong>`;
+        if (plan.createdBy !== currentUser) html += ` <span style="color:#888;font-size:0.85em;">by ${plan.createdBy}</span>`;
+        if (plan.customNote && plan.customNote !== plan.note) html += `<span style="color:#555;font-size:0.85em;"> — ${plan.customNote}</span>`;
         if ((plan.invitedUsers || []).length > 0) {
-            html += `<br><span style="font-size:0.82em;color:#888;">👥 ${[plan.createdBy, ...plan.invitedUsers].filter(u => u !== currentUser).join(', ')} also invited</span>`;
+            const others = [plan.createdBy, ...plan.invitedUsers].filter(u => u !== currentUser);
+            if (others.length) html += `<br><span style="font-size:0.82em;color:#888;">👥 With: ${others.join(', ')}</span>`;
         }
         if ((plan.exercises || []).length > 0) {
             html += `<ul style="margin:8px 0 4px;padding-left:18px;font-size:0.86em;color:#444;">`;
             plan.exercises.forEach(ex => {
+                const userW = ex.perUserWeights?.[currentUser] ?? ex.plannedWeight;
+                const userR = ex.perUserReps?.[currentUser] ?? ex.plannedReps;
                 let meta = '';
-                if (ex.plannedSets) meta += ` ${ex.plannedSets} sets`;
-                if (ex.plannedReps) meta += ` × ${ex.plannedReps} reps`;
-                if (ex.plannedWeight) meta += ` @ ${ex.plannedWeight}kg`;
+                if (ex.plannedSets) meta += ` ${ex.plannedSets}×`;
+                if (userR) meta += `${userR} reps`;
+                if (userW) meta += ` @ ${userW}kg`;
                 html += `<li><strong>${ex.name}</strong>${meta ? ` <span style="color:#888;">${meta.trim()}</span>` : ''}</li>`;
             });
             html += `</ul>`;
         }
         // Google Calendar link for plan
         const gcDateP = dateISO.replace(/-/g, '');
-        const gcTitleP = encodeURIComponent(`📋 ${plan.note || currentUser + ' Workout Plan'}`);
+        const gcTitleP = encodeURIComponent(`📋 ${planTypeLabel}`);
         const gcDetailsP = encodeURIComponent((plan.exercises || []).map(ex => ex.name).join('\n'));
         const gcUrlP = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${gcTitleP}&dates=${gcDateP}/${gcDateP}&details=${gcDetailsP}`;
         html += `<div style="display:flex;gap:10px;margin-top:8px;align-items:center;flex-wrap:wrap;">`;
         html += `<a href="${gcUrlP}" target="_blank" style="font-size:0.82em;color:#4285F4;text-decoration:none;">📅 Add to Google Calendar</a>`;
+        html += `<button onclick="planCalendarDay(${day}, true)" style="font-size:0.82em;background:linear-gradient(135deg,var(--btn-gradient-start),var(--btn-gradient-end));color:white;border:none;border-radius:5px;padding:4px 10px;cursor:pointer;font-weight:600;">🤖 Recreate with AI</button>`;
         if (plan.createdBy === currentUser) {
-            html += `<button onclick="planCalendarDay(${day})" style="font-size:0.82em;background:none;border:none;color:#667eea;cursor:pointer;padding:0;">✏️ Edit Plan</button>`;
-            html += `<button onclick="deletePlanByDate('${dateISO}')" style="font-size:0.82em;background:none;border:none;color:#e74c3c;cursor:pointer;padding:0;">🗑️ Delete Plan</button>`;
+            html += `<button onclick="planCalendarDay(${day})" style="font-size:0.82em;background:none;border:none;color:#667eea;cursor:pointer;padding:0;">✏️ Edit</button>`;
+            html += `<button onclick="deletePlanByDate('${dateISO}')" style="font-size:0.82em;background:none;border:none;color:#e74c3c;cursor:pointer;padding:0;">🗑️ Delete</button>`;
         }
         html += `</div></div>`;
     } else if (workouts.length > 0) {

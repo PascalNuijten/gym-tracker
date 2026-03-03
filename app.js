@@ -134,7 +134,7 @@ function hashString(str) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.7'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.8'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -1119,6 +1119,9 @@ function setupEventListeners() {
         if (groqInput) groqInput.value = getGroqApiKey();
         const geminiInput = document.getElementById('settingsGeminiKey');
         if (geminiInput) geminiInput.value = getGeminiApiKey();
+        // Database tools: only visible for Pascal
+        const dbSection = document.getElementById('dbToolsSection');
+        if (dbSection) dbSection.style.display = currentUser === 'Pascal' ? 'block' : 'none';
     });
     
     // Settings Modal Export/Restore Buttons
@@ -4696,7 +4699,7 @@ Format with HTML: Use <strong> for emphasis, <ul><li> for lists.`;
         
         // Fun fact (async - always AI-generated now)
         try {
-            const funFact = await generateFunFact(totalVolume, totalSets, period);
+            const funFact = await generateFunFact(totalVolume, totalSets, period, periodName, uniqueDays, uniqueExercises, sortedCategories);
             feedback += funFact;
         } catch (error) {
             console.error('Fun fact generation failed:', error);
@@ -5014,7 +5017,7 @@ function generateFeedback(period) {
     }, 1500);
 }
 
-async function generateFunFact(totalVolume, totalSets, period) {
+async function generateFunFact(totalVolume, totalSets, period, periodName, uniqueDays, uniqueExercises, sortedCategories) {
     // ALWAYS USE AI - No fallback to hardcoded facts
     if (!useRealAI) {
         return `<div class="fun-fact-box"><h5>🎉 Fun Fact</h5><p>Enable AI for personalized fun facts! 🤖</p></div>`;
@@ -5029,12 +5032,24 @@ User Profile:
 - ${userProfile.weight || 'Unknown'}kg bodyweight
 - ${userProfile.experience || 'Unknown'} experience level
 - Goal: ${userProfile.goal || 'General fitness'}` : '';
+
+    // Build period-specific training context
+    const pLabel = periodName || (period === 'day' ? 'Today' : period === 'week' ? 'This Week' : 'This Month');
+    const topMuscles = sortedCategories?.slice(0, 3).map(([cat]) => cat).join(', ') || '';
+    const sessionContext = period === 'day'
+        ? `today's workout: ${totalSets} sets, ${totalVolume.toLocaleString()}kg volume${topMuscles ? `, focusing on ${topMuscles}` : ''}`
+        : `${pLabel.toLowerCase()}: ${uniqueDays || 1} training day${(uniqueDays || 1) !== 1 ? 's' : ''}, ${uniqueExercises || '?'} exercises, ${totalSets} sets, ${totalVolume.toLocaleString()}kg total volume${topMuscles ? `, main muscles: ${topMuscles}` : ''}`;
     
     const prompt = `You are a fitness science expert. Generate ONE surprising and fascinating fitness or exercise science fact.
 
-The user just completed a workout (${totalSets} sets, ${totalVolume.toLocaleString()}kg total volume${profileContext ? `, ${userProfile?.goal || 'general fitness'} goal` : ''}).
+Training data for ${pLabel.toLowerCase()}: ${sessionContext}${profileContext ? `\n${profileContext}` : ''}.
 
-Choose a RANDOM topic from this variety (pick one you haven't used recently - be unpredictable!):
+IMPORTANT: Tailor the fun fact to the timeframe:
+- For TODAY → relate to today's session, post-workout recovery, or acute exercise physiology
+- For THIS WEEK → relate to weekly training volume, frequency consistency, or short-term adaptation
+- For THIS MONTH → relate to monthly progress, long-term adaptation, or development science
+
+Choose a RANDOM science angle (be unpredictable):
 - Muscle fiber science (fast-twitch vs slow-twitch, hypertrophy mechanisms)
 - Exercise physiology (VO2 max, lactate threshold, EPOC)
 - Recovery science (sleep, protein synthesis windows, supercompensation)
@@ -6897,36 +6912,33 @@ function renderPlanExercises() {
         const reps   = ex.perUserReps?.[currentUser]    ?? ex.plannedReps   ?? 10;
         const sets   = ex.plannedSets ?? 4;
 
-        // Build per-user weight badges for invited users (AI mode, read-only)
-        let invitedBadges = '';
-        if (!selfMode && ex.perUserWeights) {
-            const others = Object.entries(ex.perUserWeights)
-                .filter(([u]) => u !== currentUser)
-                .map(([u, w]) => {
-                    const r = ex.perUserReps?.[u] || reps;
-                    return `<span style="font-size:0.75em;background:#f0f4ff;border-radius:4px;padding:2px 6px;color:#555;">${u}: ${w}kg×${r}</span>`;
-                }).join(' ');
-            if (others) invitedBadges = `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">${others}</div>`;
-        }
+        // Look up exercise image from the database
+        const exerciseData = exercises.find(e => e.name === ex.name);
+        const imgUrl = exerciseData?.image || '';
+        const imgHtml = imgUrl ? `<img src="${imgUrl}" alt="${ex.name}" style="width:44px;height:44px;object-fit:cover;border-radius:7px;flex-shrink:0;" onerror="this.style.display='none'">` : '';
 
         return `
-        <div class="plan-exercise-item">
-            <span class="plan-ex-name">${ex.name} <span style="color:#aaa;font-size:0.78em;">${ex.category || ''}</span></span>
-            <div class="plan-exercise-meta">
-                <input class="plan-sets-input" type="number" min="1" max="20" value="${sets}" placeholder="sets"
-                    onchange="currentPlanExercises[${i}].plannedSets=+this.value" title="Sets">
-                <span style="font-size:0.8em;color:#888;">sets</span>
-                ${!selfMode ? `
-                <input class="plan-sets-input" type="number" min="1" max="100" value="${reps}" placeholder="reps"
-                    onchange="currentPlanExercises[${i}].plannedReps=+this.value;if(currentPlanExercises[${i}].perUserReps)currentPlanExercises[${i}].perUserReps['${currentUser}']=+this.value;" title="Reps">
-                <span style="font-size:0.8em;color:#888;">reps</span>
-                <input class="plan-sets-input" style="width:54px;" type="number" min="0" step="0.5" value="${weight}" placeholder="kg"
-                    onchange="currentPlanExercises[${i}].plannedWeight=+this.value;if(currentPlanExercises[${i}].perUserWeights)currentPlanExercises[${i}].perUserWeights['${currentUser}']=+this.value;" title="Weight (kg)">
-                <span style="font-size:0.8em;color:#888;">kg</span>
-                ` : `<span style="font-size:0.78em;color:#aaa;font-style:italic;">AI suggests at workout time</span>`}
-                <button onclick="removePlanExercise(${i})" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:1em;padding:0 4px;">✕</button>
+        <div class="plan-exercise-item" style="display:flex;align-items:center;gap:8px;">
+            ${imgHtml}
+            <div style="flex:1;min-width:0;">
+                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;">
+                    <span class="plan-ex-name" style="font-weight:600;">${ex.name} <span style="color:#aaa;font-size:0.78em;">${ex.category || ''}</span></span>
+                    <button onclick="removePlanExercise(${i})" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:1em;padding:0 4px;">✕</button>
+                </div>
+                <div class="plan-exercise-meta" style="margin-top:4px;">
+                    <input class="plan-sets-input" type="number" min="1" max="20" value="${sets}" placeholder="sets"
+                        onchange="currentPlanExercises[${i}].plannedSets=+this.value" title="Sets">
+                    <span style="font-size:0.8em;color:#888;">sets</span>
+                    ${!selfMode ? `
+                    <input class="plan-sets-input" type="number" min="1" max="100" value="${reps}" placeholder="reps"
+                        onchange="currentPlanExercises[${i}].plannedReps=+this.value;if(currentPlanExercises[${i}].perUserReps)currentPlanExercises[${i}].perUserReps['${currentUser}']=+this.value;" title="Reps">
+                    <span style="font-size:0.8em;color:#888;">reps</span>
+                    <input class="plan-sets-input" style="width:54px;" type="number" min="0" step="0.5" value="${weight}" placeholder="kg"
+                        onchange="currentPlanExercises[${i}].plannedWeight=+this.value;if(currentPlanExercises[${i}].perUserWeights)currentPlanExercises[${i}].perUserWeights['${currentUser}']=+this.value;" title="Weight (kg)">
+                    <span style="font-size:0.8em;color:#888;">kg</span>
+                    ` : `<span style="font-size:0.78em;color:#aaa;font-style:italic;">AI suggests at workout time</span>`}
+                </div>
             </div>
-            ${invitedBadges}
         </div>`;
     }).join('');
 }
@@ -7398,19 +7410,18 @@ async function aiFixAllMuscles() {
         return;
     }
 
-    // Only process exercises that genuinely lack muscle data
-    const toFix = exercises.filter(ex =>
-        !ex.muscle || (Array.isArray(ex.muscle) ? ex.muscle.length === 0 : ex.muscle.trim() === '')
-    );
+    // Check ALL exercises — AI will verify and correct any mistakes too
+    const toFix = exercises;
 
     if (toFix.length === 0) {
-        statusEl.textContent = '✅ All exercises already have muscle group data — nothing to fix!';
+        statusEl.textContent = '✅ No exercises in database!';
         return;
     }
 
     const estMinutes = Math.ceil((toFix.length * 6.5) / 60);
     const confirmed = confirm(
-        `AI will fix muscle groups for ${toFix.length} exercises that are missing data.\n\n` +
+        `AI will verify AND correct muscle/category data for ALL ${toFix.length} exercises.\n\n` +
+        `Exercises with correct data will be confirmed quickly.\n` +
         `To avoid API rate limits, there is a 6-second delay between each call.\n` +
         `Estimated time: ~${estMinutes} minute${estMinutes > 1 ? 's' : ''}.\n\nProceed?`
     );
@@ -7425,11 +7436,16 @@ async function aiFixAllMuscles() {
         const pct = Math.round(((i + 1) / toFix.length) * 100);
         statusEl.innerHTML = `🤖 <strong>${i + 1}/${toFix.length}</strong> — Analysing: <em>${ex.name}</em>&nbsp;&nbsp;<span style="color:#aaa;font-size:0.88em;">(${pct}%)</span>`;
 
-        const prompt = `You are a fitness expert. For the exercise "${ex.name}", respond with ONLY valid JSON (no other text):
-{"muscles":["Muscle1","Muscle2"],"category":"Category"}
+        const prompt = `You are a fitness expert. For the exercise "${ex.name}", verify and if necessary correct the muscle group classification.
+
+Current data: category="${ex.category || 'none'}", muscles=${JSON.stringify(Array.isArray(ex.muscle) ? ex.muscle : (ex.muscle ? [ex.muscle] : []))}
+
+Respond with ONLY valid JSON (no other text):
+{"muscles":["Muscle1","Muscle2"],"category":"Category","changed":true}
 
 muscles: pick 1-3 from [Chest, Upper Chest, Lower Chest, Back, Lats, Traps, Lower Back, Shoulders, Front Delts, Side Delts, Rear Delts, Biceps, Triceps, Forearms, Quads, Hamstrings, Glutes, Calves, Abs, Obliques, Core]
-category: one of [Chest, Upper Back, Lower Back, Laterals, Shoulders, Biceps, Triceps, Abdominals, Legs]`;
+category: one of [Chest, Upper Back, Lower Back, Laterals, Shoulders, Biceps, Triceps, Abdominals, Legs]
+If the current data is already correct, return it as-is with changed:false. Only set changed:true if you are correcting a mistake.`;
 
         let success = false;
         let attempts = 0;
@@ -7445,7 +7461,12 @@ category: one of [Chest, Upper Back, Lower Back, Laterals, Shoulders, Biceps, Tr
                         if (Array.isArray(data.muscles) && data.muscles.length > 0) {
                             ex.muscle = data.muscles;
                             if (data.category) ex.category = data.category;
-                            fixed++;
+                            if (data.changed) {
+                                fixed++;
+                                console.log(`✅ Corrected: ${ex.name} → ${data.muscles.join(', ')} (${data.category})`);
+                            } else {
+                                skipped++; // correct, no change needed
+                            }
                             consecutiveErrors = 0;
                             success = true;
                         }
@@ -7493,7 +7514,7 @@ category: one of [Chest, Upper Back, Lower Back, Laterals, Shoulders, Biceps, Tr
 
     saveToFirebase();
     renderExercises();
-    statusEl.innerHTML = `✅ Done! Updated <strong>${fixed}</strong> exercises${skipped ? `, <span style="color:#e67e22;">${skipped} skipped</span>` : ''}. All saved!`;
+    statusEl.innerHTML = `✅ Done! Corrected <strong>${fixed}</strong> exercise${fixed !== 1 ? 's' : ''}${skipped ? ` &mdash; <span style="color:#27ae60">${skipped} already correct</span>` : ''}. All saved!`;
 }
 
 // ==================== TRELLO AUTO-SYNC ====================
@@ -7829,17 +7850,22 @@ function showCalendarDay(day) {
             if (others.length) html += `<br><span style="font-size:0.82em;color:#888;">👥 With: ${others.join(', ')}</span>`;
         }
         if ((plan.exercises || []).length > 0) {
-            html += `<ul style="margin:8px 0 4px;padding-left:18px;font-size:0.86em;color:#444;">`;
+            html += `<div style="margin:8px 0 4px;display:flex;flex-direction:column;gap:5px;">`;
             plan.exercises.forEach(ex => {
                 const userW = ex.perUserWeights?.[currentUser] ?? ex.plannedWeight;
                 const userR = ex.perUserReps?.[currentUser] ?? ex.plannedReps;
+                const dbEx = exercises.find(e => e.name === ex.name);
+                const imgUrl = dbEx?.image || '';
                 let meta = '';
-                if (ex.plannedSets) meta += ` ${ex.plannedSets}×`;
+                if (ex.plannedSets) meta += `${ex.plannedSets}× `;
                 if (userR) meta += `${userR} reps`;
                 if (userW) meta += ` @ ${userW}kg`;
-                html += `<li><strong>${ex.name}</strong>${meta ? ` <span style="color:#888;">${meta.trim()}</span>` : ''}</li>`;
+                html += `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,0.05);">`;
+                if (imgUrl) html += `<img src="${imgUrl}" alt="${ex.name}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">`;
+                html += `<div style="flex:1;font-size:0.86em;color:#444;"><strong>${ex.name}</strong>${meta ? `<br><span style="color:#667eea;font-size:0.9em;">${meta.trim()}</span>` : ''}</div>`;
+                html += `</div>`;
             });
-            html += `</ul>`;
+            html += `</div>`;
         }
         // Google Calendar link for plan
         const gcDateP = dateISO.replace(/-/g, '');

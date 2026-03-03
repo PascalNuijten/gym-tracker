@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gym Progress Tracker</title>
-    <link rel="stylesheet" href="styles.css?v=23.3.8">
+    <link rel="stylesheet" href="styles.css?v=23.3.9">
 </head>
 <body>
     <div class="container">
@@ -496,6 +496,7 @@
                 <p style="font-size:0.85em;color:#666;margin-bottom:15px;">Tools to clean up and improve exercise data.</p>
                 <div style="display:flex;flex-direction:column;gap:10px;">
                     <button onclick="cleanupDatabase()" class="secondary-btn" style="padding:12px;">🧹 Clean Up — Remove exercises I've never done</button>
+                    <button onclick="cleanupPlaceholderImages()" class="secondary-btn" style="padding:12px;">🖼️ Fix Broken Image URLs — Clear via.placeholder.com entries</button>
                     <button onclick="aiFixAllMuscles()" class="secondary-btn" style="padding:12px;">🤖 AI Fix All Muscle Groups</button>
                 </div>
                 <div id="dbToolsStatus" style="margin-top:12px;font-size:0.88em;color:#555;"></div>
@@ -688,6 +689,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <!-- Chart.js for progress visualization -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=23.3.8"></script>
+    <script src="app.js?v=23.3.9"></script>
 </body>
 </html>

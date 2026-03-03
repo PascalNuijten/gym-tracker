@@ -132,9 +132,16 @@ function hashString(str) {
     return hash.toString(36);
 }
 
+// Returns true only for real, usable image URLs (excludes via.placeholder.com and empties)
+function isUsableImage(url) {
+    return !!(url && typeof url === 'string' && url.trim() &&
+        !url.includes('via.placeholder.com') &&
+        !url.includes('placeholder.com'));
+}
+
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.8'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.9'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -2888,7 +2895,7 @@ function displayRoutineModal(routines) {
                     <div class="routine-exercise">
                         <div class="routine-ex-header">
                             <span class="routine-ex-number">${idx + 1}</span>
-                            ${ex.image ? `<img src="${ex.image}" alt="${ex.name}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 8px; margin-right: 12px;">` : ''}
+                            ${isUsableImage(ex.image) ? `<img src="${ex.image}" alt="${ex.name}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 8px; margin-right: 12px;" onerror="this.onerror=null;this.style.display='none';">` : ''}
                             <div>
                                 <div class="routine-ex-name">${ex.name}</div>
                                 <div class="routine-ex-muscle">${ex.category} - ${ex.muscle}</div>
@@ -3424,9 +3431,9 @@ function renderExercises() {
         
         return `
             <div class="exercise-card">
-                ${exercise.image ? 
-                    `<img src="${exercise.image}" alt="${exercise.name}" class="exercise-image" onerror="this.src='https://via.placeholder.com/400x180/667eea/ffffff?text=${encodeURIComponent(exercise.name)}'">` :
-                    `<img src="https://via.placeholder.com/400x180/667eea/ffffff?text=${encodeURIComponent(exercise.name)}" alt="${exercise.name}" class="exercise-image">`
+                ${isUsableImage(exercise.image) ? 
+                    `<img src="${exercise.image}" alt="${exercise.name}" class="exercise-image" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.style.display='flex');"><div class="exercise-image exercise-image-placeholder" style="display:none;align-items:center;justify-content:center;background:linear-gradient(135deg,#667eea22,#764ba222);color:#667eea;font-size:2em;">💪</div>` :
+                    `<div class="exercise-image exercise-image-placeholder" style="display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#667eea22,#764ba222);color:#667eea;font-size:2em;">💪</div>`
                 }
                 <div class="exercise-content">
                     <div class="exercise-header">
@@ -6915,7 +6922,7 @@ function renderPlanExercises() {
         // Look up exercise image from the database
         const exerciseData = exercises.find(e => e.name === ex.name);
         const imgUrl = exerciseData?.image || '';
-        const imgHtml = imgUrl ? `<img src="${imgUrl}" alt="${ex.name}" style="width:44px;height:44px;object-fit:cover;border-radius:7px;flex-shrink:0;" onerror="this.style.display='none'">` : '';
+        const imgHtml = isUsableImage(imgUrl) ? `<img src="${imgUrl}" alt="${ex.name}" style="width:44px;height:44px;object-fit:cover;border-radius:7px;flex-shrink:0;" onerror="this.onerror=null;this.style.display='none';">` : '';
 
         return `
         <div class="plan-exercise-item" style="display:flex;align-items:center;gap:8px;">
@@ -7408,6 +7415,19 @@ function cleanupDatabase() {
     statusEl.innerHTML = `✅ Deleted <strong>${unused.length}</strong> exercises. Database cleaned up!`;
 }
 
+function cleanupPlaceholderImages() {
+    const statusEl = document.getElementById('dbToolsStatus');
+    const broken = exercises.filter(ex => ex.image && !isUsableImage(ex.image));
+    if (broken.length === 0) {
+        statusEl.textContent = '✅ No broken placeholder image URLs found!';
+        return;
+    }
+    broken.forEach(ex => { ex.image = ''; });
+    saveToFirebase();
+    renderExercises();
+    statusEl.innerHTML = `✅ Cleared broken image URLs from <strong>${broken.length}</strong> exercises. Console errors will stop now.`;
+}
+
 async function aiFixAllMuscles() {
     const statusEl = document.getElementById('dbToolsStatus');
 
@@ -7867,8 +7887,7 @@ function showCalendarDay(day) {
                 if (userR) meta += `${userR} reps`;
                 if (userW) meta += ` @ ${userW}kg`;
                 html += `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,0.05);">`;
-                if (imgUrl) html += `<img src="${imgUrl}" alt="${ex.name}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.style.display='none'">`;
-                html += `<div style="flex:1;font-size:0.86em;color:#444;"><strong>${ex.name}</strong>${meta ? `<br><span style="color:#667eea;font-size:0.9em;">${meta.trim()}</span>` : ''}</div>`;
+                if (isUsableImage(imgUrl)) html += `<img src="${imgUrl}" alt="${ex.name}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.onerror=null;this.style.display='none';">`;                html += `<div style="flex:1;font-size:0.86em;color:#444;"><strong>${ex.name}</strong>${meta ? `<br><span style="color:#667eea;font-size:0.9em;">${meta.trim()}</span>` : ''}</div>`;
                 html += `</div>`;
             });
             html += `</div>`;

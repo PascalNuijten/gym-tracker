@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gym Progress Tracker</title>
-    <link rel="stylesheet" href="styles.css?v=23.3.3">
+    <link rel="stylesheet" href="styles.css?v=23.3.4">
 </head>
 <body>
     <div class="container">
@@ -260,6 +260,17 @@
                 <div class="form-group">
                     <label for="workoutNotes">Additional Notes (optional)</label>
                     <textarea id="workoutNotes" rows="2" placeholder="How did it feel? Any observations?"></textarea>
+                </div>
+
+                <div class="form-row" style="gap:12px;">
+                    <div class="form-group" style="flex:1;">
+                        <label for="workoutStartTime">Start time <span style="color:#aaa;font-weight:400;font-size:0.85em;">(optional)</span></label>
+                        <input type="time" id="workoutStartTime">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label for="workoutEndTime">End time <span style="color:#aaa;font-weight:400;font-size:0.85em;">(optional)</span></label>
+                        <input type="time" id="workoutEndTime">
+                    </div>
                 </div>
 
                 <div class="form-actions">
@@ -574,6 +585,17 @@
                 <div id="planInviteUsers" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;"></div>
             </div>
 
+            <div class="form-row" style="gap:12px;">
+                <div class="form-group" style="flex:1;">
+                    <label for="planStartTime">Planned start <span style="color:#aaa;font-weight:400;font-size:0.85em;">(optional)</span></label>
+                    <input type="time" id="planStartTime">
+                </div>
+                <div class="form-group" style="flex:1;">
+                    <label for="planEndTime">Planned end <span style="color:#aaa;font-weight:400;font-size:0.85em;">(optional)</span></label>
+                    <input type="time" id="planEndTime">
+                </div>
+            </div>
+
             <!-- AI mode section (hidden by default) -->
             <div id="planAISection" style="display:none;">
                 <div class="form-group" style="margin-bottom:10px;">
@@ -625,6 +647,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <!-- Chart.js for progress visualization -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=23.3.3"></script>
+    <script src="app.js?v=23.3.4"></script>
 </body>
 </html>

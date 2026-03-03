@@ -6,10 +6,11 @@
 // Add HTTP referrer restrictions: https://pascalnuijten.github.io/*
 const GEMINI_API_KEY = 'AIzaSyCy8L-GZkUhNfaoG3JQ3d26IBN1s8M12lU';
 
-// Model rotation: Only use models that actually exist and work
+// Model rotation: Use current free-tier Gemini models
 const GEMINI_MODELS = [
-    'gemini-1.5-flash',           // stable, widely available
-    'gemini-1.5-flash-latest'     // latest stable flash
+    'gemini-2.0-flash',           // current free-tier model (2025+)
+    'gemini-2.0-flash-lite',      // lighter fallback
+    'gemini-1.5-flash'            // legacy fallback
 ];
 let currentModelIndex = parseInt(localStorage.getItem('gymTrackerModelIndex') || '0');
 
@@ -73,7 +74,7 @@ function hashString(str) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.3'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.4'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -263,9 +264,9 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
                 const error = JSON.parse(errorText);
                 console.error('Gemini API error:', error);
                 
-                // If 429 quota exceeded, try next model automatically
-                if (error.error?.code === 429) {
-                    console.warn('⚠️ Model quota exceeded, trying next model...');
+                // If 429 quota exceeded OR 403 permission error, try next model automatically
+                if (error.error?.code === 429 || response.status === 403 || response.status === 404) {
+                    console.warn(`⚠️ Model error (${response.status}), trying next model...`);
                     // Try up to 2 more models
                     for (let i = 0; i < 2; i++) {
                         try {
@@ -1983,10 +1984,14 @@ function saveWorkout() {
     }
     
     // Add new workout session
+    const startTimeVal = document.getElementById('workoutStartTime')?.value || null;
+    const endTimeVal   = document.getElementById('workoutEndTime')?.value || null;
     const session = {
         date: new Date().toISOString(),
         sets: sets,
-        notes: notes
+        notes: notes,
+        startTime: startTimeVal || undefined,
+        endTime:   endTimeVal   || undefined
     };
     
     exercise.users[currentUser].history.push(session);
@@ -5380,8 +5385,16 @@ function openWorkoutModalForExercise(exerciseId, isFromCamera = false) {
         });
     }
     
-    // Clear notes
+    // Clear notes and times
     document.getElementById('workoutNotes').value = '';
+    // Auto-fill start time with current time
+    const stInput = document.getElementById('workoutStartTime');
+    const etInput = document.getElementById('workoutEndTime');
+    if (stInput) {
+        const now = new Date();
+        stInput.value = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    }
+    if (etInput) etInput.value = '';
     
     workoutModal.style.display = 'block';
 }
@@ -6664,12 +6677,21 @@ function planCalendarDay(day, forceAiMode = false) {
         // Show custom note input if type is custom
         const noteInp = document.getElementById('planWorkoutNote');
         if (noteInp) noteInp.style.display = (existing.workoutType === 'custom' || !existing.workoutType) ? 'block' : 'none';
+        // Restore times
+        const stEl = document.getElementById('planStartTime');
+        const etEl = document.getElementById('planEndTime');
+        if (stEl) stEl.value = existing.startTime || '';
+        if (etEl) etEl.value = existing.endTime || '';
         document.getElementById('deletePlanBtn').style.display = 'block';
     } else {
         currentPlanId = null;
         const typeSelect = document.getElementById('planWorkoutType');
         if (typeSelect) { typeSelect.value = ''; typeSelect.dispatchEvent(new Event('change')); }
         document.getElementById('planWorkoutNote').value = '';
+        const stEl2 = document.getElementById('planStartTime');
+        const etEl2 = document.getElementById('planEndTime');
+        if (stEl2) stEl2.value = '';
+        if (etEl2) etEl2.value = '';
         document.getElementById('deletePlanBtn').style.display = 'none';
     }
 
@@ -6806,6 +6828,9 @@ function savePlannedWorkout() {
     const invitedChips = document.querySelectorAll('#planInviteUsers .plan-invite-chip.selected');
     const invitedUsers = Array.from(invitedChips).map(b => b.dataset.user);
 
+    const planStartTime = document.getElementById('planStartTime')?.value || undefined;
+    const planEndTime   = document.getElementById('planEndTime')?.value || undefined;
+
     const plan = {
         id: currentPlanId || Date.now(),
         date: currentPlanDate,
@@ -6814,6 +6839,8 @@ function savePlannedWorkout() {
         workoutType,
         note: displayName,    // keep 'note' for backward compat / display
         customNote: note,
+        startTime: planStartTime,
+        endTime: planEndTime,
         exercises: currentPlanExercises
     };
 
@@ -7596,7 +7623,7 @@ function showCalendarDay(day) {
         userData.history.forEach(session => {
             const d = new Date(session.date);
             if (d.getFullYear() === calendarYear && d.getMonth() === calendarMonth && d.getDate() === day) {
-                workouts.push({ name: ex.name, category: ex.category, muscle: ex.muscle, sets: session.sets, notes: session.notes || '' });
+                workouts.push({ name: ex.name, category: ex.category, muscle: ex.muscle, sets: session.sets, notes: session.notes || '', startTime: session.startTime, endTime: session.endTime });
             }
         });
     });
@@ -7618,7 +7645,14 @@ function showCalendarDay(day) {
     if (workouts.length > 0) {
         const totalSets = workouts.reduce((s, w) => s + w.sets.length, 0);
         const totalVol = workouts.reduce((s, w) => s + w.sets.reduce((sv, set) => sv + (set.reps * set.weight), 0), 0);
-        html += `<p style="color:#666;font-size:0.88em;margin-bottom:8px;">✅ ${workouts.length} exercise${workouts.length > 1 ? 's' : ''} · ${totalSets} sets · ${totalVol.toLocaleString()} kg volume</p>`;
+        // Derive time range from any session that has it
+        const anyStart = workouts.find(w => w.startTime)?.startTime;
+        const anyEnd   = workouts.find(w => w.endTime)?.endTime;
+        let timeStr = '';
+        if (anyStart || anyEnd) {
+            timeStr = ' · ⏱ ' + (anyStart || '?') + ' – ' + (anyEnd || '?');
+        }
+        html += `<p style="color:#666;font-size:0.88em;margin-bottom:8px;">✅ ${workouts.length} exercise${workouts.length > 1 ? 's' : ''} · ${totalSets} sets · ${totalVol.toLocaleString()} kg volume${timeStr}</p>`;
 
         workouts.forEach(w => {
             const bestSet = w.sets.reduce((best, s) => s.weight > best.weight ? s : best, w.sets[0]);
@@ -7649,6 +7683,11 @@ function showCalendarDay(day) {
         html += `<strong>📋 ${planTypeLabel}</strong>`;
         if (plan.createdBy !== currentUser) html += ` <span style="color:#888;font-size:0.85em;">by ${plan.createdBy}</span>`;
         if (plan.customNote && plan.customNote !== plan.note) html += `<span style="color:#555;font-size:0.85em;"> — ${plan.customNote}</span>`;
+        // Show planned time if set
+        if (plan.startTime || plan.endTime) {
+            const tRange = (plan.startTime || '?') + ' – ' + (plan.endTime || '?');
+            html += `<span style="color:#667eea;font-size:0.85em;margin-left:8px;">⏱ ${tRange}</span>`;
+        }
         if ((plan.invitedUsers || []).length > 0) {
             const others = [plan.createdBy, ...plan.invitedUsers].filter(u => u !== currentUser);
             if (others.length) html += `<br><span style="font-size:0.82em;color:#888;">👥 With: ${others.join(', ')}</span>`;

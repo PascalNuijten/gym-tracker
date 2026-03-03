@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gym Progress Tracker</title>
-    <link rel="stylesheet" href="styles.css?v=23.3.6">
+    <link rel="stylesheet" href="styles.css?v=23.3.7">
 </head>
 <body>
     <div class="container">
@@ -375,15 +375,24 @@
             <span class="close" onclick="document.getElementById('settingsModal').style.display='none'">&times;</span>
             <h2>⚙️ Settings - <span id="settingsUserName"></span></h2>
 
-            <!-- Gemini API Key -->
+            <!-- AI Keys -->
             <div style="background:#f0f4ff;border:1.5px solid #c7d2fe;border-radius:10px;padding:16px 18px;margin-bottom:24px;">
-                <h3 style="margin:0 0 6px;font-size:1em;">🤖 Gemini AI Key</h3>
-                <p style="font-size:0.83em;color:#555;margin:0 0 10px;">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#667eea;">aistudio.google.com/apikey</a></p>
-                <input type="password" id="settingsGeminiKey" placeholder="AIza…" autocomplete="off" style="width:100%;padding:9px 12px;border:1.5px solid #c7d2fe;border-radius:7px;font-size:0.95em;margin-bottom:9px;box-sizing:border-box;">
-                <div style="display:flex;gap:8px;">
-                    <button onclick="saveSettingsGeminiKey()" class="primary-btn" style="flex:1;padding:10px;">💾 Save API Key</button>
-                    <button onclick="clearAllModelQuota();alert('\u2705 Quota flags cleared — all models will be tried again.');" class="secondary-btn" style="flex:0 0 auto;padding:10px 14px;font-size:0.85em;" title="Clear daily quota exhaustion flags so all models are retried">🔄 Reset quota</button>
-                </div>
+                <h3 style="margin:0 0 6px;font-size:1em;">🤖 AI Keys</h3>
+
+                <!-- Groq (required) -->
+                <p style="font-size:0.83em;color:#555;margin:0 0 6px;"><strong>Groq</strong> (required) — free 14,400 req/day at <a href="https://console.groq.com" target="_blank" style="color:#667eea;">console.groq.com</a></p>
+                <input type="password" id="settingsGroqKey" placeholder="gsk_…" autocomplete="off" style="width:100%;padding:9px 12px;border:1.5px solid #c7d2fe;border-radius:7px;font-size:0.95em;margin-bottom:9px;box-sizing:border-box;">
+                <button onclick="saveSettingsGroqKey()" class="primary-btn" style="width:100%;padding:10px;margin-bottom:14px;">💾 Save Groq Key</button>
+
+                <!-- Gemini (optional fallback) -->
+                <details style="margin-bottom:10px;">
+                    <summary style="font-size:0.83em;color:#555;cursor:pointer;margin-bottom:8px;"><strong>Gemini fallback key</strong> (optional — used for image AI &amp; when Groq quota runs out)</summary>
+                    <p style="font-size:0.82em;color:#777;margin:6px 0 6px;">Get at <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#667eea;">aistudio.google.com/apikey</a></p>
+                    <input type="password" id="settingsGeminiKey" placeholder="AIza…" autocomplete="off" style="width:100%;padding:9px 12px;border:1.5px solid #c7d2fe;border-radius:7px;font-size:0.95em;margin-bottom:9px;box-sizing:border-box;">
+                    <button onclick="saveSettingsGeminiKey()" class="primary-btn" style="width:100%;padding:10px;">💾 Save Gemini Key</button>
+                </details>
+
+                <button onclick="clearAllModelQuota();alert('\u2705 Quota flags cleared — all models will be tried again.');" class="secondary-btn" style="width:100%;padding:10px;font-size:0.85em;" title="Clear daily quota exhaustion flags so all models are retried">🔄 Reset quota</button>
             </div>
 
             <div style="margin-bottom: 30px;">
@@ -656,20 +665,21 @@
     <!-- Blocking API Key Modal -->
     <div id="apiKeyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;padding:16px;">
         <div style="background:#fff;border-radius:16px;padding:30px 24px;max-width:440px;width:100%;box-shadow:0 12px 60px rgba(0,0,0,0.3);">
-            <div style="font-size:2.5em;text-align:center;margin-bottom:8px;">🤖</div>
-            <h2 style="margin:0 0 8px;text-align:center;font-size:1.25em;">Gemini API Key Required</h2>
-            <p style="color:#555;font-size:0.9em;text-align:center;margin:0 0 20px;">This app uses Google Gemini AI for smart features. You need a free API key to continue.</p>
+            <div style="font-size:2.5em;text-align:center;margin-bottom:8px;">⚡</div>
+            <h2 style="margin:0 0 8px;text-align:center;font-size:1.25em;">Groq API Key Required</h2>
+            <p style="color:#555;font-size:0.9em;text-align:center;margin:0 0 20px;">This app uses <strong>Groq AI</strong> (14,400 free requests/day) for smart features. You need a free API key to continue.</p>
             <ol style="font-size:0.88em;color:#444;line-height:1.8;margin:0 0 18px;padding-left:18px;">
-                <li>Go to <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#667eea;font-weight:600;">aistudio.google.com/apikey</a></li>
+                <li>Go to <a href="https://console.groq.com" target="_blank" style="color:#667eea;font-weight:600;">console.groq.com</a></li>
+                <li>Sign in (GitHub login works) and go to <strong>API Keys</strong></li>
                 <li>Click <strong>"Create API key"</strong></li>
                 <li>Copy it and paste it below</li>
             </ol>
-            <input type="text" id="apiKeyInput" placeholder="Paste your API key here (AIza…)" autocomplete="off"
+            <input type="text" id="apiKeyInput" placeholder="Paste your Groq key here (gsk_…)" autocomplete="off"
                 style="width:100%;padding:11px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:0.95em;margin-bottom:8px;box-sizing:border-box;"
                 onkeydown="if(event.key==='Enter')validateAndSaveApiKey()">
             <div id="apiKeyError" style="color:#e74c3c;font-size:0.83em;min-height:18px;margin-bottom:10px;"></div>
             <button onclick="validateAndSaveApiKey()" style="width:100%;padding:13px;background:linear-gradient(135deg,var(--btn-gradient-start),var(--btn-gradient-end));color:#fff;border:none;border-radius:9px;font-weight:700;font-size:1em;cursor:pointer;">✅ Save & Continue</button>
-            <p style="font-size:0.78em;color:#aaa;text-align:center;margin:10px 0 0;">Your key is stored locally in your browser only — never sent anywhere except Google.</p>
+            <p style="font-size:0.78em;color:#aaa;text-align:center;margin:10px 0 0;">Your key is stored locally in your browser only — never sent to anyone except Groq.</p>
         </div>
     </div>
 
@@ -678,6 +688,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <!-- Chart.js for progress visualization -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=23.3.6"></script>
+    <script src="app.js?v=23.3.7"></script>
 </body>
 </html>

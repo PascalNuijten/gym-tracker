@@ -1,70 +1,88 @@
 // Gym Tracker v2.0 - Separate Exercise Creation & Workout Logging
 
-// AI CONFIGURATION - MULTI-MODEL ROTATION + CACHING
-// API key is stored in localStorage only — never hardcoded — to avoid GitHub secret scanning revocation.
-// Users are prompted to enter their own key from https://aistudio.google.com/apikey
-function getGeminiApiKey() {
-    return localStorage.getItem('geminiApiKey') || '';
-}
-function saveGeminiApiKey(key) {
-    localStorage.setItem('geminiApiKey', key.trim());
-}
+// ==================== AI CONFIGURATION ====================
+// Keys stored in localStorage only — never hardcoded.
+// PRIMARY:  Groq  (free, 14 400 req/day) — get key at console.groq.com
+// FALLBACK: Gemini (Google, 20 req/day)   — get key at aistudio.google.com/apikey
 
-// Model rotation: models ordered by quota generosity (most available first)
-// Model API names match the Google AI Studio dashboard (March 2026)
-const GEMINI_MODELS = [
-    'gemini-2.5-flash',           // Gemini 2.5 Flash  — 5 RPM, 250K TPM, 20 RPD
-    'gemini-2.5-flash-lite',      // Gemini 2.5 Flash Lite — 10 RPM, 250K TPM, 20 RPD
-    'gemini-2.0-flash',           // Gemini 3 Flash alias — fallback
-    'gemini-3.0-flash',           // Gemini 3 Flash — 5 RPM, 250K TPM, 20 RPD
-    'gemini-1.5-flash'            // Legacy stable fallback
+function getGroqApiKey()    { return localStorage.getItem('groqApiKey')   || ''; }
+function getGeminiApiKey()  { return localStorage.getItem('geminiApiKey') || ''; }
+function saveGroqApiKey(k)  { localStorage.setItem('groqApiKey',   k.trim()); }
+function saveGeminiApiKey(k){ localStorage.setItem('geminiApiKey', k.trim()); }
+
+// ---- Groq models (OpenAI-compatible, ordered best-first) ----
+const GROQ_MODELS = [
+    'llama-3.3-70b-versatile',   // 100 RPM, 6 000 RPD — best quality
+    'llama-3.1-8b-instant',      // 30 RPM,  14 400 RPD — fast fallback
+    'gemma2-9b-it',              // 30 RPM,  14 400 RPD — extra fallback
 ];
-let currentModelIndex = parseInt(localStorage.getItem('gymTrackerModelIndex') || '0');
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
-// Per-model quota exhaustion tracking — reset once per calendar day
-function getModelExhausted(modelName) {
+// ---- Gemini models (fallback when Groq is exhausted) ----
+const GEMINI_MODELS = [
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+];
+
+let currentGroqModelIndex   = parseInt(localStorage.getItem('gymTrackerGroqModelIndex')   || '0');
+let currentGeminiModelIndex = parseInt(localStorage.getItem('gymTrackerGeminiModelIndex') || '0');
+
+// Per-model daily quota exhaustion tracking (resets at midnight)
+function isModelExhausted(key) {
     try {
-        const data = JSON.parse(localStorage.getItem('gymTrackerModelQuota') || '{}');
-        const today = new Date().toISOString().slice(0, 10);
-        return data[modelName] === today; // true if this model was exhausted today
+        const d = JSON.parse(localStorage.getItem('gymTrackerModelQuota') || '{}');
+        return d[key] === new Date().toISOString().slice(0, 10);
     } catch { return false; }
 }
-function markModelExhausted(modelName) {
+function markModelExhausted(key) {
     try {
-        const data = JSON.parse(localStorage.getItem('gymTrackerModelQuota') || '{}');
-        // Clear stale entries (previous days)
         const today = new Date().toISOString().slice(0, 10);
-        Object.keys(data).forEach(k => { if (data[k] !== today) delete data[k]; });
-        data[modelName] = today;
-        localStorage.setItem('gymTrackerModelQuota', JSON.stringify(data));
-        console.warn(`⛔ Marked ${modelName} as quota-exhausted for today`);
+        const d = JSON.parse(localStorage.getItem('gymTrackerModelQuota') || '{}');
+        Object.keys(d).forEach(k => { if (d[k] !== today) delete d[k]; });
+        d[key] = today;
+        localStorage.setItem('gymTrackerModelQuota', JSON.stringify(d));
+        console.warn(`⛔ ${key} marked quota-exhausted for today`);
     } catch {}
 }
 function clearAllModelQuota() {
     localStorage.removeItem('gymTrackerModelQuota');
-    console.log('✅ Model quota flags cleared');
+    localStorage.removeItem('gymTrackerGroqModelIndex');
+    localStorage.removeItem('gymTrackerGeminiModelIndex');
+    console.log('✅ All quota flags cleared');
 }
 
-function getNextModel() {
-    // Try to find a non-exhausted model, cycling from currentModelIndex
-    for (let attempt = 0; attempt < GEMINI_MODELS.length; attempt++) {
-        const idx = (currentModelIndex + attempt) % GEMINI_MODELS.length;
-        const model = GEMINI_MODELS[idx];
-        if (!getModelExhausted(model)) {
-            // Advance index for next call
-            currentModelIndex = (idx + 1) % GEMINI_MODELS.length;
-            localStorage.setItem('gymTrackerModelIndex', currentModelIndex.toString());
-            console.log(`🔄 Using model: ${model}`);
-            return { model, url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent` };
+// Pick next non-exhausted Groq model (null if all exhausted)
+function pickGroqModel() {
+    for (let i = 0; i < GROQ_MODELS.length; i++) {
+        const idx = (currentGroqModelIndex + i) % GROQ_MODELS.length;
+        const m = GROQ_MODELS[idx];
+        if (!isModelExhausted('groq:' + m)) {
+            currentGroqModelIndex = (idx + 1) % GROQ_MODELS.length;
+            localStorage.setItem('gymTrackerGroqModelIndex', currentGroqModelIndex);
+            return m;
         }
     }
-    // All models exhausted — return first one anyway (let the error surface to user)
-    const model = GEMINI_MODELS[0];
-    console.warn('⚠️ All models quota-exhausted for today, using first as last resort');
-    return { model, url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent` };
+    return null; // all Groq models exhausted today
 }
 
-let useRealAI = true; // AI enabled by default
+// Pick next non-exhausted Gemini model (null if all exhausted)
+function pickGeminiModel() {
+    for (let i = 0; i < GEMINI_MODELS.length; i++) {
+        const idx = (currentGeminiModelIndex + i) % GEMINI_MODELS.length;
+        const m = GEMINI_MODELS[idx];
+        if (!isModelExhausted('gemini:' + m)) {
+            currentGeminiModelIndex = (idx + 1) % GEMINI_MODELS.length;
+            localStorage.setItem('gymTrackerGeminiModelIndex', currentGeminiModelIndex);
+            return m;
+        }
+    }
+    return null;
+}
+
+let useRealAI = true;
+
 
 // AI Response Cache - Store responses to avoid re-requesting
 const AI_CACHE_KEY = 'gymTrackerAICache';
@@ -116,7 +134,7 @@ function hashString(str) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.6'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.7'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -132,61 +150,197 @@ clearOldCache();
 // ==================== API KEY MANAGEMENT ====================
 
 function checkApiKeyOnLoad() {
-    if (!getGeminiApiKey()) {
+    if (!getGroqApiKey()) {
         const modal = document.getElementById('apiKeyModal');
         if (modal) modal.style.display = 'flex';
     }
 }
 
 function validateAndSaveApiKey() {
-    const input = document.getElementById('apiKeyInput');
-    const errEl = document.getElementById('apiKeyError');
-    const key = input ? input.value.trim() : '';
+    const input  = document.getElementById('apiKeyInput');
+    const errEl  = document.getElementById('apiKeyError');
+    const key    = input ? input.value.trim() : '';
 
     if (!key) {
-        if (errEl) errEl.textContent = '⚠️ Please paste your Gemini API key.';
+        if (errEl) errEl.textContent = '⚠️ Please paste your Groq API key.';
         if (input) input.style.borderColor = '#e74c3c';
         return;
     }
-    if (!key.startsWith('AIza') || key.length < 30) {
-        if (errEl) errEl.textContent = '⚠️ That doesn\'t look like a valid key. It should start with "AIza" and be ~39 characters.';
+    if (!key.startsWith('gsk_') || key.length < 40) {
+        if (errEl) errEl.textContent = '⚠️ Groq keys start with "gsk_" and are ~56 characters long.';
         if (input) input.style.borderColor = '#e74c3c';
         return;
     }
 
-    saveGeminiApiKey(key);
-    // Dismiss the blocking modal
+    saveGroqApiKey(key);
     const modal = document.getElementById('apiKeyModal');
     if (modal) modal.style.display = 'none';
     if (errEl) errEl.textContent = '';
     if (input) { input.style.borderColor = ''; input.value = ''; }
-    // Sync to settings field
-    const settingsInput = document.getElementById('settingsGeminiKey');
-    if (settingsInput) settingsInput.value = key;
-    alert('✅ API key saved! AI features are now active.');
+    const si = document.getElementById('settingsGroqKey');
+    if (si) si.value = key;
+    alert('✅ Groq API key saved! AI features are now active.');
+}
+
+function saveSettingsGroqKey() {
+    const input = document.getElementById('settingsGroqKey');
+    const key   = input ? input.value.trim() : '';
+    if (!key) {
+        if (confirm('Clear Groq key? The API key prompt will appear again on next load.')) {
+            localStorage.removeItem('groqApiKey');
+            if (input) input.value = '';
+            alert('✅ Groq key cleared.');
+        }
+        return;
+    }
+    if (!key.startsWith('gsk_') || key.length < 40) {
+        alert('⚠️ Groq keys start with "gsk_" and are ~56 characters long.');
+        return;
+    }
+    saveGroqApiKey(key);
+    alert('✅ Groq API key saved!');
 }
 
 function saveSettingsGeminiKey() {
     const input = document.getElementById('settingsGeminiKey');
-    const key = input ? input.value.trim() : '';
+    const key   = input ? input.value.trim() : '';
     if (!key) {
-        // Allow clearing the key — will trigger prompt on next AI use
-        if (confirm('Clear your saved API key? You will be prompted to enter it again.')) {
+        if (confirm('Clear Gemini fallback key?')) {
             localStorage.removeItem('geminiApiKey');
             if (input) input.value = '';
-            alert('✅ API key cleared.');
+            alert('✅ Gemini key cleared.');
         }
         return;
     }
     if (!key.startsWith('AIza') || key.length < 30) {
-        alert('⚠️ That doesn\'t look like a valid key. It should start with "AIza" and be ~39 characters.');
+        alert('⚠️ Gemini keys start with "AIza" and are ~39 characters long.');
         return;
     }
     saveGeminiApiKey(key);
-    alert('✅ Gemini API key updated!');
+    alert('✅ Gemini API key saved!');
 }
 
+// ==================== UNIFIED AI CALL ====================
+// Tries Groq first (high quota), falls back to Gemini.
+// Image calls skip Groq (no vision on free tier) and go straight to Gemini.
+// Function is still named callGeminiAI so all existing call sites work unchanged.
 
+async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = true, maxTokens = 1024) {
+    if (!useRealAI) return null;
+
+    // Optionally append user profile context
+    let fullPrompt = prompt;
+    if (includeUserContext) {
+        const ctx = getUserContext(currentUser);
+        if (ctx) fullPrompt = prompt + ctx;
+    }
+
+    const promptHash = hashString(fullPrompt + (imageBase64 || ''));
+    const cached = getCachedAIResponse(promptHash);
+    if (cached) return cached;
+
+    // ---- helper: is this a quota/auth error? ----
+    function isQuotaOrAuthError(status, body) {
+        const msg = (body?.error?.message || '').toLowerCase();
+        return status === 429 || status === 403 || status === 404
+            || msg.includes('quota') || msg.includes('exhausted')
+            || msg.includes('rate') || msg.includes('leaked')
+            || msg.includes('deactivated');
+    }
+
+    // ---- Groq attempt (text-only; no image support on free tier) ----
+    if (!imageBase64 && getGroqApiKey()) {
+        for (let i = 0; i < GROQ_MODELS.length; i++) {
+            const model = pickGroqModel();
+            if (!model) break; // all Groq models exhausted
+            try {
+                console.log(`🟢 Groq › ${model}`);
+                const res = await fetch(GROQ_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${getGroqApiKey()}`
+                    },
+                    body: JSON.stringify({
+                        model,
+                        messages: [{ role: 'user', content: fullPrompt }],
+                        temperature: 0.1,
+                        max_tokens: maxTokens,
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    const text = data.choices?.[0]?.message?.content;
+                    if (text) {
+                        setCachedAIResponse(promptHash, text);
+                        return text;
+                    }
+                } else {
+                    const errData = await res.json().catch(() => ({}));
+                    console.warn(`Groq ${model} → ${res.status}`, errData);
+                    if (isQuotaOrAuthError(res.status, errData)) {
+                        markModelExhausted('groq:' + model);
+                    } else {
+                        throw new Error(`Groq error: ${errData?.error?.message || res.statusText}`);
+                    }
+                }
+            } catch (e) {
+                if (e.message.startsWith('Groq error:')) throw e;
+                console.warn(`Groq ${model} threw:`, e);
+            }
+        }
+        console.warn('⚠️ All Groq models exhausted or failed — trying Gemini fallback…');
+    }
+
+    // ---- Gemini fallback ----
+    if (!getGeminiApiKey()) {
+        throw new Error('All Groq models are quota-limited today and no Gemini fallback key is set.\n\nOptions:\n• Wait until midnight (quota resets)\n• Add a Gemini key in Settings → AI Keys\n• Click "Reset quota" in Settings → AI Keys');
+    }
+
+    for (let i = 0; i < GEMINI_MODELS.length; i++) {
+        const model = pickGeminiModel();
+        if (!model) break;
+        try {
+            console.log(`🔵 Gemini › ${model}`);
+            const body = {
+                contents: [{ parts: [{ text: fullPrompt }] }],
+                generationConfig: { temperature: 0.1, maxOutputTokens: maxTokens, topP: 0.8, topK: 10 }
+            };
+            if (imageBase64) {
+                body.contents[0].parts.unshift({
+                    inline_data: { mime_type: 'image/jpeg', data: imageBase64.split(',')[1] }
+                });
+            }
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getGeminiApiKey()}`;
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (res.ok) {
+                const data = await res.json();
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) {
+                    setCachedAIResponse(promptHash, text);
+                    return text;
+                }
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                console.warn(`Gemini ${model} → ${res.status}`, errData);
+                if (isQuotaOrAuthError(res.status, errData)) {
+                    markModelExhausted('gemini:' + model);
+                } else {
+                    throw new Error(`Gemini error: ${errData?.error?.message || res.statusText}`);
+                }
+            }
+        } catch (e) {
+            if (e.message.startsWith('Gemini error:')) throw e;
+            console.warn(`Gemini ${model} threw:`, e);
+        }
+    }
+
+    throw new Error('All AI models (Groq + Gemini) are quota-limited.\n\nTry: Settings → AI Keys → "Reset quota"\nor wait until midnight.');
+}
 const firebaseConfig = {
   apiKey: "AIzaSyBfu3Z86uW0yjuZGPqObGeOaEEPY2aI0hI",
   authDomain: "gym-tracker-58d6a.firebaseapp.com",
@@ -297,146 +451,6 @@ function loadUserProfileIntoForm() {
 }
 
 // AI HELPER FUNCTIONS
-async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = true, maxTokens = 500) {
-    if (!useRealAI || !getGeminiApiKey()) {
-        console.log('Real AI disabled or no API key, using fallback');
-        return null;
-    }
-    
-    try {
-        // Add user context to prompt if available and requested
-        let enhancedPrompt = prompt;
-        if (includeUserContext) {
-            const userContext = getUserContext(currentUser);
-            if (userContext) {
-                enhancedPrompt = prompt + userContext;
-            }
-        }
-        
-        // STRATEGY 2: Check cache first (avoid duplicate requests)
-        const promptHash = hashString(enhancedPrompt + (imageBase64 || ''));
-        const cachedResponse = getCachedAIResponse(promptHash);
-        if (cachedResponse) {
-            return cachedResponse;
-        }
-        
-        const requestBody = {
-            contents: [{
-                parts: [{
-                    text: enhancedPrompt
-                }]
-            }],
-            generationConfig: {
-                temperature: 0.1,
-                maxOutputTokens: maxTokens,
-                topP: 0.8,
-                topK: 10
-            }
-        }
-        
-        // Add image if provided
-        if (imageBase64) {
-            requestBody.contents[0].parts.unshift({
-                inline_data: {
-                    mime_type: "image/jpeg",
-                    data: imageBase64.split(',')[1]
-                }
-            });
-        }
-        
-        // STRATEGY 1: Model rotation - Get next available model
-        const { model: initialModel, url: GEMINI_API_URL } = getNextModel();
-        
-        const response = await fetch(`${GEMINI_API_URL}?key=${getGeminiApiKey()}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody)
-        });
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Gemini API error response:', errorText);
-            try {
-                const error = JSON.parse(errorText);
-                console.error('Gemini API error:', error);
-                
-                const isQuotaError = error.error?.code === 429 ||
-                    response.status === 429 || response.status === 403 || response.status === 404 ||
-                    (error.error?.message || '').toLowerCase().includes('quota') ||
-                    (error.error?.message || '').toLowerCase().includes('exhausted') ||
-                    (error.error?.message || '').toLowerCase().includes('leaked');
-
-                if (isQuotaError) {
-                    // Mark this model as exhausted and try every remaining model
-                    markModelExhausted(initialModel);
-                    console.warn(`⚠️ Trying remaining models after ${initialModel} failed (${response.status})...`);
-
-                    for (let i = 0; i < GEMINI_MODELS.length; i++) {
-                        const { model: retryModel, url: retryUrl } = getNextModel();
-                        if (retryModel === initialModel) continue; // already failed
-                        try {
-                            console.log(`🔄 Retrying with: ${retryModel}`);
-                            const retryResponse = await fetch(`${retryUrl}?key=${getGeminiApiKey()}`, {
-                                method: 'POST',
-                                headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify(requestBody)
-                            });
-                            
-                            if (retryResponse.ok) {
-                                const retryData = await retryResponse.json();
-                                if (retryData.candidates?.[0]?.content) {
-                                    const aiResponse = retryData.candidates[0].content.parts[0].text;
-                                    console.log(`✅ Retry successful with ${retryModel}`);
-                                    setCachedAIResponse(promptHash, aiResponse);
-                                    return aiResponse;
-                                }
-                            } else {
-                                const retryErrText = await retryResponse.text();
-                                const retryErr = JSON.parse(retryErrText);
-                                const retryIsQuota = retryResponse.status === 429 ||
-                                    (retryErr.error?.message || '').toLowerCase().includes('quota') ||
-                                    (retryErr.error?.message || '').toLowerCase().includes('exhausted');
-                                if (retryIsQuota) markModelExhausted(retryModel);
-                                console.warn(`Model ${retryModel} also failed (${retryResponse.status})`);
-                            }
-                        } catch (retryError) {
-                            console.warn(`Retry with ${retryModel} threw:`, retryError);
-                        }
-                    }
-                    throw new Error('All AI models are currently quota-limited. Please try again tomorrow or check your API key quotas at aistudio.google.com.');
-                }
-                
-                throw new Error(`API Error: ${error.error?.message || response.statusText}`);
-            } catch (e) {
-                if (e.message.startsWith('API Error') || e.message.startsWith('All AI')) throw e;
-                throw new Error(`API Error: ${response.status} ${response.statusText}`);
-            }
-        }
-        
-        const data = await response.json();
-        console.log('Full Gemini API response:', data);
-        
-        if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
-            console.error('Unexpected API response structure:', data);
-            throw new Error('Invalid API response structure');
-        }
-        
-        const aiResponse = data.candidates[0].content.parts[0].text;
-        console.log('AI response:', aiResponse);
-        
-        // STRATEGY 2: Cache the response for 24 hours
-        setCachedAIResponse(promptHash, aiResponse);
-        
-        return aiResponse;
-        
-    } catch (error) {
-        console.error('Error calling AI:', error);
-        throw error; // Re-throw the error instead of returning null
-    }
-}
-
 async function detectMusclesWithAI(exerciseName) {
     const prompt = `You are a fitness expert. Given the exercise name "${exerciseName}", identify the primary muscle groups worked.
 
@@ -1100,9 +1114,11 @@ function setupEventListeners() {
         document.getElementById('settingsModal').style.display = 'block';
         document.getElementById('settingsUserName').textContent = currentUser;
         loadUserProfileIntoForm();
-        // Populate Gemini key field (masked display)
-        const keyInput = document.getElementById('settingsGeminiKey');
-        if (keyInput) keyInput.value = getGeminiApiKey();
+        // Populate API key fields
+        const groqInput = document.getElementById('settingsGroqKey');
+        if (groqInput) groqInput.value = getGroqApiKey();
+        const geminiInput = document.getElementById('settingsGeminiKey');
+        if (geminiInput) geminiInput.value = getGeminiApiKey();
     });
     
     // Settings Modal Export/Restore Buttons

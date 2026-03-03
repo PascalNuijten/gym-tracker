@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gym Progress Tracker</title>
-    <link rel="stylesheet" href="styles.css?v=23.3.4">
+    <link rel="stylesheet" href="styles.css?v=23.3.5">
 </head>
 <body>
     <div class="container">
@@ -374,7 +374,15 @@
         <div class="modal-content" style="max-width: 700px;">
             <span class="close" onclick="document.getElementById('settingsModal').style.display='none'">&times;</span>
             <h2>⚙️ Settings - <span id="settingsUserName"></span></h2>
-            
+
+            <!-- Gemini API Key -->
+            <div style="background:#f0f4ff;border:1.5px solid #c7d2fe;border-radius:10px;padding:16px 18px;margin-bottom:24px;">
+                <h3 style="margin:0 0 6px;font-size:1em;">🤖 Gemini AI Key</h3>
+                <p style="font-size:0.83em;color:#555;margin:0 0 10px;">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#667eea;">aistudio.google.com/apikey</a></p>
+                <input type="password" id="settingsGeminiKey" placeholder="AIza…" autocomplete="off" style="width:100%;padding:9px 12px;border:1.5px solid #c7d2fe;border-radius:7px;font-size:0.95em;margin-bottom:9px;box-sizing:border-box;">
+                <button onclick="saveSettingsGeminiKey()" class="primary-btn" style="width:100%;padding:10px;">💾 Save API Key</button>
+            </div>
+
             <div style="margin-bottom: 30px;">
                 <h3>👤 Personal Information</h3>
                 <form id="personalInfoForm">
@@ -642,11 +650,31 @@
         </div>
     </div>
 
+    <!-- Blocking API Key Modal -->
+    <div id="apiKeyModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+        <div style="background:#fff;border-radius:16px;padding:30px 24px;max-width:440px;width:100%;box-shadow:0 12px 60px rgba(0,0,0,0.3);">
+            <div style="font-size:2.5em;text-align:center;margin-bottom:8px;">🤖</div>
+            <h2 style="margin:0 0 8px;text-align:center;font-size:1.25em;">Gemini API Key Required</h2>
+            <p style="color:#555;font-size:0.9em;text-align:center;margin:0 0 20px;">This app uses Google Gemini AI for smart features. You need a free API key to continue.</p>
+            <ol style="font-size:0.88em;color:#444;line-height:1.8;margin:0 0 18px;padding-left:18px;">
+                <li>Go to <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#667eea;font-weight:600;">aistudio.google.com/apikey</a></li>
+                <li>Click <strong>"Create API key"</strong></li>
+                <li>Copy it and paste it below</li>
+            </ol>
+            <input type="text" id="apiKeyInput" placeholder="Paste your API key here (AIza…)" autocomplete="off"
+                style="width:100%;padding:11px 14px;border:1.5px solid #ddd;border-radius:8px;font-size:0.95em;margin-bottom:8px;box-sizing:border-box;"
+                onkeydown="if(event.key==='Enter')validateAndSaveApiKey()">
+            <div id="apiKeyError" style="color:#e74c3c;font-size:0.83em;min-height:18px;margin-bottom:10px;"></div>
+            <button onclick="validateAndSaveApiKey()" style="width:100%;padding:13px;background:linear-gradient(135deg,var(--btn-gradient-start),var(--btn-gradient-end));color:#fff;border:none;border-radius:9px;font-weight:700;font-size:1em;cursor:pointer;">✅ Save & Continue</button>
+            <p style="font-size:0.78em;color:#aaa;text-align:center;margin:10px 0 0;">Your key is stored locally in your browser only — never sent anywhere except Google.</p>
+        </div>
+    </div>
+
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <!-- Chart.js for progress visualization -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=23.3.4"></script>
+    <script src="app.js?v=23.3.5"></script>
 </body>
 </html>

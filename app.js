@@ -1,10 +1,14 @@
 // Gym Tracker v2.0 - Separate Exercise Creation & Workout Logging
 
 // AI CONFIGURATION - MULTI-MODEL ROTATION + CACHING
-// API key is restricted to specific websites in Google Cloud Console
-// To set up: https://console.cloud.google.com/apis/credentials
-// Add HTTP referrer restrictions: https://pascalnuijten.github.io/*
-const GEMINI_API_KEY = 'AIzaSyCy8L-GZkUhNfaoG3JQ3d26IBN1s8M12lU';
+// API key is stored in localStorage only — never hardcoded — to avoid GitHub secret scanning revocation.
+// Users are prompted to enter their own key from https://aistudio.google.com/apikey
+function getGeminiApiKey() {
+    return localStorage.getItem('geminiApiKey') || '';
+}
+function saveGeminiApiKey(key) {
+    localStorage.setItem('geminiApiKey', key.trim());
+}
 
 // Model rotation: Use current free-tier Gemini models
 const GEMINI_MODELS = [
@@ -74,7 +78,7 @@ function hashString(str) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.4'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.5'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -87,8 +91,64 @@ function clearOldCache() {
 // Run cache check on load
 clearOldCache();
 
+// ==================== API KEY MANAGEMENT ====================
 
-// Firebase Configuration
+function checkApiKeyOnLoad() {
+    if (!getGeminiApiKey()) {
+        const modal = document.getElementById('apiKeyModal');
+        if (modal) modal.style.display = 'flex';
+    }
+}
+
+function validateAndSaveApiKey() {
+    const input = document.getElementById('apiKeyInput');
+    const errEl = document.getElementById('apiKeyError');
+    const key = input ? input.value.trim() : '';
+
+    if (!key) {
+        if (errEl) errEl.textContent = '⚠️ Please paste your Gemini API key.';
+        if (input) input.style.borderColor = '#e74c3c';
+        return;
+    }
+    if (!key.startsWith('AIza') || key.length < 30) {
+        if (errEl) errEl.textContent = '⚠️ That doesn\'t look like a valid key. It should start with "AIza" and be ~39 characters.';
+        if (input) input.style.borderColor = '#e74c3c';
+        return;
+    }
+
+    saveGeminiApiKey(key);
+    // Dismiss the blocking modal
+    const modal = document.getElementById('apiKeyModal');
+    if (modal) modal.style.display = 'none';
+    if (errEl) errEl.textContent = '';
+    if (input) { input.style.borderColor = ''; input.value = ''; }
+    // Sync to settings field
+    const settingsInput = document.getElementById('settingsGeminiKey');
+    if (settingsInput) settingsInput.value = key;
+    alert('✅ API key saved! AI features are now active.');
+}
+
+function saveSettingsGeminiKey() {
+    const input = document.getElementById('settingsGeminiKey');
+    const key = input ? input.value.trim() : '';
+    if (!key) {
+        // Allow clearing the key — will trigger prompt on next AI use
+        if (confirm('Clear your saved API key? You will be prompted to enter it again.')) {
+            localStorage.removeItem('geminiApiKey');
+            if (input) input.value = '';
+            alert('✅ API key cleared.');
+        }
+        return;
+    }
+    if (!key.startsWith('AIza') || key.length < 30) {
+        alert('⚠️ That doesn\'t look like a valid key. It should start with "AIza" and be ~39 characters.');
+        return;
+    }
+    saveGeminiApiKey(key);
+    alert('✅ Gemini API key updated!');
+}
+
+
 const firebaseConfig = {
   apiKey: "AIzaSyBfu3Z86uW0yjuZGPqObGeOaEEPY2aI0hI",
   authDomain: "gym-tracker-58d6a.firebaseapp.com",
@@ -200,7 +260,7 @@ function loadUserProfileIntoForm() {
 
 // AI HELPER FUNCTIONS
 async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = true, maxTokens = 500) {
-    if (!useRealAI || !GEMINI_API_KEY) {
+    if (!useRealAI || !getGeminiApiKey()) {
         console.log('Real AI disabled or no API key, using fallback');
         return null;
     }
@@ -249,7 +309,7 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
         // STRATEGY 1: Model rotation - Get next available model
         const GEMINI_API_URL = getNextModel();
         
-        const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+        const response = await fetch(`${GEMINI_API_URL}?key=${getGeminiApiKey()}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -272,7 +332,7 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
                         try {
                             const nextModelUrl = getNextModel();
                             console.log(`🔄 Retrying with different model...`);
-                            const retryResponse = await fetch(`${nextModelUrl}?key=${GEMINI_API_KEY}`, {
+                            const retryResponse = await fetch(`${nextModelUrl}?key=${getGeminiApiKey()}`, {
                                 method: 'POST',
                                 headers: {'Content-Type': 'application/json'},
                                 body: JSON.stringify(requestBody)
@@ -407,6 +467,7 @@ function init() {
     
     setupEventListeners();
     setupFirebaseListeners();
+    checkApiKeyOnLoad();
 }
 
 // Exercise Database - Common exercises with pre-filled data
@@ -983,6 +1044,9 @@ function setupEventListeners() {
         document.getElementById('settingsModal').style.display = 'block';
         document.getElementById('settingsUserName').textContent = currentUser;
         loadUserProfileIntoForm();
+        // Populate Gemini key field (masked display)
+        const keyInput = document.getElementById('settingsGeminiKey');
+        if (keyInput) keyInput.value = getGeminiApiKey();
     });
     
     // Settings Modal Export/Restore Buttons

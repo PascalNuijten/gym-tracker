@@ -7027,7 +7027,13 @@ function deletePlanByDate(dateISO) {
     if (!confirm(`Delete workout plan for ${dateISO}?`)) return;
     plannedWorkouts = plannedWorkouts.filter(p => !(p.date === dateISO && p.createdBy === currentUser));
     if (database) {
-        database.ref('plannedWorkouts').set(plannedWorkouts);
+        database.ref('plannedWorkouts').set(plannedWorkouts)
+            .catch(err => {
+                const isPermission = err.code === 'PERMISSION_DENIED' || err.message?.toLowerCase().includes('permission');
+                if (isPermission) {
+                    alert('\u26a0\ufe0f Firebase permission error. See Settings \u2192 fix Firebase rules.');
+                }
+            });
     }
     document.getElementById('calendarDayDetail').style.display = 'none';
     selectedCalendarDay = null;

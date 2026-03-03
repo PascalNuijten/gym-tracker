@@ -3239,9 +3239,12 @@ function renderExercises() {
 
     let filtered = exercises.filter(exercise => {
         const matchCategory = categoryValue === 'all' || exercise.category === categoryValue;
-        const matchMuscle = muscleValue === 'all' || exercise.muscle === muscleValue;
+        // muscle can be an array or a plain string
+        const muscleArr = Array.isArray(exercise.muscle) ? exercise.muscle : (exercise.muscle ? [exercise.muscle] : []);
+        const matchMuscle = muscleValue === 'all' || muscleArr.some(m => m === muscleValue);
+        const muscleStr = muscleArr.join(' ').toLowerCase();
         const matchSearch = exercise.name.toLowerCase().includes(searchValue) ||
-                         exercise.muscle.toLowerCase().includes(searchValue) ||
+                         muscleStr.includes(searchValue) ||
                          exercise.category.toLowerCase().includes(searchValue);
         
         // Show exercises only if the current user has workout history for them
@@ -6787,18 +6790,11 @@ function savePlannedWorkout() {
     }
 
     document.getElementById('planWorkoutModal').style.display = 'none';
+    // Auto-open the day detail (so the Google Calendar link is immediately visible)
+    selectedCalendarDay = parseInt(currentPlanDate.split('-')[2]);
     renderCalendar();
-
-    // Offer to add to Google Calendar
-    const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const [y, m, d] = currentPlanDate.split('-');
-    const gcDate = currentPlanDate.replace(/-/g, '');
-    const gcTitle = encodeURIComponent(`📋 ${note || currentUser + ' Workout Plan'}`);
-    const gcDetails = encodeURIComponent(currentPlanExercises.map(ex => `${ex.name}: ${ex.plannedSets}×${ex.plannedReps}@${ex.plannedWeight}kg`).join('\n'));
-    const gcUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${gcTitle}&dates=${gcDate}/${gcDate}&details=${gcDetails}`;
-
-    const addToGcal = confirm(`✅ Plan saved for ${MONTH_NAMES[parseInt(m)-1]} ${parseInt(d)}, ${y}!\n\nAdd to Google Calendar?`);
-    if (addToGcal) window.open(gcUrl, '_blank');
+    // The calendar day detail (shown after renderCalendar) already has an
+    // "Add to Google Calendar" link — no intrusive popup needed.
 }
 
 function deletePlannedWorkoutAndClose() {

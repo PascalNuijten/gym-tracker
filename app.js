@@ -10,20 +10,58 @@ function saveGeminiApiKey(key) {
     localStorage.setItem('geminiApiKey', key.trim());
 }
 
-// Model rotation: Use current free-tier Gemini models
+// Model rotation: models ordered by quota generosity (most available first)
+// Model API names match the Google AI Studio dashboard (March 2026)
 const GEMINI_MODELS = [
-    'gemini-2.0-flash',           // current free-tier model (2025+)
-    'gemini-2.0-flash-lite',      // lighter fallback
-    'gemini-1.5-flash'            // legacy fallback
+    'gemini-2.5-flash',           // Gemini 2.5 Flash  — 5 RPM, 250K TPM, 20 RPD
+    'gemini-2.5-flash-lite',      // Gemini 2.5 Flash Lite — 10 RPM, 250K TPM, 20 RPD
+    'gemini-2.0-flash',           // Gemini 3 Flash alias — fallback
+    'gemini-3.0-flash',           // Gemini 3 Flash — 5 RPM, 250K TPM, 20 RPD
+    'gemini-1.5-flash'            // Legacy stable fallback
 ];
 let currentModelIndex = parseInt(localStorage.getItem('gymTrackerModelIndex') || '0');
 
+// Per-model quota exhaustion tracking — reset once per calendar day
+function getModelExhausted(modelName) {
+    try {
+        const data = JSON.parse(localStorage.getItem('gymTrackerModelQuota') || '{}');
+        const today = new Date().toISOString().slice(0, 10);
+        return data[modelName] === today; // true if this model was exhausted today
+    } catch { return false; }
+}
+function markModelExhausted(modelName) {
+    try {
+        const data = JSON.parse(localStorage.getItem('gymTrackerModelQuota') || '{}');
+        // Clear stale entries (previous days)
+        const today = new Date().toISOString().slice(0, 10);
+        Object.keys(data).forEach(k => { if (data[k] !== today) delete data[k]; });
+        data[modelName] = today;
+        localStorage.setItem('gymTrackerModelQuota', JSON.stringify(data));
+        console.warn(`⛔ Marked ${modelName} as quota-exhausted for today`);
+    } catch {}
+}
+function clearAllModelQuota() {
+    localStorage.removeItem('gymTrackerModelQuota');
+    console.log('✅ Model quota flags cleared');
+}
+
 function getNextModel() {
-    const model = GEMINI_MODELS[currentModelIndex];
-    currentModelIndex = (currentModelIndex + 1) % GEMINI_MODELS.length;
-    localStorage.setItem('gymTrackerModelIndex', currentModelIndex.toString());
-    console.log(`🔄 Using model: ${model}`);
-    return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    // Try to find a non-exhausted model, cycling from currentModelIndex
+    for (let attempt = 0; attempt < GEMINI_MODELS.length; attempt++) {
+        const idx = (currentModelIndex + attempt) % GEMINI_MODELS.length;
+        const model = GEMINI_MODELS[idx];
+        if (!getModelExhausted(model)) {
+            // Advance index for next call
+            currentModelIndex = (idx + 1) % GEMINI_MODELS.length;
+            localStorage.setItem('gymTrackerModelIndex', currentModelIndex.toString());
+            console.log(`🔄 Using model: ${model}`);
+            return { model, url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent` };
+        }
+    }
+    // All models exhausted — return first one anyway (let the error surface to user)
+    const model = GEMINI_MODELS[0];
+    console.warn('⚠️ All models quota-exhausted for today, using first as last resort');
+    return { model, url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent` };
 }
 
 let useRealAI = true; // AI enabled by default
@@ -78,7 +116,7 @@ function hashString(str) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.5'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.6'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -307,7 +345,7 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
         }
         
         // STRATEGY 1: Model rotation - Get next available model
-        const GEMINI_API_URL = getNextModel();
+        const { model: initialModel, url: GEMINI_API_URL } = getNextModel();
         
         const response = await fetch(`${GEMINI_API_URL}?key=${getGeminiApiKey()}`, {
             method: 'POST',
@@ -324,15 +362,23 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
                 const error = JSON.parse(errorText);
                 console.error('Gemini API error:', error);
                 
-                // If 429 quota exceeded OR 403 permission error, try next model automatically
-                if (error.error?.code === 429 || response.status === 403 || response.status === 404) {
-                    console.warn(`⚠️ Model error (${response.status}), trying next model...`);
-                    // Try up to 2 more models
-                    for (let i = 0; i < 2; i++) {
+                const isQuotaError = error.error?.code === 429 ||
+                    response.status === 429 || response.status === 403 || response.status === 404 ||
+                    (error.error?.message || '').toLowerCase().includes('quota') ||
+                    (error.error?.message || '').toLowerCase().includes('exhausted') ||
+                    (error.error?.message || '').toLowerCase().includes('leaked');
+
+                if (isQuotaError) {
+                    // Mark this model as exhausted and try every remaining model
+                    markModelExhausted(initialModel);
+                    console.warn(`⚠️ Trying remaining models after ${initialModel} failed (${response.status})...`);
+
+                    for (let i = 0; i < GEMINI_MODELS.length; i++) {
+                        const { model: retryModel, url: retryUrl } = getNextModel();
+                        if (retryModel === initialModel) continue; // already failed
                         try {
-                            const nextModelUrl = getNextModel();
-                            console.log(`🔄 Retrying with different model...`);
-                            const retryResponse = await fetch(`${nextModelUrl}?key=${getGeminiApiKey()}`, {
+                            console.log(`🔄 Retrying with: ${retryModel}`);
+                            const retryResponse = await fetch(`${retryUrl}?key=${getGeminiApiKey()}`, {
                                 method: 'POST',
                                 headers: {'Content-Type': 'application/json'},
                                 body: JSON.stringify(requestBody)
@@ -342,19 +388,29 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
                                 const retryData = await retryResponse.json();
                                 if (retryData.candidates?.[0]?.content) {
                                     const aiResponse = retryData.candidates[0].content.parts[0].text;
-                                    console.log('✅ Retry successful with different model');
+                                    console.log(`✅ Retry successful with ${retryModel}`);
                                     setCachedAIResponse(promptHash, aiResponse);
                                     return aiResponse;
                                 }
+                            } else {
+                                const retryErrText = await retryResponse.text();
+                                const retryErr = JSON.parse(retryErrText);
+                                const retryIsQuota = retryResponse.status === 429 ||
+                                    (retryErr.error?.message || '').toLowerCase().includes('quota') ||
+                                    (retryErr.error?.message || '').toLowerCase().includes('exhausted');
+                                if (retryIsQuota) markModelExhausted(retryModel);
+                                console.warn(`Model ${retryModel} also failed (${retryResponse.status})`);
                             }
                         } catch (retryError) {
-                            console.warn(`Retry ${i + 1} failed:`, retryError);
+                            console.warn(`Retry with ${retryModel} threw:`, retryError);
                         }
                     }
+                    throw new Error('All AI models are currently quota-limited. Please try again tomorrow or check your API key quotas at aistudio.google.com.');
                 }
                 
                 throw new Error(`API Error: ${error.error?.message || response.statusText}`);
             } catch (e) {
+                if (e.message.startsWith('API Error') || e.message.startsWith('All AI')) throw e;
                 throw new Error(`API Error: ${response.status} ${response.statusText}`);
             }
         }

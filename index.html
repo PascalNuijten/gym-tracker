@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gym Progress Tracker</title>
-    <link rel="stylesheet" href="styles.css?v=23.3.5">
+    <link rel="stylesheet" href="styles.css?v=23.3.6">
 </head>
 <body>
     <div class="container">
@@ -380,7 +380,10 @@
                 <h3 style="margin:0 0 6px;font-size:1em;">🤖 Gemini AI Key</h3>
                 <p style="font-size:0.83em;color:#555;margin:0 0 10px;">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#667eea;">aistudio.google.com/apikey</a></p>
                 <input type="password" id="settingsGeminiKey" placeholder="AIza…" autocomplete="off" style="width:100%;padding:9px 12px;border:1.5px solid #c7d2fe;border-radius:7px;font-size:0.95em;margin-bottom:9px;box-sizing:border-box;">
-                <button onclick="saveSettingsGeminiKey()" class="primary-btn" style="width:100%;padding:10px;">💾 Save API Key</button>
+                <div style="display:flex;gap:8px;">
+                    <button onclick="saveSettingsGeminiKey()" class="primary-btn" style="flex:1;padding:10px;">💾 Save API Key</button>
+                    <button onclick="clearAllModelQuota();alert('\u2705 Quota flags cleared — all models will be tried again.');" class="secondary-btn" style="flex:0 0 auto;padding:10px 14px;font-size:0.85em;" title="Clear daily quota exhaustion flags so all models are retried">🔄 Reset quota</button>
+                </div>
             </div>
 
             <div style="margin-bottom: 30px;">
@@ -675,6 +678,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <!-- Chart.js for progress visualization -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=23.3.5"></script>
+    <script src="app.js?v=23.3.6"></script>
 </body>
 </html>

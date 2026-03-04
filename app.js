@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.12'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.13'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4211,6 +4211,20 @@ function setupFirebaseListeners() {
     }
 }
 
+// Recursively replace undefined values with null so Firebase never rejects them
+function stripUndefined(obj) {
+    if (Array.isArray(obj)) return obj.map(stripUndefined);
+    if (obj !== null && typeof obj === 'object') {
+        const out = {};
+        for (const key of Object.keys(obj)) {
+            const val = obj[key];
+            out[key] = (val === undefined) ? null : stripUndefined(val);
+        }
+        return out;
+    }
+    return obj;
+}
+
 function saveToFirebase() {
     if (!database) return;
     
@@ -4265,7 +4279,7 @@ function saveToFirebase() {
         alert('⚠️ Warning: Backup creation failed. Continue?');
     }
     
-    database.ref('exercises').set(exercises)
+    database.ref('exercises').set(stripUndefined(exercises))
         .then(() => {
             console.log(`✅ Data saved to Firebase: ${exercises.length} exercises`);
         })
@@ -6992,8 +7006,8 @@ function savePlannedWorkout() {
     const invitedChips = document.querySelectorAll('#planInviteUsers .plan-invite-chip.selected');
     const invitedUsers = Array.from(invitedChips).map(b => b.dataset.user);
 
-    const planStartTime = document.getElementById('planStartTime')?.value || undefined;
-    const planEndTime   = document.getElementById('planEndTime')?.value || undefined;
+    const planStartTime = document.getElementById('planStartTime')?.value || null;
+    const planEndTime   = document.getElementById('planEndTime')?.value || null;
 
     const plan = {
         id: currentPlanId || Date.now(),
@@ -7014,7 +7028,7 @@ function savePlannedWorkout() {
 
     // Save to Firebase
     if (database) {
-        database.ref('plannedWorkouts').set(plannedWorkouts)
+        database.ref('plannedWorkouts').set(stripUndefined(plannedWorkouts))
             .then(() => console.log('✅ Plan saved to Firebase'))
             .catch(err => {
                 console.error('Plan save failed:', err);
@@ -7043,7 +7057,7 @@ function deletePlanByDate(dateISO) {
     if (!confirm(`Delete workout plan for ${dateISO}?`)) return;
     plannedWorkouts = plannedWorkouts.filter(p => !(p.date === dateISO && p.createdBy === currentUser));
     if (database) {
-        database.ref('plannedWorkouts').set(plannedWorkouts)
+        database.ref('plannedWorkouts').set(stripUndefined(plannedWorkouts))
             .catch(err => {
                 const isPermission = err.code === 'PERMISSION_DENIED' || err.message?.toLowerCase().includes('permission');
                 if (isPermission) {

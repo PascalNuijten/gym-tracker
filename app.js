@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.20'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.21'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -5566,22 +5566,31 @@ function openWorkoutModalForExercise(exerciseId, isFromCamera = false, prefillDa
     
     // Open workout modal
     editingExerciseId = exerciseId;
-    isNewlyAddedFromCamera = isFromCamera; // Track if this was added from camera
-    
-    // Set exercise info
-    document.getElementById('workoutExerciseName').textContent = exercise.name;
-    document.getElementById('workoutExerciseCategory').textContent = exercise.category;
-    document.getElementById('workoutExerciseMuscle').textContent = exercise.muscle;
+    isNewlyAddedFromCamera = isFromCamera;
+
+    // Set exercise info using the real DOM element IDs
+    document.getElementById('workoutModalTitle').textContent = `Log Workout - ${exercise.name}`;
+    document.getElementById('workoutExerciseInfo').innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <div style="font-weight:bold;font-size:1.1em;margin-bottom:5px;">${exercise.name}</div>
+                <div style="color:#666;font-size:0.9em;">
+                    <span class="tag category">${exercise.category}</span>
+                    <span class="tag muscle">${Array.isArray(exercise.muscle) ? exercise.muscle.join(', ') : exercise.muscle}</span>
+                </div>
+            </div>
+        </div>
+        ${exercise.machineInfo ? `<div style="margin-top:10px;font-style:italic;color:#666;">${exercise.machineInfo}</div>` : ''}
+        <div id="aiWeightRecommendation" style="margin-top:10px;"></div>
+    `;
     
     // Reset and initialize sets
     resetWorkoutSetsContainer();
     
     if (prefillData && prefillData.sets > 0) {
-        // Pre-fill with AI plan data using proper set structure
-        // Set 1 is already created by resetWorkoutSetsContainer()
+        // Pre-fill with AI plan data
         document.getElementById('workout_set1_reps').value = prefillData.reps || 10;
         document.getElementById('workout_set1_weight').value = prefillData.weight || 0;
-        // Add remaining sets (addWorkoutSet copies previous values automatically)
         for (let i = 1; i < prefillData.sets; i++) {
             addWorkoutSet();
         }
@@ -5602,10 +5611,9 @@ function openWorkoutModalForExercise(exerciseId, isFromCamera = false, prefillDa
         }
     }
     
-    // Clear notes
     document.getElementById('workoutNotes').value = '';
-    
     workoutModal.style.display = 'block';
+    getAIWeightRecommendation(exercise);
 }
 
 function addExerciseFromTemplate(templateExercise) {

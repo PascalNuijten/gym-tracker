@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.19'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.20'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -8014,9 +8014,10 @@ function showCalendarDay(day) {
                 const logSets = ex.plannedSets || 3;
                 const logReps = ex.perUserReps?.[currentUser] ?? ex.plannedReps ?? 10;
                 const logWeight = ex.perUserWeights?.[currentUser] ?? ex.plannedWeight ?? 0;
-                const safeName = String(ex.name).replace(/'/g, '\\\'');
-                const safeCat  = String(ex.category || '').replace(/'/g, '\\\'');
-                const muscleAttr = (Array.isArray(ex.muscle) ? ex.muscle.join(',') : String(ex.muscle || '')).replace(/'/g, '');
+                // Use &apos; so single quotes in names don't break the HTML onclick attribute
+                const safeName = String(ex.name).replace(/&/g,'&amp;').replace(/'/g,'&apos;');
+                const safeCat  = String(ex.category || '').replace(/&/g,'&amp;').replace(/'/g,'&apos;');
+                const muscleAttr = (Array.isArray(ex.muscle) ? ex.muscle.join(',') : String(ex.muscle || '')).replace(/&/g,'&amp;').replace(/'/g,'&apos;');
                 html += `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,0.05);">`;
                 if (isUsableImage(imgUrl)) html += `<img src="${imgUrl}" alt="${ex.name}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.onerror=null;this.style.display='none';">`;
                 html += `<div style="flex:1;font-size:0.86em;color:#444;"><strong>${ex.name}</strong>${meta ? `<br><span style="color:#667eea;font-size:0.9em;">${meta.trim()}</span>` : ''}</div>`;

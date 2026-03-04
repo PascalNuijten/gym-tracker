@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.14'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.15'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -1682,8 +1682,9 @@ function editExerciseDetails(id) {
     if (!exercise) return;
 
     // Close any open detail modals
+    // Only remove dynamically-created celebration modals, never static HTML modals
     document.querySelectorAll('.modal').forEach(m => {
-        if (m !== modal) m.remove();
+        if (!m.id && m !== modal) m.remove();
     });
 
     editingExerciseId = id;

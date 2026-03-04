@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.21'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.22'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -1670,6 +1670,7 @@ function editExercise(id) {
     resetWorkoutSetsContainer();
     document.getElementById('workoutNotes').value = '';
 
+    workoutModal.style.zIndex = '10001';
     workoutModal.style.display = 'block';
     
     // Get AI weight recommendation
@@ -1714,6 +1715,7 @@ function editExerciseDetails(id) {
 
 // Handle workout modal close - remove exercise if newly added and no sets logged
 function handleWorkoutModalClose() {
+    workoutModal.style.zIndex = ''; // restore default z-index
     if (isNewlyAddedFromCamera && editingExerciseId) {
         const exercise = exercises.find(ex => ex.id === editingExerciseId);
         if (exercise && (!exercise.history || exercise.history.length === 0)) {
@@ -5612,6 +5614,7 @@ function openWorkoutModalForExercise(exerciseId, isFromCamera = false, prefillDa
     }
     
     document.getElementById('workoutNotes').value = '';
+    workoutModal.style.zIndex = '10001'; // ensure it appears above calendarModal
     workoutModal.style.display = 'block';
     getAIWeightRecommendation(exercise);
 }

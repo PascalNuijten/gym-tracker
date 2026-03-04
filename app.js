@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.13'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.14'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -2153,16 +2153,32 @@ function saveWorkout() {
     saveToFirebase();
     // Auto-sync today's workout to Trello (if configured)
     autoSyncDayToTrello();
-    
-    // Show celebration if new record!
+
+    // Close modal first, then show feedback
+    workoutModal.style.display = 'none';
+    editingExerciseId = null;
+
     if (isNewRecord) {
         showRecordCelebration(exercise.name, recordType, recordIncrease);
     } else {
-        alert('Workout logged successfully!');
+        // Show progress vs last session even when not a record
+        const history = exercise.users[currentUser].history;
+        if (history.length >= 2) {
+            const prev = history[history.length - 2];
+            const prevVol = prev.sets.reduce((s, x) => s + x.reps * x.weight, 0);
+            const newVol  = sets.reduce((s, x) => s + x.reps * x.weight, 0);
+            if (prevVol > 0) {
+                const diff = Math.round(((newVol - prevVol) / prevVol) * 100 * 10) / 10;
+                const emoji = diff > 0 ? '📈' : diff < 0 ? '📉' : '➡️';
+                const msg   = diff > 0 ? `+${diff}% vs last session — great progress!`
+                            : diff < 0 ? `${diff}% vs last session — keep pushing!`
+                            : 'Same volume as last session — stay consistent!';
+                alert(`✅ Workout logged!\n\n${emoji} ${msg}`);
+                return;
+            }
+        }
+        alert('✅ Workout logged successfully!');
     }
-    
-    workoutModal.style.display = 'none';
-    editingExerciseId = null;
     isNewlyAddedFromCamera = false; // Reset flag
     workoutForm.reset();
     renderExercises();

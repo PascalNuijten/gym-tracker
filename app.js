@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.17'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.18'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4208,13 +4208,22 @@ function setupFirebaseListeners() {
             // Load planned workouts and keep them in sync
             database.ref('plannedWorkouts').on('value', (snap) => {
                 const pd = snap.val();
+                // Firebase can convert nested arrays to objects with numeric string keys.
+                // Normalize a single plan so its .exercises is always a real Array.
+                const normalizePlan = (p) => {
+                    if (!p || typeof p !== 'object') return p;
+                    if (p.exercises != null && !Array.isArray(p.exercises) && typeof p.exercises === 'object') {
+                        p.exercises = Object.values(p.exercises).filter(Boolean);
+                    }
+                    return p;
+                };
                 if (!pd) {
                     plannedWorkouts = [];
                 } else if (Array.isArray(pd)) {
-                    plannedWorkouts = pd.filter(Boolean);
+                    plannedWorkouts = pd.filter(Boolean).map(normalizePlan);
                 } else if (typeof pd === 'object') {
                     // Firebase can return an object with numeric keys instead of array
-                    plannedWorkouts = Object.values(pd).filter(v => v && v.id);
+                    plannedWorkouts = Object.values(pd).filter(v => v && v.id).map(normalizePlan);
                 } else {
                     plannedWorkouts = [];
                 }
@@ -7257,7 +7266,8 @@ async function aiGeneratePlan() {
                     : 10;
                 return `${ex.name} (${ex.category}/${Array.isArray(ex.muscle) ? ex.muscle.join('+') : ex.muscle}): last avg ${lastAvgW.toFixed(1)}kg×${Math.round(lastAvgR)}reps, max ${maxW}kg`;
             }).join('\n') || 'No training history yet — use conservative beginner weights';
-        return { profileStr, hist: allHistory };
+        const knownNames = withHistory.map(ex => ex.name).join(', ') || 'None yet';
+        return { profileStr, hist: allHistory, knownNames };
     }
 
     const usersContext = allParticipants.map(u => {
@@ -7973,9 +7983,13 @@ function showCalendarDay(day) {
             const others = [plan.createdBy, ...plan.invitedUsers].filter(u => u !== currentUser);
             if (others.length) html += `<br><span style="font-size:0.82em;color:#888;">👥 With: ${others.join(', ')}</span>`;
         }
-        if ((plan.exercises || []).length > 0) {
+        // Defensive: Firebase may return plan.exercises as object with numeric keys instead of Array
+        const planExercises = Array.isArray(plan.exercises)
+            ? plan.exercises
+            : (plan.exercises && typeof plan.exercises === 'object' ? Object.values(plan.exercises).filter(Boolean) : []);
+        if (planExercises.length > 0) {
             html += `<div style="margin:8px 0 4px;display:flex;flex-direction:column;gap:5px;">`;
-            plan.exercises.forEach(ex => {
+            planExercises.forEach(ex => {
                 const userW = ex.perUserWeights?.[currentUser] ?? ex.plannedWeight;
                 const userR = ex.perUserReps?.[currentUser] ?? ex.plannedReps;
                 const dbEx = exercises.find(e => e.name === ex.name);
@@ -7984,8 +7998,14 @@ function showCalendarDay(day) {
                 if (ex.plannedSets) meta += `${ex.plannedSets}× `;
                 if (userR) meta += `${userR} reps`;
                 if (userW) meta += ` @ ${userW}kg`;
+                const logSets = ex.plannedSets || 3;
+                const logReps = ex.perUserReps?.[currentUser] ?? ex.plannedReps ?? 10;
+                const logWeight = ex.perUserWeights?.[currentUser] ?? ex.plannedWeight ?? 0;
+                const muscleAttr = (Array.isArray(ex.muscle) ? ex.muscle.join(',') : (ex.muscle || '')).replace(/'/g, '');
                 html += `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,0.05);">`;
-                if (isUsableImage(imgUrl)) html += `<img src="${imgUrl}" alt="${ex.name}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.onerror=null;this.style.display='none';">`;                html += `<div style="flex:1;font-size:0.86em;color:#444;"><strong>${ex.name}</strong>${meta ? `<br><span style="color:#667eea;font-size:0.9em;">${meta.trim()}</span>` : ''}</div>`;
+                if (isUsableImage(imgUrl)) html += `<img src="${imgUrl}" alt="${ex.name}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.onerror=null;this.style.display='none';">`;
+                html += `<div style="flex:1;font-size:0.86em;color:#444;"><strong>${ex.name}</strong>${meta ? `<br><span style="color:#667eea;font-size:0.9em;">${meta.trim()}</span>` : ''}</div>`;
+                html += `<button onclick="quickLogPlanExercise('${ex.name.replace(/'/g,'\\\'')}','${(ex.category||'').replace(/'/g,'\\\'')}','${muscleAttr}',${logSets},${logReps},${logWeight})" style="background:linear-gradient(135deg,var(--btn-gradient-start),var(--btn-gradient-end));color:white;border:none;border-radius:5px;padding:3px 9px;font-size:0.78em;cursor:pointer;flex-shrink:0;" title="Log this exercise">➕ Log</button>`;
                 html += `</div>`;
             });
             html += `</div>`;
@@ -7993,7 +8013,7 @@ function showCalendarDay(day) {
         // Google Calendar link for plan
         const gcDateP = dateISO.replace(/-/g, '');
         const gcTitleP = encodeURIComponent(`📋 ${planTypeLabel}`);
-        const gcDetailsP = encodeURIComponent((plan.exercises || []).map(ex => ex.name).join('\n'));
+        const gcDetailsP = encodeURIComponent(planExercises.map(ex => ex.name).join('\n'));
         const gcUrlP = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${gcTitleP}&dates=${gcDateP}/${gcDateP}&details=${gcDetailsP}`;
         html += `<div style="display:flex;gap:10px;margin-top:8px;align-items:center;flex-wrap:wrap;">`;
         html += `<a href="${gcUrlP}" target="_blank" style="font-size:0.82em;color:#4285F4;text-decoration:none;">📅 Add to Google Calendar</a>`;

@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.15'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.16'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -6980,7 +6980,7 @@ function renderPlanExercises() {
                     <input class="plan-sets-input" type="number" min="1" max="100" value="${reps}" placeholder="reps"
                         onchange="currentPlanExercises[${i}].plannedReps=+this.value;if(currentPlanExercises[${i}].perUserReps)currentPlanExercises[${i}].perUserReps['${currentUser}']=+this.value;" title="Reps">
                     <span style="font-size:0.8em;color:#888;">reps</span>
-                    <input class="plan-sets-input" style="width:54px;" type="number" min="0" step="0.5" value="${weight}" placeholder="kg"
+                    <input class="plan-sets-input" style="width:72px;font-size:0.92em;font-weight:600;" type="number" min="0" step="0.5" value="${weight}" placeholder="kg"
                         onchange="currentPlanExercises[${i}].plannedWeight=+this.value;if(currentPlanExercises[${i}].perUserWeights)currentPlanExercises[${i}].perUserWeights['${currentUser}']=+this.value;" title="Weight (kg)">
                     <span style="font-size:0.8em;color:#888;">kg</span>
                     ` : `<span style="font-size:0.78em;color:#aaa;font-style:italic;">AI suggests at workout time</span>`}

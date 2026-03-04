@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.16'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.17'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4220,6 +4220,11 @@ function setupFirebaseListeners() {
                 }
                 // Check for unacknowledged invites after each sync
                 checkPendingInvites();
+                // Re-render calendar for ALL users (creator + invited) whenever plans change
+                const calModal = document.getElementById('calendarModal');
+                if (calModal && calModal.style.display !== 'none') {
+                    renderCalendar();
+                }
             });
         }, (error) => {
             console.error('Firebase read error:', error);
@@ -7059,8 +7064,8 @@ function savePlannedWorkout() {
     // Auto-open the day detail (so the Google Calendar link is immediately visible)
     selectedCalendarDay = parseInt(currentPlanDate.split('-')[2]);
     renderCalendar();
-    // The calendar day detail (shown after renderCalendar) already has an
-    // "Add to Google Calendar" link — no intrusive popup needed.
+    // Explicitly refresh the day detail panel so the creator always sees the saved plan
+    showCalendarDay(selectedCalendarDay);
 }
 
 function deletePlannedWorkoutAndClose() {

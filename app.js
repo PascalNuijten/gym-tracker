@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.18'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.19'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -7795,12 +7795,17 @@ function renderCalendar() {
     });
 
     // --- Build plan-day map (plans involving current user) ---
+    // Own plans always take priority over plans the user was invited to.
     const planDays = {};
     plannedWorkouts.forEach(plan => {
         if (plan.createdBy !== currentUser && !(plan.invitedUsers || []).includes(currentUser)) return;
         const d = new Date(plan.date + 'T00:00:00');
         if (d.getFullYear() === calendarYear && d.getMonth() === calendarMonth) {
-            planDays[d.getDate()] = plan;
+            const dayKey = d.getDate();
+            // Only overwrite if this is the user's own plan, or if nothing is set yet
+            if (!planDays[dayKey] || plan.createdBy === currentUser) {
+                planDays[dayKey] = plan;
+            }
         }
     });
 
@@ -7919,11 +7924,17 @@ function showCalendarDay(day) {
         });
     });
 
-    // --- Find plan for this day (visible to current user) ---
-    const plan = plannedWorkouts.find(p => {
-        if (p.createdBy !== currentUser && !(p.invitedUsers || []).includes(currentUser)) return false;
-        return p.date === dateISO;
-    });
+    // --- Find plan for this day (own plan takes priority over invited plans) ---
+    // Own plan first:
+    let plan = plannedWorkouts.find(p => p.createdBy === currentUser && p.date === dateISO);
+    // Fall back to a plan the user was invited to:
+    if (!plan) {
+        plan = plannedWorkouts.find(p =>
+            p.createdBy !== currentUser &&
+            (p.invitedUsers || []).includes(currentUser) &&
+            p.date === dateISO
+        );
+    }
 
     if (!workouts.length && !plan) {
         planCalendarDay(day);
@@ -7983,10 +7994,12 @@ function showCalendarDay(day) {
             const others = [plan.createdBy, ...plan.invitedUsers].filter(u => u !== currentUser);
             if (others.length) html += `<br><span style="font-size:0.82em;color:#888;">👥 With: ${others.join(', ')}</span>`;
         }
-        // Defensive: Firebase may return plan.exercises as object with numeric keys instead of Array
-        const planExercises = Array.isArray(plan.exercises)
+        // Defensive: Firebase may return plan.exercises as object with numeric keys instead of Array.
+        // Also filter out any null/malformed entries either way.
+        const planExercises = (Array.isArray(plan.exercises)
             ? plan.exercises
-            : (plan.exercises && typeof plan.exercises === 'object' ? Object.values(plan.exercises).filter(Boolean) : []);
+            : (plan.exercises && typeof plan.exercises === 'object' ? Object.values(plan.exercises) : [])
+        ).filter(ex => ex && ex.name);
         if (planExercises.length > 0) {
             html += `<div style="margin:8px 0 4px;display:flex;flex-direction:column;gap:5px;">`;
             planExercises.forEach(ex => {
@@ -8001,11 +8014,13 @@ function showCalendarDay(day) {
                 const logSets = ex.plannedSets || 3;
                 const logReps = ex.perUserReps?.[currentUser] ?? ex.plannedReps ?? 10;
                 const logWeight = ex.perUserWeights?.[currentUser] ?? ex.plannedWeight ?? 0;
-                const muscleAttr = (Array.isArray(ex.muscle) ? ex.muscle.join(',') : (ex.muscle || '')).replace(/'/g, '');
+                const safeName = String(ex.name).replace(/'/g, '\\\'');
+                const safeCat  = String(ex.category || '').replace(/'/g, '\\\'');
+                const muscleAttr = (Array.isArray(ex.muscle) ? ex.muscle.join(',') : String(ex.muscle || '')).replace(/'/g, '');
                 html += `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,0.05);">`;
                 if (isUsableImage(imgUrl)) html += `<img src="${imgUrl}" alt="${ex.name}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.onerror=null;this.style.display='none';">`;
                 html += `<div style="flex:1;font-size:0.86em;color:#444;"><strong>${ex.name}</strong>${meta ? `<br><span style="color:#667eea;font-size:0.9em;">${meta.trim()}</span>` : ''}</div>`;
-                html += `<button onclick="quickLogPlanExercise('${ex.name.replace(/'/g,'\\\'')}','${(ex.category||'').replace(/'/g,'\\\'')}','${muscleAttr}',${logSets},${logReps},${logWeight})" style="background:linear-gradient(135deg,var(--btn-gradient-start),var(--btn-gradient-end));color:white;border:none;border-radius:5px;padding:3px 9px;font-size:0.78em;cursor:pointer;flex-shrink:0;" title="Log this exercise">➕ Log</button>`;
+                html += `<button onclick="quickLogPlanExercise('${safeName}','${safeCat}','${muscleAttr}',${logSets},${logReps},${logWeight})" style="background:linear-gradient(135deg,var(--btn-gradient-start),var(--btn-gradient-end));color:white;border:none;border-radius:5px;padding:3px 9px;font-size:0.78em;cursor:pointer;flex-shrink:0;" title="Log this exercise">➕ Log</button>`;
                 html += `</div>`;
             });
             html += `</div>`;

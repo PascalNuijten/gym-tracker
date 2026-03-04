@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.9'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.10'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -1598,6 +1598,17 @@ function saveExercise() {
     
     // Refresh the existing exercises dropdown
     populateExistingExercises();
+    
+    // Check if triggered from a plan quick-log (auto-open workout modal with prefill)
+    if (window._planPrefill) {
+        const prefill = window._planPrefill;
+        window._planPrefill = null;
+        modal.style.display = 'none';
+        exerciseForm.reset();
+        renderExercises();
+        setTimeout(() => openWorkoutModalForExercise(newExercise.id, false, prefill), 200);
+        return;
+    }
     
     alert(`Exercise "${name}" created! Scroll down and click "Log Workout" to add your first session.`);
     modal.style.display = 'none';
@@ -5506,7 +5517,7 @@ Respond with ONLY a JSON object:
     }, 1500);
 }
 
-function openWorkoutModalForExercise(exerciseId, isFromCamera = false) {
+function openWorkoutModalForExercise(exerciseId, isFromCamera = false, prefillData = null) {
     const exercise = exercises.find(ex => ex.id === exerciseId);
     if (!exercise) return;
     
@@ -5522,8 +5533,24 @@ function openWorkoutModalForExercise(exerciseId, isFromCamera = false) {
     // Reset and initialize sets
     resetWorkoutSetsContainer();
     
-    // Pre-fill with last workout data if available
-    if (exercise.history && exercise.history.length > 0) {
+    if (prefillData && prefillData.sets > 0) {
+        // Pre-fill with AI plan data
+        const setsContainer = document.getElementById('workoutSetsContainer');
+        setsContainer.innerHTML = '';
+        workoutSetCounter = 1;
+        for (let i = 0; i < prefillData.sets; i++) {
+            const setDiv = document.createElement('div');
+            setDiv.className = 'set-input-group';
+            setDiv.innerHTML = `
+                <span class="set-number">Set ${workoutSetCounter}</span>
+                <input type="number" class="workout-set-weight" placeholder="Weight (kg)" value="${prefillData.weight || 0}" step="0.25" min="0">
+                <input type="number" class="workout-set-reps" placeholder="Reps" value="${prefillData.reps || 10}" step="1" min="1">
+                <button type="button" class="remove-set-btn" onclick="removeWorkoutSet(this)">✕</button>
+            `;
+            setsContainer.appendChild(setDiv);
+            workoutSetCounter++;
+        }
+    } else if (exercise.history && exercise.history.length > 0) {
         const lastWorkout = exercise.history[exercise.history.length - 1];
         const setsContainer = document.getElementById('workoutSetsContainer');
         setsContainer.innerHTML = '';
@@ -6919,19 +6946,22 @@ function renderPlanExercises() {
         const reps   = ex.perUserReps?.[currentUser]    ?? ex.plannedReps   ?? 10;
         const sets   = ex.plannedSets ?? 4;
 
-        // Look up exercise image from the database
         const exerciseData = exercises.find(e => e.name === ex.name);
         const imgUrl = exerciseData?.image || '';
         const imgHtml = isUsableImage(imgUrl) ? `<img src="${imgUrl}" alt="${ex.name}" style="width:44px;height:44px;object-fit:cover;border-radius:7px;flex-shrink:0;" onerror="this.onerror=null;this.style.display='none';">` : '';
+        const isNewEx = ex.isNew || !exerciseData;
+        const newBadge = isNewEx ? '<span style="background:#fff3e0;color:#e67e22;font-size:0.7em;border-radius:4px;padding:1px 5px;margin-left:4px;">New</span>' : '';
+        const reasonTip = ex.reason ? `<div style="font-size:0.76em;color:#888;font-style:italic;margin-top:2px;">💡 ${ex.reason}</div>` : '';
 
         return `
         <div class="plan-exercise-item" style="display:flex;align-items:center;gap:8px;">
             ${imgHtml}
             <div style="flex:1;min-width:0;">
                 <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;">
-                    <span class="plan-ex-name" style="font-weight:600;">${ex.name} <span style="color:#aaa;font-size:0.78em;">${ex.category || ''}</span></span>
+                    <span class="plan-ex-name" style="font-weight:600;">${ex.name} <span style="color:#aaa;font-size:0.78em;">${ex.category || ''}</span>${newBadge}</span>
                     <button onclick="removePlanExercise(${i})" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:1em;padding:0 4px;">✕</button>
                 </div>
+                ${reasonTip}
                 <div class="plan-exercise-meta" style="margin-top:4px;">
                     <input class="plan-sets-input" type="number" min="1" max="20" value="${sets}" placeholder="sets"
                         onchange="currentPlanExercises[${i}].plannedSets=+this.value" title="Sets">
@@ -7113,6 +7143,36 @@ function acceptInvite(planId, dateISO) {
     setTimeout(() => showCalendarDay(d), 150);
 }
 
+// Open workout log modal for a planned exercise.
+// - Existing exercise: opens log modal prefilled with planned sets/reps/weight.
+// - New exercise (not yet in DB): opens add-exercise form prefilled; auto-opens log after save.
+function quickLogPlanExercise(exName, category, muscle, plannedSets, plannedReps, plannedWeight) {
+    const ex = exercises.find(e => e.name.toLowerCase().trim() === exName.toLowerCase().trim());
+    if (ex) {
+        openWorkoutModalForExercise(ex.id, false, { sets: plannedSets, reps: plannedReps, weight: plannedWeight });
+    } else {
+        if (!confirm(`"${exName}" is not in your database yet.\nAdd it now? The log form will open automatically after.`)) return;
+        window._planPrefill = { sets: plannedSets, reps: plannedReps, weight: plannedWeight };
+        document.getElementById('exerciseForm').reset();
+        editingExerciseId = null;
+        document.getElementById('exerciseName').value = exName;
+        document.getElementById('exerciseName').readOnly = false;
+        document.getElementById('exerciseCategory').value = category || '';
+        document.getElementById('exerciseCategory').disabled = false;
+        const muscleSelect = document.getElementById('exerciseMuscle');
+        Array.from(muscleSelect.options).forEach(opt => opt.selected = false);
+        const muscleArr = (muscle || '').split(',').map(m => m.trim()).filter(Boolean);
+        Array.from(muscleSelect.options).forEach(opt => {
+            if (muscleArr.some(m => m.toLowerCase() === opt.value.toLowerCase() || opt.value.toLowerCase().includes(m.toLowerCase()))) opt.selected = true;
+        });
+        document.getElementById('newExerciseSection').style.display = 'block';
+        document.getElementById('existingExerciseSection').style.display = 'none';
+        document.getElementById('newExerciseBtn').classList.add('active');
+        document.getElementById('existingExerciseBtn').classList.remove('active');
+        modal.style.display = 'block';
+    }
+}
+
 // ==================== AI TRAINING PLAN GENERATOR ====================
 
 async function aiGeneratePlan() {
@@ -7148,11 +7208,11 @@ async function aiGeneratePlan() {
     function buildUserContext(username) {
         const profile = getUserProfile(username);
         const profileStr = profile
-            ? `${profile.height || '?'}cm, ${profile.weight || '?'}kg, ${profile.gender || ''}, ${profile.experience || ''} level, goal: ${profile.goal || 'general'}`
+            ? `${profile.height || '?'}cm, ${profile.weight || '?'}kg, ${profile.gender || ''}, ${profile.experience || ''} level, goal: ${profile.goal || 'general'}, frequency target: ${profile.frequency || '?'} days/week`
             : 'No profile set';
         // Include ALL exercises with history for this user (full breadth)
-        const allHistory = exercises
-            .filter(ex => (ex.users?.[username]?.history?.length || 0) > 0)
+        const withHistory = exercises.filter(ex => (ex.users?.[username]?.history?.length || 0) > 0);
+        const allHistory = withHistory
             .map(ex => {
                 const sessions = ex.users[username].history.slice(-5);
                 const maxW = Math.max(0, ...sessions.flatMap(s => s.sets.map(s2 => s2.weight)));
@@ -7176,32 +7236,35 @@ async function aiGeneratePlan() {
     const perUserWeightFields = allParticipants.map(u => `"${u}": <weight>`).join(', ');
     const perUserRepsFields   = allParticipants.map(u => `"${u}": <reps>`).join(', ');
 
-    const prompt = `You are an expert strength coach. Create a ${numExercises}-exercise workout plan.
+    const prompt = `You are an expert strength coach specializing in hypertrophy and evidence-based programming. Create a ${numExercises}-exercise workout plan.
 
 TRAINING TYPE: "${trainingName}"
 
 PARTICIPANTS: ${allParticipants.join(', ')}
 ${allParticipants.length > 1 ? '(You MUST generate INDIVIDUAL weights & reps for EACH person based on THEIR history below)\n' : ''}
 ⚠️ CRITICAL RULES:
-1. ALWAYS use history data as primary source for weights/reps. DO NOT make up weights.
-2. For each exercise, check if a participant has history for it:
-   - HAS HISTORY → use their last session's avg weight + 2-5% progressive overload
-   - NO DIRECT HISTORY but similar exercises exist → estimate using real-world strength ratios (e.g. machine press 80% of barbel press)  
-   - NO DATA AT ALL → use weight=0 (participant fills in manually)
-3. Pick ${numExercises} exercises hitting DIFFERENT muscle sub-groups of "${trainingName}"
-   (e.g. chest day = flat press + incline + fly/cable + optional dips; leg day = squat + hinge + extension + curl)
-4. Prioritize exercises the user(s) ALREADY DO (from history below) — use their familiar exercises first
-5. Sets: 3-4 per exercise. Reps match their goal (strength=3-6, hypertrophy=8-12, endurance=12-20)
+1. ALWAYS use history data as the primary source for weights/reps.
+2. For each exercise per user:
+   - HAS HISTORY → use their last session avg weight + 2-5% progressive overload
+   - NO DIRECT HISTORY but similar exercises exist → estimate using strength ratios
+   - NO DATA AT ALL → use weight=0
+3. PRIORITIZE exercises already in the user history — use their EXACT exercise names when possible.
+4. Fill remaining slots with exercises that optimize muscle coverage for "${trainingName}". Set "isNew": true if NOT in user history — choose new exercises to fill GAPS in muscle group coverage.
+5. Goal-based rep ranges: hypertrophy = 8-12 reps, 3-4 sets; strength = 4-6 reps, 4-5 sets; endurance = 12-20 reps, 2-3 sets.
+6. Consider body metrics (height/weight) for exercise selection.
+7. Add a short "reason" for each exercise (1 sentence).
 
 COMPLETE TRAINING HISTORY + PERSONAL DATA:
 ${usersContext}
 
-Respond ONLY with a valid JSON array (no other text):
+Respond ONLY with a valid JSON array (no other text, no code fences):
 [
   {
-    "name": "<Exercise Name from history if possible>",
+    "name": "<Exercise Name — exact name from history if possible>",
     "category": "<Category>",
-    "muscle": "<Primary Muscle>",
+    "muscle": "<Primary Muscle or comma-separated muscles>",
+    "isNew": <true if NOT in this user's history, false if already practised>,
+    "reason": "<1 sentence: why this exercise for this training type and user>",
     "plannedSets": <sets>,
     "plannedReps": <reps for ${currentUser}>,
     "plannedWeight": <weight kg for ${currentUser}>,
@@ -7222,6 +7285,8 @@ Respond ONLY with a valid JSON array (no other text):
             name: ex.name || 'Unknown',
             category: ex.category || '',
             muscle: ex.muscle || '',
+            isNew: ex.isNew === true,
+            reason: ex.reason || '',
             plannedSets: ex.plannedSets || 4,
             plannedReps: ex.perUserReps?.[currentUser] ?? ex.plannedReps ?? 10,
             plannedWeight: ex.perUserWeights?.[currentUser] ?? ex.plannedWeight ?? 0,

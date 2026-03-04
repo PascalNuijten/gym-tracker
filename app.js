@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.10'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.11'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -5534,40 +5534,29 @@ function openWorkoutModalForExercise(exerciseId, isFromCamera = false, prefillDa
     resetWorkoutSetsContainer();
     
     if (prefillData && prefillData.sets > 0) {
-        // Pre-fill with AI plan data
-        const setsContainer = document.getElementById('workoutSetsContainer');
-        setsContainer.innerHTML = '';
-        workoutSetCounter = 1;
-        for (let i = 0; i < prefillData.sets; i++) {
-            const setDiv = document.createElement('div');
-            setDiv.className = 'set-input-group';
-            setDiv.innerHTML = `
-                <span class="set-number">Set ${workoutSetCounter}</span>
-                <input type="number" class="workout-set-weight" placeholder="Weight (kg)" value="${prefillData.weight || 0}" step="0.25" min="0">
-                <input type="number" class="workout-set-reps" placeholder="Reps" value="${prefillData.reps || 10}" step="1" min="1">
-                <button type="button" class="remove-set-btn" onclick="removeWorkoutSet(this)">✕</button>
-            `;
-            setsContainer.appendChild(setDiv);
-            workoutSetCounter++;
+        // Pre-fill with AI plan data using proper set structure
+        // Set 1 is already created by resetWorkoutSetsContainer()
+        document.getElementById('workout_set1_reps').value = prefillData.reps || 10;
+        document.getElementById('workout_set1_weight').value = prefillData.weight || 0;
+        // Add remaining sets (addWorkoutSet copies previous values automatically)
+        for (let i = 1; i < prefillData.sets; i++) {
+            addWorkoutSet();
         }
-    } else if (exercise.history && exercise.history.length > 0) {
-        const lastWorkout = exercise.history[exercise.history.length - 1];
-        const setsContainer = document.getElementById('workoutSetsContainer');
-        setsContainer.innerHTML = '';
-        workoutSetCounter = 1;
-        
-        lastWorkout.sets.forEach((set, index) => {
-            const setDiv = document.createElement('div');
-            setDiv.className = 'set-input-group';
-            setDiv.innerHTML = `
-                <span class="set-number">Set ${workoutSetCounter}</span>
-                <input type="number" class="workout-set-weight" placeholder="Weight (kg)" value="${set.weight}" step="0.25" min="0">
-                <input type="number" class="workout-set-reps" placeholder="Reps" value="${set.reps}" step="1" min="1">
-                <button type="button" class="remove-set-btn" onclick="removeWorkoutSet(this)">✕</button>
-            `;
-            setsContainer.appendChild(setDiv);
-            workoutSetCounter++;
-        });
+    } else {
+        // Pre-fill from last workout if available (uses per-user history)
+        const userHistory = exercise.users?.[currentUser]?.history;
+        if (userHistory && userHistory.length > 0) {
+            const lastWorkout = userHistory[userHistory.length - 1];
+            if (lastWorkout.sets && lastWorkout.sets.length > 0) {
+                document.getElementById('workout_set1_reps').value = lastWorkout.sets[0].reps || '';
+                document.getElementById('workout_set1_weight').value = lastWorkout.sets[0].weight || '';
+                for (let i = 1; i < lastWorkout.sets.length; i++) {
+                    addWorkoutSet();
+                    document.getElementById(`workout_set${workoutSetCounter}_reps`).value = lastWorkout.sets[i].reps || '';
+                    document.getElementById(`workout_set${workoutSetCounter}_weight`).value = lastWorkout.sets[i].weight || '';
+                }
+            }
+        }
     }
     
     // Clear notes and times
@@ -7081,19 +7070,31 @@ function deletePlanByDate(dateISO) {
 
 function checkPendingInvites() {
     if (!currentUser) return;
+    // Load acks from Firebase (plus localStorage as fallback)
     const ackKey = `inviteAck_${currentUser}`;
-    const acked = JSON.parse(localStorage.getItem(ackKey) || '[]');
+    const localAcked = JSON.parse(localStorage.getItem(ackKey) || '[]');
+    
+    if (database) {
+        database.ref(`inviteAcks/${currentUser}`).once('value', snap => {
+            const fbAcked = snap.val() || [];
+            // Merge local + Firebase acks
+            const acked = Array.from(new Set([...localAcked, ...fbAcked].map(String)));
+            _runInviteCheck(acked);
+        });
+    } else {
+        _runInviteCheck(localAcked);
+    }
+}
 
+function _runInviteCheck(acked) {
+    if (!currentUser) return;
     const pending = plannedWorkouts.filter(p => {
-        if (p.createdBy === currentUser) return false; // own plan
-        if (!(p.invitedUsers || []).includes(currentUser)) return false; // not invited
-        if (acked.includes(String(p.id))) return false; // already acked
+        if (p.createdBy === currentUser) return false;
+        if (!(p.invitedUsers || []).includes(currentUser)) return false;
+        if (acked.includes(String(p.id))) return false;
         return true;
     });
-
-    if (pending.length > 0) {
-        showInviteModal(pending);
-    }
+    if (pending.length > 0) showInviteModal(pending);
 }
 
 function showInviteModal(pendingPlans) {
@@ -7123,7 +7124,12 @@ function dismissInvite(planId) {
     const ackKey = `inviteAck_${currentUser}`;
     const acked = JSON.parse(localStorage.getItem(ackKey) || '[]');
     if (!acked.includes(String(planId))) acked.push(String(planId));
+    // Save to localStorage (immediate, offline-safe)
     localStorage.setItem(ackKey, JSON.stringify(acked));
+    // Also persist to Firebase so it syncs across devices
+    if (database && currentUser) {
+        database.ref(`inviteAcks/${currentUser}`).set(acked);
+    }
 
     // Check if there are more pending
     const modal = document.getElementById('inviteNotificationModal');
@@ -7229,8 +7235,8 @@ async function aiGeneratePlan() {
     }
 
     const usersContext = allParticipants.map(u => {
-        const { profileStr, hist } = buildUserContext(u);
-        return `=== ${u} (${profileStr}) ===\n${hist}`;
+        const { profileStr, hist, knownNames } = buildUserContext(u);
+        return `=== ${u} (${profileStr}) ===\nKNOWN EXERCISES (must use these exact names when possible): ${knownNames}\n${hist}`;
     }).join('\n\n');
 
     const perUserWeightFields = allParticipants.map(u => `"${u}": <weight>`).join(', ');
@@ -7253,6 +7259,7 @@ ${allParticipants.length > 1 ? '(You MUST generate INDIVIDUAL weights & reps for
 5. Goal-based rep ranges: hypertrophy = 8-12 reps, 3-4 sets; strength = 4-6 reps, 4-5 sets; endurance = 12-20 reps, 2-3 sets.
 6. Consider body metrics (height/weight) for exercise selection.
 7. Add a short "reason" for each exercise (1 sentence).
+8. ⚡ MANDATORY: For exercises the user already has, copy the exact name from their KNOWN EXERCISES list verbatim.
 
 COMPLETE TRAINING HISTORY + PERSONAL DATA:
 ${usersContext}

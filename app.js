@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.11'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.12'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -2140,15 +2140,13 @@ function saveWorkout() {
         }
     }
     
-    // Add new workout session
-    const startTimeVal = document.getElementById('workoutStartTime')?.value || null;
-    const endTimeVal   = document.getElementById('workoutEndTime')?.value || null;
+    // Add new workout session — time is captured automatically at save
+    const now = new Date();
     const session = {
-        date: new Date().toISOString(),
+        date: now.toISOString(),
+        startTime: `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`,
         sets: sets,
-        notes: notes,
-        startTime: startTimeVal || undefined,
-        endTime:   endTimeVal   || undefined
+        notes: notes
     };
     
     exercise.users[currentUser].history.push(session);
@@ -5559,16 +5557,8 @@ function openWorkoutModalForExercise(exerciseId, isFromCamera = false, prefillDa
         }
     }
     
-    // Clear notes and times
+    // Clear notes
     document.getElementById('workoutNotes').value = '';
-    // Auto-fill start time with current time
-    const stInput = document.getElementById('workoutStartTime');
-    const etInput = document.getElementById('workoutEndTime');
-    if (stInput) {
-        const now = new Date();
-        stInput.value = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-    }
-    if (etInput) etInput.value = '';
     
     workoutModal.style.display = 'block';
 }

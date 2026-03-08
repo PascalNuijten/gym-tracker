@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.23'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.24'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -7460,7 +7460,7 @@ Rate 1-10 and give a short analysis. Respond EXACTLY:
 SCORE: [1-10]
 RATING: [Excellent/Great/Good/Average/Below Average]
 HIGHLIGHTS: [1 sentence about what went well]
-SUGGESTIONS: [1 specific coaching tip to improve technique or intensity on one of the ${workouts.length} exercises listed above — do NOT suggest adding more exercises or training different muscle groups than those already trained today]`;
+SUGGESTIONS: [1 actionable tip for next time — this can be a technique cue for one of the exercises above, a progression strategy, OR an additional exercise to add to this same ${categories.join('/')} session. ONLY suggest exercises that target the same muscle groups already trained today (${muscleGroups.join(', ') || categories.join(', ')}). Do NOT recommend exercises for unrelated muscle groups.]`;
 
     try {
         const aiResponse = await callGeminiAI(prompt, null, false, 300);

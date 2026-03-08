@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.22'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.23'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -1888,8 +1888,8 @@ async function getAIWeightRecommendation(exercise) {
                 const lastAvgWeight = lastSession.sets.reduce((s, set) => s + set.weight, 0) / lastSession.sets.length;
                 const lastAvgReps   = lastSession.sets.reduce((s, set) => s + set.reps, 0) / lastSession.sets.length;
                 recommendationDiv.innerHTML = `<div style="padding:10px;background:#fff3cd;border-radius:6px;font-size:0.9em;">
-                    <strong>💡 Last session:</strong> ~${lastAvgWeight.toFixed(1)}kg × ${Math.round(lastAvgReps)} reps
-                    <button onclick="applyRecommendedWeight(${lastAvgWeight.toFixed(1)})" class="secondary-btn" style="margin-left:10px;font-size:0.85em;padding:4px 10px;">Use ${lastAvgWeight.toFixed(1)}kg</button>
+                    <strong>💡 Last session:</strong> ~${formatWeight(lastAvgWeight)} × ${Math.round(lastAvgReps)} reps
+                    <button onclick="applyRecommendedWeight(${lastAvgWeight.toFixed(1)})" class="secondary-btn" style="margin-left:10px;font-size:0.85em;padding:4px 10px;">Use ${formatWeight(lastAvgWeight)}</button>
                 </div>`;
             } else {
                 recommendationDiv.innerHTML = `<div style="padding:10px;background:#f0f0f0;border-radius:5px;font-size:0.9em;color:#666;">💡 Enable AI for smart weight recommendations.</div>`;
@@ -1962,7 +1962,7 @@ REASONING: [one sentence]`;
                 recommendationDiv.innerHTML = `<div style="padding: 12px; background: linear-gradient(135deg, var(--btn-gradient-start) 0%, var(--btn-gradient-end) 100%); color: white; border-radius: 8px; font-size: 0.9em; box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);">
                     <div style="font-weight: bold; margin-bottom: 5px;">🤖 AI Workout Plan</div>
                     <div style="font-size: 1.2em; font-weight: bold; margin: 8px 0;">
-                        ${recommendedSets} sets × ${recommendedReps} reps @ ${recommendedWeight}kg
+                        ${recommendedSets} sets × ${recommendedReps} reps @ ${formatWeight(recommendedWeight)}
                     </div>
                     <div style="font-size: 0.85em; opacity: 0.95; margin-bottom: 10px;">${reasoning}</div>
                     <button onclick="applyRecommendedWorkout(${recommendedSets}, '${recommendedReps}', ${recommendedWeight})" class="secondary-btn" style="width: 100%; font-size: 0.9em; padding: 8px 12px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; font-weight: 600;">
@@ -3282,7 +3282,7 @@ function showExerciseDetails(id) {
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Max Weight</div>
-                    <div class="stat-value">${stats.maxWeight} kg</div>
+                    <div class="stat-value">${formatWeight(stats.maxWeight)}</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Max Reps</div>
@@ -3301,13 +3301,13 @@ function showExerciseDetails(id) {
                         <div class="history-item">
                             <div class="history-header">
                                 <div class="history-date">${new Date(session.date).toLocaleDateString()} ${new Date(session.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
-                                <button class="btn-delete-history" onclick="deleteHistory(${exercise.id}, ${history.length - 1 - idx})" title="Delete this workout">🗑️</button>
+                                <button class="btn-delete-history" onclick="deleteHistory(${exercise.id}, ${idx})" title="Delete this workout">🗑️</button>
                             </div>
                             <div class="history-sets">
                                 ${session.sets.map((set, i) => `
                                     <span class="set-badge">
                                         Set ${i+1}: ${set.reps} reps @ ${formatWeight(set.weight)}
-                                        <button class="btn-edit-set" onclick="editSet(${exercise.id}, ${history.length - 1 - idx}, ${i})" title="Edit this set">✏️</button>
+                                        <button class="btn-edit-set" onclick="editSet(${exercise.id}, ${idx}, ${i})" title="Edit this set">✏️</button>
                                     </span>
                                 `).join('')}
                             </div>
@@ -6628,7 +6628,7 @@ async function getAIExerciseAlternatives(exercise, reason) {
     
     const lowerReason = reason.toLowerCase();
     const exerciseName = exercise.name.toLowerCase();
-    const muscle = (exercise.muscle || exercise.category || '').toLowerCase();
+    const muscle = (Array.isArray(exercise.muscle) ? exercise.muscle.join(', ') : (exercise.muscle || exercise.category || '')).toLowerCase();
     const hasInjury = lowerReason.includes('pain') || lowerReason.includes('injury') || lowerReason.includes('hurt');
     
     // TRY REAL AI FIRST
@@ -7307,6 +7307,8 @@ ${allParticipants.length > 1 ? '(You MUST generate INDIVIDUAL weights & reps for
 6. Consider body metrics (height/weight) for exercise selection.
 7. Add a short "reason" for each exercise (1 sentence).
 8. ⚡ MANDATORY: For exercises the user already has, copy the exact name from their KNOWN EXERCISES list verbatim.
+9. NO REDUNDANCY: Never include two exercises that target the same primary muscle group or muscle head. Ensure variety in movement patterns across the plan.
+10. EXERCISE ORDER: Compound multi-joint movements first (e.g. squats, bench press, rows, deadlifts), then accessory compound, then isolation exercises last.
 
 COMPLETE TRAINING HISTORY + PERSONAL DATA:
 ${usersContext}
@@ -7436,7 +7438,7 @@ async function aiEvaluateCalendarDay(day) {
     const exerciseDetails = workouts.map(w => {
         const bestSet = w.sets.reduce((b, s) => s.weight > b.weight ? s : b, w.sets[0]);
         const vol = w.sets.reduce((sv, s) => sv + s.reps * s.weight, 0);
-        return `• ${w.name}: ${w.sets.length} sets, best ${bestSet.weight}kg×${bestSet.reps} reps, vol ${vol}kg`;
+        return `• ${w.name}: ${w.sets.length} sets, best ${formatWeight(bestSet.weight)}×${bestSet.reps} reps${vol > 0 ? `, vol ${vol}kg` : ' (bodyweight)'}`;  
     }).join('\n');
 
     const profileContext = getUserContext(currentUser);
@@ -7447,8 +7449,7 @@ Date: ${dateLabel} | Athlete: ${currentUser}
 ${profileContext}
 
 SESSION SUMMARY:
-- ${workouts.length} exercises · ${totalSets} sets · ${totalVol.toLocaleString()}kg total volume
-- Muscle groups: ${muscleGroups.join(', ') || categories.join(', ')}
+- ${workouts.length} exercises · ${totalSets} sets · ${totalVol > 0 ? `${totalVol.toLocaleString()}kg total volume` : 'bodyweight session (volume not applicable)'}
 
 EXERCISE DETAILS:
 ${exerciseDetails}
@@ -7459,7 +7460,7 @@ Rate 1-10 and give a short analysis. Respond EXACTLY:
 SCORE: [1-10]
 RATING: [Excellent/Great/Good/Average/Below Average]
 HIGHLIGHTS: [1 sentence about what went well]
-SUGGESTIONS: [1 concrete tip for next time]`;
+SUGGESTIONS: [1 specific coaching tip to improve technique or intensity on one of the ${workouts.length} exercises listed above — do NOT suggest adding more exercises or training different muscle groups than those already trained today]`;
 
     try {
         const aiResponse = await callGeminiAI(prompt, null, false, 300);
@@ -8021,7 +8022,7 @@ function showCalendarDay(day) {
                 let meta = '';
                 if (ex.plannedSets) meta += `${ex.plannedSets}× `;
                 if (userR) meta += `${userR} reps`;
-                if (userW) meta += ` @ ${userW}kg`;
+                if (userW !== undefined && userW !== null) meta += ` @ ${formatWeight(userW)}`;
                 const logSets = ex.plannedSets || 3;
                 const logReps = ex.perUserReps?.[currentUser] ?? ex.plannedReps ?? 10;
                 const logWeight = ex.perUserWeights?.[currentUser] ?? ex.plannedWeight ?? 0;

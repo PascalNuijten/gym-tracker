@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.24'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.25'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -1980,23 +1980,24 @@ REASONING: [one sentence]`;
         
     } catch (error) {
         console.error('AI weight recommendation failed:', error);
-        
-        // Fallback to previous session weight if available
+        // Fallback: compute progressive overload in code instead of showing raw last weight
         const userData = exercise.users?.[currentUser];
         const history = userData?.history || [];
-        
         if (history.length > 0) {
             const lastSession = history[history.length - 1];
-            const lastWeight = lastSession.sets.length > 0 ? lastSession.sets[0].weight : null;
-            
-            if (lastWeight && lastWeight > 0) {
-                recommendationDiv.innerHTML = `<div style="padding: 10px; background: #fff3cd; border-radius: 5px; font-size: 0.9em;">
-                    <strong>💡 Last session:</strong> ${lastWeight}kg
-                    <button onclick="applyRecommendedWeight(${lastWeight})" class="secondary-btn" style="margin-left: 10px; font-size: 0.85em; padding: 4px 10px;">Use ${lastWeight}kg</button>
-                </div>`;
-            }
+            const lastAvgW = lastSession.sets.reduce((s, set) => s + set.weight, 0) / lastSession.sets.length;
+            const lastAvgR = Math.round(lastSession.sets.reduce((s, set) => s + set.reps, 0) / lastSession.sets.length);
+            // Apply progressive overload: +2.5%, round to nearest 0.5kg
+            const recWeight = lastAvgW > 0 ? Math.round(lastAvgW * 1.025 * 2) / 2 : 0;
+            const weightLabel = formatWeight(recWeight);
+            recommendationDiv.innerHTML = `<div style="padding:12px;background:#fff3cd;border-radius:8px;font-size:0.9em;">
+                <div style="font-weight:bold;margin-bottom:5px;">📊 Progressive Overload Suggestion</div>
+                <div style="font-size:1.15em;font-weight:bold;margin:6px 0;">${lastSession.sets.length} sets × ${lastAvgR} reps @ ${weightLabel}</div>
+                <div style="font-size:0.8em;color:#888;margin-bottom:8px;">Last avg ${formatWeight(lastAvgW)} → +2.5% overload${error.message ? ' (AI currently unavailable)' : ''}</div>
+                <button onclick="applyRecommendedWorkout(${lastSession.sets.length},'${lastAvgR}',${recWeight})" class="secondary-btn" style="width:100%;font-size:0.88em;padding:7px 10px;">✅ Apply Plan</button>
+            </div>`;
         } else {
-            recommendationDiv.innerHTML = `<div style="padding: 10px; background: #f0f0f0; border-radius: 5px; font-size: 0.9em; color: #666;">💡 First time with this exercise? Start light and focus on form!</div>`;
+            recommendationDiv.innerHTML = `<div style="padding:10px;background:#f0f0f0;border-radius:5px;font-size:0.9em;color:#666;">💡 First time with this exercise? Start light and focus on form!</div>`;
         }
     }
 }
@@ -3205,48 +3206,84 @@ function deleteHistory(exerciseId, historyIndex) {
     }
 }
 
-// Edit Set in History
+// Edit Set in History — custom modal with Save + Delete
 function editSet(exerciseId, historyIndex, setIndex) {
     const exercise = exercises.find(ex => ex.id === exerciseId);
     if (!exercise || !exercise.users[currentUser]) return;
-    
     const session = exercise.users[currentUser].history[historyIndex];
     if (!session || !session.sets[setIndex]) return;
-    
     const currentSet = session.sets[setIndex];
-    const newReps = prompt(`Edit Set ${setIndex + 1}\n\nCurrent: ${currentSet.reps} reps @ ${currentSet.weight}kg\n\nEnter new REPS:`, currentSet.reps);
-    
-    if (newReps === null) return; // User cancelled
-    
-    const reps = parseInt(newReps);
-    if (isNaN(reps) || reps < 0) {
-        alert('Please enter a valid number of reps');
-        return;
-    }
-    
-    const newWeight = prompt(`Edit Set ${setIndex + 1}\n\nCurrent: ${currentSet.reps} reps @ ${currentSet.weight}kg\nNew: ${reps} reps @ ?\n\nEnter new WEIGHT (kg):`, currentSet.weight);
-    
-    if (newWeight === null) return; // User cancelled
-    
-    const weight = parseFloat(newWeight);
-    if (isNaN(weight) || weight < 0) {
-        alert('Please enter a valid weight');
-        return;
-    }
-    
-    // Update the set
+
+    // Remove any existing edit modal
+    document.getElementById('editSetModal')?.remove();
+
+    const editModal = document.createElement('div');
+    editModal.className = 'modal';
+    editModal.id = 'editSetModal';
+    editModal.style.cssText = 'display:block;z-index:20000;';
+    editModal.innerHTML = `
+        <div class="modal-content" style="max-width:360px;">
+            <h3 style="margin:0 0 16px;">✏️ Edit Set ${setIndex + 1}</h3>
+            <div style="display:flex;gap:12px;margin-bottom:20px;">
+                <div style="flex:1;">
+                    <label style="font-size:0.82em;color:#666;display:block;margin-bottom:4px;">Reps</label>
+                    <input id="editSetReps" type="number" min="1" value="${currentSet.reps}"
+                        style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:7px;font-size:1.1em;box-sizing:border-box;text-align:center;">
+                </div>
+                <div style="flex:1;">
+                    <label style="font-size:0.82em;color:#666;display:block;margin-bottom:4px;">Weight (kg)</label>
+                    <input id="editSetWeight" type="number" min="0" step="0.5" value="${currentSet.weight}"
+                        style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:7px;font-size:1.1em;box-sizing:border-box;text-align:center;">
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;">
+                <button onclick="saveEditedSet(${exerciseId},${historyIndex},${setIndex})" style="flex:2;padding:11px;background:linear-gradient(135deg,var(--btn-gradient-start),var(--btn-gradient-end));color:white;border:none;border-radius:8px;font-weight:700;cursor:pointer;">💾 Save</button>
+                <button onclick="deleteSetFromHistory(${exerciseId},${historyIndex},${setIndex})" style="flex:1;padding:11px;background:#e74c3c;color:white;border:none;border-radius:8px;font-weight:700;cursor:pointer;">🗑️ Delete</button>
+                <button onclick="document.getElementById('editSetModal').remove()" style="flex:1;padding:11px;background:#f0f0f0;color:#555;border:none;border-radius:8px;cursor:pointer;">✕</button>
+            </div>
+        </div>`;
+    document.body.appendChild(editModal);
+    setTimeout(() => document.getElementById('editSetReps')?.focus(), 50);
+}
+
+window.saveEditedSet = function(exerciseId, historyIndex, setIndex) {
+    const repsVal   = document.getElementById('editSetReps')?.value;
+    const weightVal = document.getElementById('editSetWeight')?.value;
+    const reps   = parseInt(repsVal);
+    const weight = parseFloat(weightVal);
+    if (isNaN(reps)   || reps < 1)   { alert('Please enter valid reps (minimum 1)'); return; }
+    if (isNaN(weight) || weight < 0) { alert('Please enter a valid weight (0 = bodyweight)'); return; }
+    const exercise = exercises.find(ex => ex.id === exerciseId);
+    if (!exercise?.users[currentUser]) return;
+    const session = exercise.users[currentUser].history[historyIndex];
+    if (!session?.sets[setIndex]) return;
     session.sets[setIndex] = { reps, weight };
-    
     saveToFirebase();
-    
-    // Close and reopen details modal to refresh
+    document.getElementById('editSetModal')?.remove();
     document.querySelectorAll('.modal').forEach(m => {
-        if (m.style.display === 'block' && m.querySelector('.history-section')) {
-            m.remove();
-        }
+        if (m.style.display === 'block' && m.querySelector('.history-section')) m.remove();
     });
     showExerciseDetails(exerciseId);
-}
+};
+
+window.deleteSetFromHistory = function(exerciseId, historyIndex, setIndex) {
+    if (!confirm('Delete this set?')) return;
+    const exercise = exercises.find(ex => ex.id === exerciseId);
+    if (!exercise?.users[currentUser]) return;
+    const session = exercise.users[currentUser].history[historyIndex];
+    if (!session) return;
+    session.sets.splice(setIndex, 1);
+    // If the session has no sets left, remove the whole session
+    if (session.sets.length === 0) {
+        exercise.users[currentUser].history.splice(historyIndex, 1);
+    }
+    saveToFirebase();
+    document.getElementById('editSetModal')?.remove();
+    document.querySelectorAll('.modal').forEach(m => {
+        if (m.style.display === 'block' && m.querySelector('.history-section')) m.remove();
+    });
+    showExerciseDetails(exerciseId);
+};
 
 // Show Exercise Details Modal
 function showExerciseDetails(id) {
@@ -7191,6 +7228,11 @@ function acceptInvite(planId, dateISO) {
     const [y, m, d] = dateISO.split('-').map(Number);
     calendarYear  = y;
     calendarMonth = m - 1;
+    // Make sure the calendar modal is visible
+    const calMod = document.getElementById('calendarModal');
+    if (calMod) calMod.style.display = 'block';
+    const calDetail = document.getElementById('calendarDayDetail');
+    if (calDetail) calDetail.style.display = 'none';
     renderCalendar();
     setTimeout(() => showCalendarDay(d), 150);
 }
@@ -7275,7 +7317,9 @@ async function aiGeneratePlan() {
                 const lastAvgR = lastSession
                     ? lastSession.sets.reduce((a, s) => a + s.reps, 0) / lastSession.sets.length
                     : 10;
-                return `${ex.name} (${ex.category}/${Array.isArray(ex.muscle) ? ex.muscle.join('+') : ex.muscle}): last avg ${lastAvgW.toFixed(1)}kg×${Math.round(lastAvgR)}reps, max ${maxW}kg`;
+                // Pre-calculate progressive overload weight so AI doesn't need to do math
+                const suggestedW = lastAvgW > 0 ? Math.round(lastAvgW * 1.025 * 2) / 2 : 0;
+                return `${ex.name} (${ex.category}/${Array.isArray(ex.muscle) ? ex.muscle.join('+') : ex.muscle}): last avg ${lastAvgW.toFixed(1)}kg×${Math.round(lastAvgR)}reps, max ${maxW}kg → USE THIS: ${suggestedW > 0 ? suggestedW + 'kg' : '0kg (bodyweight/no data)'}×${Math.round(lastAvgR)}reps`;
             }).join('\n') || 'No training history yet — use conservative beginner weights';
         const knownNames = withHistory.map(ex => ex.name).join(', ') || 'None yet';
         return { profileStr, hist: allHistory, knownNames };
@@ -7298,7 +7342,7 @@ ${allParticipants.length > 1 ? '(You MUST generate INDIVIDUAL weights & reps for
 ⚠️ CRITICAL RULES:
 1. ALWAYS use history data as the primary source for weights/reps.
 2. For each exercise per user:
-   - HAS HISTORY → use their last session avg weight + 2-5% progressive overload
+   - HAS HISTORY → use the '→ USE THIS: Xkg×Yreps' value shown in their history. These weights are pre-calculated with +2.5% progressive overload. Copy them EXACTLY — do NOT use the 'last avg' figure.
    - NO DIRECT HISTORY but similar exercises exist → estimate using strength ratios
    - NO DATA AT ALL → use weight=0
 3. PRIORITIZE exercises already in the user history — use their EXACT exercise names when possible.

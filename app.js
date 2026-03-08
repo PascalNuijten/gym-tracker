@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.26'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.27'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -6992,14 +6992,17 @@ function computePersonalizedWeightsForUser(username, planExercises) {
     });
 }
 
-function planCalendarDay(day, forceAiMode = false) {
+function planCalendarDay(day, forceAiMode = false, planId = null) {
     const dateISO = `${calendarYear}-${String(calendarMonth + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     currentPlanDate = dateISO;
     currentPlanExercises = [];
 
-    // Check for existing plan
-    const existing = plannedWorkouts.find(p => p.date === dateISO && p.createdBy === currentUser);
+    // If planId is provided, edit that specific plan; otherwise always start a fresh new plan
+    const existing = planId
+        ? plannedWorkouts.find(p => String(p.id) === String(planId))
+        : null;
+
     if (existing) {
         currentPlanId = existing.id;
         currentPlanExercises = JSON.parse(JSON.stringify(existing.exercises || []));
@@ -7012,16 +7015,15 @@ function planCalendarDay(day, forceAiMode = false) {
             typeSelect.dispatchEvent(new Event('change'));
         }
         document.getElementById('planWorkoutNote').value = existing.customNote || '';
-        // Show custom note input if type is custom
         const noteInp = document.getElementById('planWorkoutNote');
         if (noteInp) noteInp.style.display = (existing.workoutType === 'custom' || !existing.workoutType) ? 'block' : 'none';
-        // Restore times
         const stEl = document.getElementById('planStartTime');
         const etEl = document.getElementById('planEndTime');
         if (stEl) stEl.value = existing.startTime || '';
         if (etEl) etEl.value = existing.endTime || '';
         document.getElementById('deletePlanBtn').style.display = 'block';
     } else {
+        // New plan — always start fresh
         currentPlanId = null;
         const typeSelect = document.getElementById('planWorkoutType');
         if (typeSelect) { typeSelect.value = ''; typeSelect.dispatchEvent(new Event('change')); }
@@ -7203,8 +7205,10 @@ function savePlannedWorkout() {
         exercises: planExercises
     };
 
-    // Remove existing plan for this date by this user (if editing)
-    plannedWorkouts = plannedWorkouts.filter(p => !(p.date === currentPlanDate && p.createdBy === currentUser));
+    // If editing an existing plan replace just that one; otherwise push as a new plan
+    if (currentPlanId) {
+        plannedWorkouts = plannedWorkouts.filter(p => String(p.id) !== String(currentPlanId));
+    }
     plannedWorkouts.push(plan);
 
     // Save to Firebase
@@ -7229,14 +7233,18 @@ function savePlannedWorkout() {
 
 function deletePlannedWorkoutAndClose() {
     if (currentPlanId) {
-        deletePlanByDate(currentPlanDate);
+        deletePlanById(currentPlanId);
     }
     document.getElementById('planWorkoutModal').style.display = 'none';
 }
 
-function deletePlanByDate(dateISO) {
-    if (!confirm(`Delete workout plan for ${dateISO}?`)) return;
-    plannedWorkouts = plannedWorkouts.filter(p => !(p.date === dateISO && p.createdBy === currentUser));
+// Delete a plan by its unique ID
+function deletePlanById(planId) {
+    const plan = plannedWorkouts.find(p => String(p.id) === String(planId));
+    if (!plan) return;
+    const label = plan.note || plan.workoutType || 'this plan';
+    if (!confirm(`Delete "${label}" on ${plan.date}?`)) return;
+    plannedWorkouts = plannedWorkouts.filter(p => String(p.id) !== String(planId));
     if (database) {
         database.ref('plannedWorkouts').set(stripUndefined(plannedWorkouts))
             .catch(err => {
@@ -7246,9 +7254,22 @@ function deletePlanByDate(dateISO) {
                 }
             });
     }
-    document.getElementById('calendarDayDetail').style.display = 'none';
-    selectedCalendarDay = null;
-    renderCalendar();
+    // Refresh in-place (keep day open if other plans remain)
+    const remaining = plannedWorkouts.filter(p => p.date === plan.date &&
+        (p.createdBy === currentUser || (p.invitedUsers||[]).includes(currentUser)));
+    if (remaining.length > 0) {
+        renderCalendar();
+    } else {
+        document.getElementById('calendarDayDetail').style.display = 'none';
+        selectedCalendarDay = null;
+        renderCalendar();
+    }
+}
+
+// Legacy alias kept for backward compatibility
+function deletePlanByDate(dateISO) {
+    const plan = plannedWorkouts.find(p => p.date === dateISO && p.createdBy === currentUser);
+    if (plan) deletePlanById(plan.id);
 }
 
 // ==================== INVITE NOTIFICATIONS ====================
@@ -7961,18 +7982,15 @@ function renderCalendar() {
         });
     });
 
-    // --- Build plan-day map (plans involving current user) ---
-    // Own plans always take priority over plans the user was invited to.
-    const planDays = {};
+    // --- Build plan-day map (all plans involving current user, multiple per day supported) ---
+    const planDays = {}; // dayKey → array of plans
     plannedWorkouts.forEach(plan => {
         if (plan.createdBy !== currentUser && !(plan.invitedUsers || []).includes(currentUser)) return;
         const d = new Date(plan.date + 'T00:00:00');
         if (d.getFullYear() === calendarYear && d.getMonth() === calendarMonth) {
             const dayKey = d.getDate();
-            // Only overwrite if this is the user's own plan, or if nothing is set yet
-            if (!planDays[dayKey] || plan.createdBy === currentUser) {
-                planDays[dayKey] = plan;
-            }
+            if (!planDays[dayKey]) planDays[dayKey] = [];
+            planDays[dayKey].push(plan);
         }
     });
 
@@ -7998,8 +8016,9 @@ function renderCalendar() {
         const isSelected = selectedCalendarDay === day;
         const workouts = workoutDays[day] || [];
         const hasWorkout = workouts.length > 0;
-        const plan = planDays[day];
-        const hasPlan = !!plan;
+        const dayPlans = planDays[day] || [];
+        const plan = dayPlans[0] || null; // first plan (for dot/label)
+        const hasPlan = dayPlans.length > 0;
 
         // Colour dots for actual workouts
         const uniqueCats = [...new Set(workouts.map(w => w.category))];
@@ -8013,8 +8032,9 @@ function renderCalendar() {
         // Short plan label — show emoji only, full note on hover
         let planLabel = '';
         if (hasPlan && !hasWorkout) {
-            const planTitle = plan.note ? plan.note.replace(/"/g, '&quot;') : 'Planned workout';
-            planLabel = `<div class="cal-plan-indicator" title="${planTitle}">📋</div>`;
+            const planTitle = dayPlans.map(p => p.note || p.workoutType || 'Workout').join(' + ');
+            const countBadge = dayPlans.length > 1 ? ` ×${dayPlans.length}` : '';
+            planLabel = `<div class="cal-plan-indicator" title="${planTitle.replace(/"/g,'&quot;')}">📋${countBadge}</div>`;
         }
 
         const classes = [
@@ -8091,19 +8111,16 @@ function showCalendarDay(day) {
         });
     });
 
-    // --- Find plan for this day (own plan takes priority over invited plans) ---
-    // Own plan first:
-    let plan = plannedWorkouts.find(p => p.createdBy === currentUser && p.date === dateISO);
-    // Fall back to a plan the user was invited to:
-    if (!plan) {
-        plan = plannedWorkouts.find(p =>
-            p.createdBy !== currentUser &&
-            (p.invitedUsers || []).includes(currentUser) &&
-            p.date === dateISO
-        );
-    }
+    // --- Find all plans for this day (own + invited) ---
+    const plansForDay = plannedWorkouts.filter(p =>
+        p.date === dateISO &&
+        (p.createdBy === currentUser || (p.invitedUsers || []).includes(currentUser))
+    );
+    // Own plans first in the list
+    plansForDay.sort((a, b) => (b.createdBy === currentUser ? 1 : 0) - (a.createdBy === currentUser ? 1 : 0));
+    const hasPlan = plansForDay.length > 0;
 
-    if (!workouts.length && !plan) {
+    if (!workouts.length && !hasPlan) {
         planCalendarDay(day);
         return;
     }
@@ -8145,14 +8162,14 @@ function showCalendarDay(day) {
         html += `<div id="aiEvalResult_${day}"></div>`;
     }
 
-    // --- Plan section ---
-    if (plan) {
+    // --- Plan sections (one card per plan) ---
+    plansForDay.forEach((plan, planIdx) => {
         const planTypeLabel = plan.note || (plan.workoutType && plan.workoutType !== 'custom' ? plan.workoutType : 'Planned Workout');
-        html += `<div style="margin-top:${workouts.length ? '14px' : '0'};padding:10px 12px;background:rgba(102,126,234,0.06);border-radius:8px;border:1.5px dashed #667eea;">`;
+        const marginTop = (workouts.length > 0 || planIdx > 0) ? '12px' : '0';
+        html += `<div style="margin-top:${marginTop};padding:10px 12px;background:rgba(102,126,234,0.06);border-radius:8px;border:1.5px dashed #667eea;">`;
         html += `<strong>📋 ${planTypeLabel}</strong>`;
         if (plan.createdBy !== currentUser) html += ` <span style="color:#888;font-size:0.85em;">by ${plan.createdBy}</span>`;
         if (plan.customNote && plan.customNote !== plan.note) html += `<span style="color:#555;font-size:0.85em;"> — ${plan.customNote}</span>`;
-        // Show planned time if set
         if (plan.startTime || plan.endTime) {
             const tRange = (plan.startTime || '?') + ' – ' + (plan.endTime || '?');
             html += `<span style="color:#667eea;font-size:0.85em;margin-left:8px;">⏱ ${tRange}</span>`;
@@ -8161,8 +8178,6 @@ function showCalendarDay(day) {
             const others = [plan.createdBy, ...plan.invitedUsers].filter(u => u !== currentUser);
             if (others.length) html += `<br><span style="font-size:0.82em;color:#888;">👥 With: ${others.join(', ')}</span>`;
         }
-        // Defensive: Firebase may return plan.exercises as object with numeric keys instead of Array.
-        // Also filter out any null/malformed entries either way.
         const planExercises = (Array.isArray(plan.exercises)
             ? plan.exercises
             : (plan.exercises && typeof plan.exercises === 'object' ? Object.values(plan.exercises) : [])
@@ -8178,12 +8193,11 @@ function showCalendarDay(day) {
                 if (ex.plannedSets) meta += `${ex.plannedSets}× `;
                 if (userR) meta += `${userR} reps`;
                 if (userW !== undefined && userW !== null) meta += ` @ ${formatWeight(userW)}`;
-                const logSets = ex.plannedSets || 3;
-                const logReps = ex.perUserReps?.[currentUser] ?? ex.plannedReps ?? 10;
+                const logSets   = ex.plannedSets || 3;
+                const logReps   = ex.perUserReps?.[currentUser] ?? ex.plannedReps ?? 10;
                 const logWeight = ex.perUserWeights?.[currentUser] ?? ex.plannedWeight ?? 0;
-                // Use &apos; so single quotes in names don't break the HTML onclick attribute
-                const safeName = String(ex.name).replace(/&/g,'&amp;').replace(/'/g,'&apos;');
-                const safeCat  = String(ex.category || '').replace(/&/g,'&amp;').replace(/'/g,'&apos;');
+                const safeName   = String(ex.name).replace(/&/g,'&amp;').replace(/'/g,'&apos;');
+                const safeCat    = String(ex.category || '').replace(/&/g,'&amp;').replace(/'/g,'&apos;');
                 const muscleAttr = (Array.isArray(ex.muscle) ? ex.muscle.join(',') : String(ex.muscle || '')).replace(/&/g,'&amp;').replace(/'/g,'&apos;');
                 html += `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,0.05);">`;
                 if (isUsableImage(imgUrl)) html += `<img src="${imgUrl}" alt="${ex.name}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;" onerror="this.onerror=null;this.style.display='none';">`;
@@ -8193,28 +8207,25 @@ function showCalendarDay(day) {
             });
             html += `</div>`;
         }
-        // Google Calendar link for plan
-        const gcDateP = dateISO.replace(/-/g, '');
-        const gcTitleP = encodeURIComponent(`📋 ${planTypeLabel}`);
+        const gcDateP    = dateISO.replace(/-/g, '');
+        const gcTitleP   = encodeURIComponent(`📋 ${planTypeLabel}`);
         const gcDetailsP = encodeURIComponent(planExercises.map(ex => ex.name).join('\n'));
-        const gcUrlP = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${gcTitleP}&dates=${gcDateP}/${gcDateP}&details=${gcDetailsP}`;
+        const gcUrlP     = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${gcTitleP}&dates=${gcDateP}/${gcDateP}&details=${gcDetailsP}`;
         html += `<div style="display:flex;gap:10px;margin-top:8px;align-items:center;flex-wrap:wrap;">`;
-        html += `<a href="${gcUrlP}" target="_blank" style="font-size:0.82em;color:#4285F4;text-decoration:none;">📅 Add to Google Calendar</a>`;
-        html += `<button onclick="planCalendarDay(${day}, true)" style="font-size:0.82em;background:linear-gradient(135deg,var(--btn-gradient-start),var(--btn-gradient-end));color:white;border:none;border-radius:5px;padding:4px 10px;cursor:pointer;font-weight:600;">🤖 Recreate with AI</button>`;
+        html += `<a href="${gcUrlP}" target="_blank" style="font-size:0.82em;color:#4285F4;text-decoration:none;">📅 Google Cal</a>`;
+        html += `<button onclick="planCalendarDay(${day}, true, ${plan.id})" style="font-size:0.82em;background:linear-gradient(135deg,var(--btn-gradient-start),var(--btn-gradient-end));color:white;border:none;border-radius:5px;padding:4px 10px;cursor:pointer;font-weight:600;">🤖 Recreate with AI</button>`;
         if (plan.createdBy === currentUser) {
-            html += `<button onclick="planCalendarDay(${day})" style="font-size:0.82em;background:none;border:none;color:#667eea;cursor:pointer;padding:0;">✏️ Edit</button>`;
-            html += `<button onclick="deletePlanByDate('${dateISO}')" style="font-size:0.82em;background:none;border:none;color:#e74c3c;cursor:pointer;padding:0;">🗑️ Delete</button>`;
+            html += `<button onclick="planCalendarDay(${day}, false, ${plan.id})" style="font-size:0.82em;background:none;border:none;color:#667eea;cursor:pointer;padding:0;">✏️ Edit</button>`;
+            html += `<button onclick="deletePlanById(${plan.id})" style="font-size:0.82em;background:none;border:none;color:#e74c3c;cursor:pointer;padding:0;">🗑️ Delete</button>`;
         }
         html += `</div></div>`;
-    } else if (workouts.length > 0) {
-        // Has workout, no plan — offer to plan a different day or nothing
-    }
+    });
 
-    if (!plan) {
-        html += `<div style="margin-top:10px;">`;
-        html += `<button onclick="planCalendarDay(${day})" style="font-size:0.85em;background:none;border:1.5px dashed #667eea;color:#667eea;border-radius:6px;padding:5px 12px;cursor:pointer;">📋 Add Plan for this day</button>`;
-        html += `</div>`;
-    }
+    // Always show an "Add plan" button so multiple plans can be created for the same day
+    html += `<div style="margin-top:10px;">`;
+    html += `<button onclick="planCalendarDay(${day})" style="font-size:0.85em;background:none;border:1.5px dashed #667eea;color:#667eea;border-radius:6px;padding:5px 12px;cursor:pointer;">${hasPlan ? '➕ Add another plan' : '📋 Add Plan for this day'}</button>`;
+    html += `</div>`;
+    if (!hasPlan && workouts.length === 0) { /* nothing */ }
 
     const detail = document.getElementById('calendarDayDetail');
     detail.innerHTML = html;

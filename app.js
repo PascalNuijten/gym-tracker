@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.25'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.26'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -6911,6 +6911,87 @@ let currentPlanId = null;     // id of plan being edited (null = new)
 let currentPlanExercises = []; // [{name, category, plannedSets, plannedReps, plannedWeight}]
 let planMode = 'self'; // 'self' = manual exercise selection, 'ai' = AI-generated plan
 
+// Compute goal-based personalized weights & reps for a user, given a list of plan exercises.
+// Used to fill perUserWeights/perUserReps for invited users before saving to Firebase.
+function computePersonalizedWeightsForUser(username, planExercises) {
+    const profile = getUserProfile(username);
+    const goal = (profile?.goal || 'hypertrophy').toLowerCase();
+    const isStrength   = goal.includes('strength');
+    const isEndurance  = goal.includes('endur');
+    // hypertrophy is the fallback
+    const repRangeMin  = isStrength ? 3  : isEndurance ? 12 : 8;
+    const repRangeMax  = isStrength ? 6  : isEndurance ? 20 : 12;
+    const defaultSets  = isStrength ? 5  : isEndurance ? 3  : 4;
+
+    return planExercises.map(ex => {
+        const dbEx    = exercises.find(e => e.name.toLowerCase().trim() === (ex.name || '').toLowerCase().trim());
+        const history = dbEx?.users?.[username]?.history || [];
+
+        if (history.length > 0) {
+            const last    = history[history.length - 1];
+            const lastAvgW = last.sets.reduce((s, set) => s + set.weight, 0) / last.sets.length;
+            const lastAvgR = last.sets.reduce((s, set) => s + set.reps,   0) / last.sets.length;
+            const lastSets = last.sets.length;
+
+            // Check plateau: compare with session from 2+ sessions ago
+            const older = history.length >= 3 ? history[history.length - 3] : null;
+            const olderAvgW = older ? older.sets.reduce((s, set) => s + set.weight, 0) / older.sets.length : null;
+            const plateau = olderAvgW !== null && Math.abs(lastAvgW - olderAvgW) < 0.5;
+
+            let newWeight = lastAvgW;
+            let newReps   = Math.round(lastAvgR);
+            let newSets   = Math.max(lastSets, defaultSets);
+
+            if (isStrength) {
+                newWeight = Math.round(lastAvgW * 1.04 * 2) / 2;
+                newReps   = Math.min(repRangeMax, Math.max(repRangeMin, Math.round(lastAvgR)));
+            } else if (isEndurance) {
+                newWeight = lastAvgW; // keep weight
+                newReps   = Math.min(repRangeMax, Math.round(lastAvgR) + 1);
+            } else {
+                // Hypertrophy — periodize
+                if (plateau) {
+                    // Plateau: if they've been doing same reps, add weight and reset reps
+                    newWeight = Math.round(lastAvgW * 1.05 * 2) / 2;
+                    newReps   = repRangeMin;
+                } else if (Math.round(lastAvgR) >= repRangeMax) {
+                    // At top of rep range — add weight, drop to bottom
+                    newWeight = Math.round(lastAvgW * 1.04 * 2) / 2;
+                    newReps   = repRangeMin;
+                } else {
+                    // Within range — add one rep, keep weight
+                    newWeight = lastAvgW;
+                    newReps   = Math.round(lastAvgR) + 1;
+                }
+            }
+
+            return { weight: Math.round(newWeight * 2) / 2, reps: newReps, sets: newSets };
+        }
+
+        // No exact history — try same category/muscle
+        const related = exercises.find(e =>
+            e.name !== (ex.name || '') &&
+            (e.category === ex.category ||
+             (Array.isArray(e.muscle)
+                ? e.muscle.some(m => (Array.isArray(ex.muscle) ? ex.muscle : [ex.muscle]).includes(m))
+                : e.muscle === ex.muscle)) &&
+            (e.users?.[username]?.history?.length || 0) > 0
+        );
+        if (related) {
+            const relLast  = related.users[username].history[related.users[username].history.length - 1];
+            const relAvgW  = relLast.sets.reduce((s, set) => s + set.weight, 0) / relLast.sets.length;
+            return { weight: Math.round(relAvgW * 0.8 * 2) / 2, reps: Math.round((repRangeMin + repRangeMax) / 2), sets: defaultSets };
+        }
+
+        // No data at all — return plan defaults
+        return {
+            weight: ex.perUserWeights?.[username] ?? ex.plannedWeight ?? 0,
+            reps:   ex.perUserReps?.[username]    ?? ex.plannedReps    ?? Math.round((repRangeMin + repRangeMax) / 2),
+            sets:   ex.plannedSets ?? defaultSets
+        };
+    });
+}
+
 function planCalendarDay(day, forceAiMode = false) {
     const dateISO = `${calendarYear}-${String(calendarMonth + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -7088,6 +7169,27 @@ function savePlannedWorkout() {
     const planStartTime = document.getElementById('planStartTime')?.value || null;
     const planEndTime   = document.getElementById('planEndTime')?.value || null;
 
+    // Deep-clone exercises so we can mutate perUserWeights/perUserReps safely
+    const planExercises = JSON.parse(JSON.stringify(currentPlanExercises));
+
+    // Personalize weights & reps for every invited user before saving
+    if (invitedUsers.length > 0) {
+        invitedUsers.forEach(username => {
+            const personalized = computePersonalizedWeightsForUser(username, planExercises);
+            planExercises.forEach((ex, i) => {
+                if (!ex.perUserWeights) ex.perUserWeights = {};
+                if (!ex.perUserReps)    ex.perUserReps    = {};
+                // Only fill if AI hasn't already provided a value for this user
+                if (ex.perUserWeights[username] === undefined || ex.perUserWeights[username] === null) {
+                    ex.perUserWeights[username] = personalized[i].weight;
+                }
+                if (ex.perUserReps[username] === undefined || ex.perUserReps[username] === null) {
+                    ex.perUserReps[username] = personalized[i].reps;
+                }
+            });
+        });
+    }
+
     const plan = {
         id: currentPlanId || Date.now(),
         date: currentPlanDate,
@@ -7098,7 +7200,7 @@ function savePlannedWorkout() {
         customNote: note,
         startTime: planStartTime,
         endTime: planEndTime,
-        exercises: currentPlanExercises
+        exercises: planExercises
     };
 
     // Remove existing plan for this date by this user (if editing)
@@ -7311,15 +7413,22 @@ async function aiGeneratePlan() {
                 const sessions = ex.users[username].history.slice(-5);
                 const maxW = Math.max(0, ...sessions.flatMap(s => s.sets.map(s2 => s2.weight)));
                 const lastSession = sessions[sessions.length - 1];
+                const firstSession = sessions[0];
                 const lastAvgW = lastSession
                     ? lastSession.sets.reduce((a, s) => a + s.weight, 0) / lastSession.sets.length
                     : maxW;
                 const lastAvgR = lastSession
                     ? lastSession.sets.reduce((a, s) => a + s.reps, 0) / lastSession.sets.length
                     : 10;
-                // Pre-calculate progressive overload weight so AI doesn't need to do math
-                const suggestedW = lastAvgW > 0 ? Math.round(lastAvgW * 1.025 * 2) / 2 : 0;
-                return `${ex.name} (${ex.category}/${Array.isArray(ex.muscle) ? ex.muscle.join('+') : ex.muscle}): last avg ${lastAvgW.toFixed(1)}kg×${Math.round(lastAvgR)}reps, max ${maxW}kg → USE THIS: ${suggestedW > 0 ? suggestedW + 'kg' : '0kg (bodyweight/no data)'}×${Math.round(lastAvgR)}reps`;
+                const firstAvgW = firstSession
+                    ? firstSession.sets.reduce((a, s) => a + s.weight, 0) / firstSession.sets.length
+                    : lastAvgW;
+                const trend = sessions.length > 1
+                    ? (lastAvgW > firstAvgW + 0.5 ? '↑ progressing' : lastAvgW < firstAvgW - 0.5 ? '↓ regressing' : '→ plateau')
+                    : '→ first sessions';
+                const totalSessions = ex.users[username].history.length;
+                const lastSets = lastSession ? lastSession.sets.length : 3;
+                return `${ex.name} (${ex.category}/${Array.isArray(ex.muscle) ? ex.muscle.join('+') : ex.muscle}): last ${lastAvgW.toFixed(1)}kg×${Math.round(lastAvgR)}reps×${lastSets}sets | max ${maxW}kg | trend:${trend} | ${totalSessions} sessions total`;
             }).join('\n') || 'No training history yet — use conservative beginner weights';
         const knownNames = withHistory.map(ex => ex.name).join(', ') || 'None yet';
         return { profileStr, hist: allHistory, knownNames };
@@ -7340,19 +7449,21 @@ TRAINING TYPE: "${trainingName}"
 PARTICIPANTS: ${allParticipants.join(', ')}
 ${allParticipants.length > 1 ? '(You MUST generate INDIVIDUAL weights & reps for EACH person based on THEIR history below)\n' : ''}
 ⚠️ CRITICAL RULES:
-1. ALWAYS use history data as the primary source for weights/reps.
-2. For each exercise per user:
-   - HAS HISTORY → use the '→ USE THIS: Xkg×Yreps' value shown in their history. These weights are pre-calculated with +2.5% progressive overload. Copy them EXACTLY — do NOT use the 'last avg' figure.
-   - NO DIRECT HISTORY but similar exercises exist → estimate using strength ratios
-   - NO DATA AT ALL → use weight=0
+1. Use each user's history as the primary data source. Provide genuinely personalized training — not one-size-fits-all.
+2. For each exercise per user, choose the progression strategy that best serves their GOAL:
+   - STRENGTH goal → increase weight 3-6% above last avg; reps 3-6; sets 4-5
+   - HYPERTROPHY goal → periodize: if last reps < 12 keep weight & add 1-2 reps; if last reps ≥ 12 increase weight ~4% & drop back to 8 reps; sets 3-4
+   - ENDURANCE goal → keep weight (or reduce slightly), push reps toward 15-20; sets 2-3
+   - PLATEAU (trend shows → plateau) → adjust the variable you did NOT change last time (if you've been adding reps, now add weight instead)
+   - NO DIRECT HISTORY but similar exercise exists → estimate from related movement using realistic strength ratios (e.g. barbell→dumbbell per hand ×0.35)
+   - NO DATA AT ALL → use weight=0, choose reps from goal-based range
 3. PRIORITIZE exercises already in the user history — use their EXACT exercise names when possible.
 4. Fill remaining slots with exercises that optimize muscle coverage for "${trainingName}". Set "isNew": true if NOT in user history — choose new exercises to fill GAPS in muscle group coverage.
-5. Goal-based rep ranges: hypertrophy = 8-12 reps, 3-4 sets; strength = 4-6 reps, 4-5 sets; endurance = 12-20 reps, 2-3 sets.
-6. Consider body metrics (height/weight) for exercise selection.
-7. Add a short "reason" for each exercise (1 sentence).
+5. EXERCISE ORDER: Compound multi-joint first (squats, bench, rows, deadlifts), then accessory compound, then isolation last.
+6. NO REDUNDANCY: Never include two exercises targeting the same primary muscle head.
+7. Consider body metrics (height/weight/experience) for exercise selection and load.
 8. ⚡ MANDATORY: For exercises the user already has, copy the exact name from their KNOWN EXERCISES list verbatim.
-9. NO REDUNDANCY: Never include two exercises that target the same primary muscle group or muscle head. Ensure variety in movement patterns across the plan.
-10. EXERCISE ORDER: Compound multi-joint movements first (e.g. squats, bench press, rows, deadlifts), then accessory compound, then isolation exercises last.
+9. Add a short "reason" for each exercise (1 sentence) — explain the specific progression strategy chosen for this user.
 
 COMPLETE TRAINING HISTORY + PERSONAL DATA:
 ${usersContext}

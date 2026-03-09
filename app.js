@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.41'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.42'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4795,30 +4795,40 @@ function generateCombinedAnalysis() {
                     const vol1 = w.sets.reduce((sv, s) => sv + s.weight * s.reps, 0);
                     return `${w.exercise}(${w.muscle||w.category}, ${w.sets.length}sets×${formatWeight(best.weight)}, vol:${vol1}kg)`;
                 }).join(' | ');
-                // Also include any planned activities for this day (e.g. swim invite alongside gym)
+                scheduleRows.push(`${iso} [LOGGED] ${cats}: ${sets}sets, ${vol > 0 ? vol.toLocaleString() + 'kg vol' : 'bodyweight'} | ${exercises_detail}`);
+                trainingDayISOs.add(iso);
+                // Push a SEPARATE row for each same-day planned activity (e.g. swim invite on gym day)
                 const sameDayPlans = dayPlans.filter(p => {
                     const loggedNames = new Set(dayLogs.map(w => w.exercise.toLowerCase()));
                     const planExs = (p.exercises || []).map(e => e.name.toLowerCase());
-                    // Include the plan if it contains exercises NOT already logged (it's a separate activity)
                     return planExs.length === 0 || planExs.some(n => !loggedNames.has(n));
                 });
-                const extraActivities = sameDayPlans.map(p => {
-                    const act = p.note || p.workoutType || 'Activity';
-                    const exs = (p.exercises || []).filter(ex => {
-                        return !dayLogs.some(w => w.exercise.toLowerCase() === ex.name.toLowerCase());
-                    }).map(ex => {
+                sameDayPlans.forEach(p => {
+                    const activity = p.note || p.workoutType || 'Activity';
+                    const sdExDetail = (p.exercises || []).filter(ex =>
+                        !dayLogs.some(w => w.exercise.toLowerCase() === ex.name.toLowerCase())
+                    ).map(ex => {
+                        const exRef  = exercises.find(e => e.name === ex.name || e.id === ex.id);
+                        const muscle = exRef?.muscle || ex.category || '';
                         const wt = ex.perUserWeights?.[currentUser] ?? ex.plannedWeight ?? 0;
                         const rp = ex.perUserReps?.[currentUser]    ?? ex.plannedReps    ?? 0;
                         const st = ex.plannedSets ?? 0;
-                        const exRef = exercises.find(e => e.name === ex.name || e.id === ex.id);
-                        const muscle = exRef?.muscle || ex.category || '';
-                        return `${ex.name}(${muscle}${st ? ', ' + st + 'sets' : ''}${wt ? '×' + formatWeight(wt) : ''}${rp ? '×' + rp + 'reps' : ''})`;
-                    }).join(' | ');
-                    const timeNote = p.startTime ? ` @${p.startTime}${p.endTime ? '–' + p.endTime : ''}` : '';
-                    return `+ ${act}${timeNote}${exs ? ': ' + exs : ''}`;
-                }).join(' ');
-                scheduleRows.push(`${iso} [LOGGED] ${cats}: ${sets}sets, ${vol > 0 ? vol.toLocaleString() + 'kg vol' : 'bodyweight'} | ${exercises_detail}${extraActivities ? ' ' + extraActivities : ''}`);
-                trainingDayISOs.add(iso);
+                        const detail = [muscle, st ? `${st}sets` : '', wt ? `${formatWeight(wt)}` : '', rp ? `${rp}reps` : ''].filter(Boolean).join(', ');
+                        return `${ex.name}(${detail})`;
+                    }).join(' | ') || 'TBD';
+                    let sdDur = '';
+                    if (p.startTime && p.endTime) {
+                        const [sh, sm] = p.startTime.split(':').map(Number);
+                        const [eh, em] = p.endTime.split(':').map(Number);
+                        const mins = (eh * 60 + em) - (sh * 60 + sm);
+                        if (mins > 0) sdDur = ` (~${mins}min)`;
+                    }
+                    const sdTime = p.startTime ? ` at ${p.startTime}${p.endTime ? '–' + p.endTime : ''}${sdDur}` : '';
+                    const sdTag  = isDayFuture ? '[PLANNED-FUTURE]' : isDayToday ? '[PLANNED-TODAY-NOT-LOGGED-YET]' : '[PLANNED-NOT-DONE]';
+                    scheduleRows.push(`${iso} ${sdTag} ${activity}${sdTime}: ${sdExDetail}`);
+                    trainingDayISOs.add(iso);
+                    hasAnyPrediction = true;
+                });
             } else if (dayPlans.length > 0) {
                 // PLAN ONLY — no gym log for this day
                 hasAnyPrediction = true;
@@ -4926,10 +4936,23 @@ function generateCombinedAnalysis() {
             const trainingDates = [...trainingDayISOs].sort().join(', ') || 'none';
             const restDates     = [...restDayISOs].sort().join(', ')     || 'none identified';
 
+            // Compute anchor values so the AI nutrition stays consistent and realistic
+            let bmrAnchor = 0, tdeeSedentary = 0, tdeeTraining = 0;
+            if (userProfile?.weight && userProfile?.height) {
+                const w = userProfile.weight, h = userProfile.height, a = userProfile.age || 30;
+                const genderAdd = (userProfile.gender || '').toLowerCase() === 'female' ? -161 : 5;
+                bmrAnchor       = Math.round(10 * w + 6.25 * h - 5 * a + genderAdd);
+                tdeeSedentary   = Math.round(bmrAnchor * 1.2);   // rest day
+                tdeeTraining    = Math.round(bmrAnchor * 1.55);  // baseline on a training day before adding exercise calories
+            }
+            const nutritionAnchor = bmrAnchor > 0
+                ? `\nNUTRITION ANCHOR (use these as your starting point — do NOT go below):\n- BMR: ~${bmrAnchor} kcal\n- Rest day TDEE: ~${tdeeSedentary} kcal  (BMR × 1.2)\n- Training day baseline TDEE: ~${tdeeTraining} kcal (BMR × 1.55) BEFORE adding exercise burn\n- ADD on top of baseline: strength training ~${Math.round(userProfile.weight * 8.5)}-${Math.round(userProfile.weight * 10)} kcal/hour | swimming ~${Math.round(userProfile.weight * 10)}-${Math.round(userProfile.weight * 12)} kcal/hour | cycling ~${Math.round(userProfile.weight * 7)}-${Math.round(userProfile.weight * 9)} kcal/hour | running ~${Math.round(userProfile.weight * 10)}-${Math.round(userProfile.weight * 12)} kcal/hour\n- Goal modifier: muscle building +300-500 kcal above TDEE | weight loss -300-500 kcal | other: at TDEE\n`
+                : '';
+
             const nutritionInstruction = userProfile ? `
 
 🍽️ NUTRITION (mandatory — always include):
-You are a sports nutritionist. ${
+You are a sports nutritionist. ${nutritionAnchor}${
     analysisViewType === 'day'
     ? `There is only ONE day being evaluated. Output a SINGLE nutrition card for that day — no other days.`
     : analysisViewType === 'month'

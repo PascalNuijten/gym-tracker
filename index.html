@@ -305,9 +305,14 @@
                     <button class="ai-back-btn">← Back</button>
                     <h3>📊 Performance Analysis & AI Coach</h3>
                     <div class="feedback-period-select">
-                        <button class="period-btn active" data-period="day">Today</button>
-                        <button class="period-btn" data-period="week">This Week</button>
-                        <button class="period-btn" data-period="month">This Month</button>
+                        <button class="period-btn" data-period="day">Day</button>
+                        <button class="period-btn active" data-period="week">Week</button>
+                        <button class="period-btn" data-period="month">Month</button>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin:6px 0 10px;gap:8px;">
+                        <button onclick="navigateAnalysisPeriod(-1)" class="secondary-btn" style="padding:5px 14px;font-size:0.88em;flex-shrink:0;">← Prev</button>
+                        <span id="analysisPeriodLabel" style="font-size:0.9em;font-weight:600;color:#555;text-align:center;flex:1;">This Week</span>
+                        <button id="analysisNextBtn" onclick="navigateAnalysisPeriod(1)" class="secondary-btn" style="padding:5px 14px;font-size:0.88em;flex-shrink:0;" disabled>Next →</button>
                     </div>
                     <div id="aiAnalysisResult" class="ai-result-box"></div>
                     
@@ -678,6 +683,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <!-- Chart.js for progress visualization -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=23.3.29"></script>
+    <script src="app.js?v=23.3.30"></script>
 </body>
 </html>

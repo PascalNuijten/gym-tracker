@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.34'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.35'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4814,7 +4814,11 @@ function generateCombinedAnalysis() {
             ? 'Based entirely on logged data.'
             : mixedLogged
             ? 'Partially based on logged data; remaining days are plan-based estimates — mention this in the score rationale.'
-                : 'Entirely based on scheduled plans — no sessions logged yet. Score the quality and completeness of the plan as if it will be executed.';
+            : 'Entirely based on scheduled plans — no sessions logged yet. Score the quality and completeness of the plan as if it will be executed.';
+
+        let feedback = `<h4>📊 ${periodName}</h4>`;
+
+        try {
             if (!useRealAI) throw new Error('AI disabled');
             feedback += `<div class="loading-spinner"></div><p>AI is analysing…</p>`;
             resultBox.innerHTML = feedback;

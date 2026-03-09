@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.35'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.36'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -2160,6 +2160,37 @@ function saveWorkout() {
     
     exercise.users[currentUser].history.push(session);
     saveToFirebase();
+
+    // Auto-update the matching calendar plan's endTime for today
+    (function autoSetPlanEndTime() {
+        try {
+            const todayISO = now.toISOString().slice(0, 10);
+            const nowTime  = session.startTime; // reuse same HH:MM
+            const todayPlans = plannedWorkouts.filter(p => {
+                const isOwn      = p.createdBy === currentUser;
+                const isInvitedAccepted = (p.invitedUsers || []).includes(currentUser) && isInviteAccepted(p.id);
+                return (isOwn || isInvitedAccepted) && p.date === todayISO;
+            });
+            if (todayPlans.length === 0) return;
+
+            const exNameLower = exercise.name.toLowerCase();
+            // 1. Match by exercise name in plan's exercise list
+            let target = todayPlans.find(p => (p.exercises || []).some(e => e.name.toLowerCase() === exNameLower));
+            // 2. Fall back: any gym-type plan
+            if (!target) target = todayPlans.find(p => {
+                const t = (p.workoutType || '').toLowerCase();
+                const n = (p.note || '').toLowerCase();
+                return ['gym','strength','weights','lifting'].some(k => t.includes(k) || n.includes(k));
+            });
+            // 3. Last resort: plan without endTime, or last plan of day
+            if (!target) target = todayPlans.find(p => !p.endTime) || todayPlans[todayPlans.length - 1];
+
+            if (target && target.endTime !== nowTime) {
+                target.endTime = nowTime;
+                if (database) database.ref('plannedWorkouts').set(stripUndefined(plannedWorkouts));
+            }
+        } catch (e) { console.warn('Auto-endTime:', e); }
+    })();
     // Auto-sync today's workout to Trello (if configured)
     autoSyncDayToTrello();
 
@@ -4830,26 +4861,31 @@ function generateCombinedAnalysis() {
 
             const nutritionInstruction = userProfile ? `
 
-NUTRITION GUIDANCE (mandatory section — always include):
-The schedule above tells you EXACTLY which days are training days vs rest days.
-Training days identified: ${trainingDates}
-Rest days identified: ${restDates}
-Unscheduled future days are assumed rest unless a plan exists above.
+NUTRITION — PER-DAY TABLE (mandatory — always include, formatted as an HTML <table>):
 
-For any non-gym activity in the schedule (e.g. swimming, running, cycling, football) that has a time/duration:
-- Estimate the calorie burn for that activity based on the user's body weight
-- Add this to the training day TDEE
+Using the day-by-day schedule above as the ONLY data source, produce a nutrition table: one row per day that appears in the schedule.
+The user's body weight and goal are in the profile above.
 
-For EACH day type (training day / rest day), provide:
-• Estimated TDEE (kcal) — be specific, not generic
-• Protein target (g)
-• Carbohydrates target (g)
-• Fat target (g)
-• Pre-workout timing & meal suggestion (training days only)
-• Post-workout timing & protein-focus meal (training days only)
-• Hydration (L/day, higher on training days)
+Columns required (render as <table> with a header row and light alternating row shading):
+Date | Day type & activity | Exercise kcal burn* | Total TDEE | Protein g | Carbs g | Fat g | Key note
 
-If any day is plan-based (not yet logged), mark those nutrition estimates with ⚠️ Prediction.` : '';
+*Exercise kcal burn estimation rules:
+- Gym session [LOGGED]: estimate intensity from set count + volume. Light (<15 sets, <3000kg) ~200kcal, moderate ~300kcal, heavy (>25 sets or >6000kg) ~400-500kcal.
+- Gym session [PLANNED]: same method from exercises listed. Mark cell with ⚠️.
+- Non-gym activity with duration (swimming, running, cycling, walking, yoga, HIIT, football, etc.):
+  Use MET × body_weight_kg × duration_hours. MET values: swimming=7, running=9.5, cycling=7, walking=3.5, yoga=3, HIIT=8, football=8.
+  If only km is given, estimate duration (running ~6min/km, cycling ~3min/km).
+- REST day: 0 extra kcal burn.
+- Day with both gym + cardio: add both burns together.
+
+Total TDEE = BMR × activity_multiplier + exercise_kcal_burn for that day.
+Protein/Carbs/Fat: adjust to goal (muscle: high protein+carbs on training days; weight_loss: slight deficit on rest days; strength: prioritise protein).
+Mark any [PLANNED] or [PLANNED-NOT-DONE] day cells with ⚠️.
+
+After the table, add a short paragraph (3-4 sentences) with:
+• Best pre-workout meal for this period (timing relative to session start, specific foods)
+• Best post-workout recovery meal (timing, protein+carb focus)
+• One weekly nutrition tip based on the schedule pattern above` : '';
 
             const prompt = `You are an expert personal trainer AND sports nutritionist. Analyse ${currentUser}'s activity data for ${periodName}.
 

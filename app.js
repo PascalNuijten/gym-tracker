@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.48'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.49'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4725,11 +4725,11 @@ function generateCombinedAnalysis() {
         });
 
         // ---- Planned calendar events in period ----
-        // Own plans always included; invited plans only if the user has explicitly accepted them
+        // Own plans always included; invited plans included regardless of acceptance status
         const periodPlans = plannedWorkouts.filter(p => {
             const isOwn     = p.createdBy === currentUser;
             const isInvited = (p.invitedUsers || []).includes(currentUser);
-            if (!isOwn && !(isInvited && isInviteAccepted(p.id))) return false;
+            if (!isOwn && !isInvited) return false;
             const d = new Date(p.date + 'T00:00:00');
             return d >= start && d <= end;
         });
@@ -5181,7 +5181,7 @@ async function askAIQuestion(question) {
         const periodPlans = plannedWorkouts.filter(p => {
             const isOwn = p.createdBy === currentUser;
             const isInvited = (p.invitedUsers || []).includes(currentUser);
-            if (!isOwn && !(isInvited && isInviteAccepted(p.id))) return false;
+            if (!isOwn && !isInvited) return false;
             const d = new Date(p.date + 'T00:00:00');
             return d >= start && d <= end;
         });

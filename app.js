@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.39'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.40'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4280,6 +4280,27 @@ function setupFirebaseListeners() {
                 }
             });
 
+            // Pre-load invite acceptance state BEFORE setting up the plans listener
+            // so the very first renderCalendar() call already knows what's accepted
+            const _acceptedKey = `inviteAccepted_${currentUser}`;
+            const _hiddenKey   = `inviteHidden_${currentUser}`;
+            acceptedInvites = JSON.parse(localStorage.getItem(_acceptedKey) || '[]').map(String);
+            hiddenInvites   = JSON.parse(localStorage.getItem(_hiddenKey)   || '[]').map(String);
+            Promise.all([
+                database.ref(`inviteAccepted/${currentUser}`).once('value'),
+                database.ref(`inviteHidden/${currentUser}`).once('value')
+            ]).then(([accSnap, hidSnap]) => {
+                const fbAcc = (accSnap.val() || []).map(String);
+                const fbHid = (hidSnap.val() || []).map(String);
+                acceptedInvites = Array.from(new Set([...acceptedInvites, ...fbAcc]));
+                hiddenInvites   = Array.from(new Set([...hiddenInvites,   ...fbHid]));
+                localStorage.setItem(_acceptedKey, JSON.stringify(acceptedInvites));
+                localStorage.setItem(_hiddenKey,   JSON.stringify(hiddenInvites));
+                // Re-render calendar now that acceptance state is confirmed
+                const calModal = document.getElementById('calendarModal');
+                if (calModal && calModal.style.display !== 'none') renderCalendar();
+            }).catch(() => {/* use localStorage values */});
+
             // Load planned workouts and keep them in sync
             database.ref('plannedWorkouts').on('value', (snap) => {
                 const pd = snap.val();
@@ -7507,6 +7528,9 @@ function checkPendingInvites() {
             localStorage.setItem(acceptedKey, JSON.stringify(acceptedInvites));
             localStorage.setItem(hiddenKey,   JSON.stringify(hiddenInvites));
             _runInviteCheck(acked);
+            // Re-render so accepted invites appear correctly (async load may finish after first render)
+            const calModal = document.getElementById('calendarModal');
+            if (calModal && calModal.style.display !== 'none') renderCalendar();
         });
     } else {
         acceptedInvites = localAccepted;
@@ -7565,7 +7589,9 @@ function _acceptInviteState(planId) {
     if (!acceptedInvites.includes(String(planId))) acceptedInvites.push(String(planId));
     localStorage.setItem(acceptedKey, JSON.stringify(acceptedInvites));
     if (database && currentUser) {
-        database.ref(`inviteAccepted/${currentUser}`).set(acceptedInvites);
+        database.ref(`inviteAccepted/${currentUser}`).set(acceptedInvites)
+            .then(() => console.log(`✅ Invite accepted persisted to Firebase for ${currentUser}`))
+            .catch(err => console.error('⚠️ Could not persist invite acceptance to Firebase:', err));
     }
 }
 

@@ -14,7 +14,7 @@ function saveGeminiApiKey(k){ localStorage.setItem('geminiApiKey', k.trim()); }
 const GROQ_MODELS = [
     'llama-3.3-70b-versatile',   // 100 RPM, 6 000 RPD — best quality
     'llama-3.1-8b-instant',      // 30 RPM,  14 400 RPD — fast fallback
-    'gemma2-9b-it',              // 30 RPM,  14 400 RPD — extra fallback
+    'llama3-8b-8192',            // 30 RPM,  14 400 RPD — extra fallback
 ];
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.30'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.31'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -252,7 +252,8 @@ async function callGeminiAI(prompt, imageBase64 = null, includeUserContext = tru
         return status === 429 || status === 403 || status === 404
             || msg.includes('quota') || msg.includes('exhausted')
             || msg.includes('rate') || msg.includes('leaked')
-            || msg.includes('deactivated');
+            || msg.includes('deactivated') || msg.includes('decommissioned')
+            || msg.includes('no longer supported') || msg.includes('deprecated');
     }
 
     // ---- Groq attempt (text-only; no image support on free tier) ----

@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.32'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.33'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4673,8 +4673,11 @@ function generateCombinedAnalysis() {
         });
 
         // ---- Planned calendar events in period ----
+        // Own plans always included; invited plans only if the user has explicitly accepted them
         const periodPlans = plannedWorkouts.filter(p => {
-            if (p.createdBy !== currentUser && !(p.invitedUsers || []).includes(currentUser)) return false;
+            const isOwn     = p.createdBy === currentUser;
+            const isInvited = (p.invitedUsers || []).includes(currentUser);
+            if (!isOwn && !(isInvited && isInviteAccepted(p.id))) return false;
             const d = new Date(p.date + 'T00:00:00');
             return d >= start && d <= end;
         });
@@ -4811,11 +4814,7 @@ function generateCombinedAnalysis() {
             ? 'Based entirely on logged data.'
             : mixedLogged
             ? 'Partially based on logged data; remaining days are plan-based estimates — mention this in the score rationale.'
-            : 'Entirely based on scheduled plans — no sessions logged yet. Score is a PREDICTION. State this clearly.';
-
-        let feedback = `<h4>📊 ${periodName}</h4>`;
-
-        try {
+                : 'Entirely based on scheduled plans — no sessions logged yet. Score the quality and completeness of the plan as if it will be executed.';
             if (!useRealAI) throw new Error('AI disabled');
             feedback += `<div class="loading-spinner"></div><p>AI is analysing…</p>`;
             resultBox.innerHTML = feedback;
@@ -4846,8 +4845,7 @@ For EACH day type (training day / rest day), provide:
 • Post-workout timing & protein-focus meal (training days only)
 • Hydration (L/day, higher on training days)
 
-If any day is plan-based (not yet logged), mark those nutrition estimates with ⚠️ Prediction.
-Format as a clearly styled HTML block (light green background div).` : '';
+If any day is plan-based (not yet logged), mark those nutrition estimates with ⚠️ Prediction.` : '';
 
             const prompt = `You are an expert personal trainer AND sports nutritionist. Analyse ${currentUser}'s activity data for ${periodName}.
 
@@ -4860,7 +4858,7 @@ ${scheduleRows.join('\n')}
 
 Legend:
 - [LOGGED] = actual gym session recorded — use this as ground truth
-- [PLANNED-FUTURE] / [PLANNED-TODAY-NOT-LOGGED-YET] / [PLANNED-NOT-DONE] = calendar plan, NOT yet logged — score/nutrition for these days are PREDICTIONS
+- [PLANNED-FUTURE] / [PLANNED-TODAY-NOT-LOGGED-YET] / [PLANNED-NOT-DONE] = calendar plan, NOT yet logged — treat these as confirmed upcoming activities for scoring purposes
 - [REST DAY] = no activity recorded or planned
 
 AGGREGATE STATS (logged sessions only):
@@ -4869,13 +4867,13 @@ AGGREGATE STATS (logged sessions only):
 - Trend context: ${histDays} training days / ${Math.round(histVol).toLocaleString()}kg vol in prev 4 weeks${volTrend}
 
 SCORE BASIS: ${scoreBasis}
-${onlyPrediction ? '⚠️ ALL DATA IS PLAN-BASED — no sessions have been logged yet. Be clear that everything is a prediction/projection.' : ''}
+${onlyPrediction ? '⚠️ ALL DATA IS PLAN-BASED — no sessions logged yet. Score based on planned activities. Evaluate the plan quality and give a score.' : ''}
 
 Respond EXACTLY in this format (no markdown code blocks, no triple backticks):
-SCORE: ${onlyPrediction ? 'N/A' : '[1-10]'}
+SCORE: [1-10]
 ---
 [HTML body using <p>, <strong>, <ul><li> — include these sections:]
-<strong>🏆 ${onlyPrediction ? 'Plan Preview & Preparation' : allLogged ? 'Score & Overview' : 'Score & Overview (⚠️ Partial Prediction)'}</strong>
+<strong>🏆 ${onlyPrediction ? 'Plan Preview & Score' : allLogged ? 'Score & Overview' : 'Score & Overview (⚠️ Partial Prediction)'}</strong>
 <strong>🎯 Goal Progress</strong>
 <strong>💪 Volume & Intensity</strong>
 <strong>⚖️ Muscle Balance</strong>
@@ -4892,8 +4890,8 @@ SCORE: ${onlyPrediction ? 'N/A' : '[1-10]'}
             const scoreRaw    = scoreMatch ? scoreMatch[1] : null;
             const score       = scoreRaw && scoreRaw !== 'N/A' ? Math.min(10, Math.max(1, parseInt(scoreRaw))) : null;
             const scoreColor  = score === null ? '#667eea' : score >= 8 ? '#27ae60' : score >= 6 ? '#e67e22' : '#e74c3c';
-            const scoreLabel  = score === null ? (onlyPrediction ? '📅' : '—') : `${score}/10`;
-            const scoreDesc   = score === null ? (onlyPrediction ? 'Predicted' : '') : score >= 9 ? 'Excellent' : score >= 7 ? 'Great' : score >= 5 ? 'Good' : score >= 3 ? 'Average' : 'Needs Work';
+            const scoreLabel  = score === null ? '—' : `${score}/10`;
+            const scoreDesc   = score === null ? '' : score >= 9 ? 'Excellent' : score >= 7 ? 'Great' : score >= 5 ? 'Good' : score >= 3 ? 'Average' : 'Needs Work';
 
             const bodyHTML = aiText
                 .replace(/^SCORE:\s*[\S]+\s*/im, '')

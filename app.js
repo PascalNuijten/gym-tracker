@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.37'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.38'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4874,31 +4874,24 @@ function generateCombinedAnalysis() {
 
             const nutritionInstruction = userProfile ? `
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🍽️ NUTRITION ANALYSIS (mandatory — always include in full)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🍽️ NUTRITION (mandatory — always include):
+You are a sports nutritionist. For EACH day listed in the schedule above, output a short nutrition card.
+CRITICAL RULES:
+- A day marked [LOGGED], [PLANNED-FUTURE], [PLANNED-TODAY-NOT-LOGGED-YET], or [PLANNED-NOT-DONE] is an ACTIVE day — NEVER treat it as a rest day.
+- Only a day explicitly marked [REST DAY] gets rest-day calories.
+- Base kcal and macros on the SPECIFIC activity that day (the exact exercises, swim event, or sport listed). Every day is unique.
+- If the day has multiple activities (e.g. swim + gym), add the energy cost of both.
+- Adjust to the user's goal: ${userProfile.goal || 'general fitness'}.
+- Mark predicted days (any PLANNED tag) with ⚠️.
 
-You are a certified sports nutritionist. Based on the user profile and the SPECIFIC activities listed in the day-by-day schedule above, produce a personalised nutrition plan for this ${analysisViewType}.
+FORMAT — for each day produce exactly this HTML block (no table, no long paragraphs):
+<div style="border-left:3px solid #667eea;padding:8px 12px;margin:6px 0;background:#f8f9fa;border-radius:0 6px 6px 0;">
+<strong>[DATE] — [activity in 1 short line]</strong><br>
+📊 kcal: <strong>X</strong> &nbsp;|&nbsp; 🥩 protein: <strong>Xg</strong> &nbsp;|&nbsp; 🍚 carbs: <strong>Xg</strong> &nbsp;|&nbsp; 🥑 fat: <strong>Xg</strong><br>
+<small style="color:#888;">[1 sentence: why these numbers / key tip for that day]</small>
+</div>
 
-Instructions:
-- Use your own expert knowledge to estimate calorie expenditure for each activity type (do NOT reference or show formulas)
-- For each day, reason from what was actually done or is planned. Do NOT fall back to generic "training day vs rest day" — every day is different
-- Consider the user's specific goal (${userProfile.goal || 'general fitness'}), body composition, and experience level
-- For swimming events: consider stroke, distance, intensity (competition vs casual swim), and the user's weight
-- For gym days: consider muscle groups trained, volume, and intensity (sets/weight from the schedule)
-- For combination days (swim + gym): account for the total energy demand of both
-- Mark any day based on plans (not yet logged) with ⚠️ Predicted
-
-OUTPUT FORMAT — produce two things:
-
-1. An HTML <table> with one row per day in the schedule. Style: border-collapse:collapse, alternating row background #f9f9f9 / white, header row with dark background. Columns:
-   | Date | Activities | Estimated kcal burned | Daily TDEE | Protein (g) | Carbs (g) | Fat (g) | Notes |
-
-2. After the table, a <div> with personalised advice (4-6 sentences):
-   • Pre-workout nutrition strategy for the heaviest training day(s) in this period — specific foods + timing relative to session start time if known from schedule
-   • Post-workout recovery recommendation — specific foods + timing
-   • Hydration target (higher on swim/cardio days)
-   • One specific tip based on the user's goal and this week's activity pattern` : '';
+After all day-cards, add ONE short paragraph (2-3 sentences max) with: best pre-workout meal timing + food for the hardest training day, and best post-workout recovery food.` : '';
 
             const prompt = `You are an expert personal trainer AND sports nutritionist. Analyse ${currentUser}'s activity data for ${periodName}.
 

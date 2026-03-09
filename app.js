@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.31'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.32'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4656,6 +4656,8 @@ function generateCombinedAnalysis() {
     setTimeout(async () => {
         const { start, end, label: periodName, isFuture } = getAnalysisPeriodRange(analysisViewType, analysisViewOffset);
         const userExercises = exercises.filter(ex => ex.users && ex.users[currentUser]);
+        const now = new Date();
+        const MS  = 24 * 60 * 60 * 1000;
 
         // ---- Actual workouts in period ----
         const periodWorkouts = [];
@@ -4670,14 +4672,14 @@ function generateCombinedAnalysis() {
             });
         });
 
-        // ---- Planned workouts / calendar events in period ----
+        // ---- Planned calendar events in period ----
         const periodPlans = plannedWorkouts.filter(p => {
             if (p.createdBy !== currentUser && !(p.invitedUsers || []).includes(currentUser)) return false;
             const d = new Date(p.date + 'T00:00:00');
             return d >= start && d <= end;
         });
 
-        // ---- Past context: previous 4 weeks of history (for trend analysis) ----
+        // ---- Past context: previous 4 weeks ----
         const fourWeeksAgo = new Date(start); fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
         const historicWorkouts = [];
         userExercises.forEach(ex => {
@@ -4702,34 +4704,78 @@ function generateCombinedAnalysis() {
             return;
         }
 
-        // ---- Stats ----
+        // ---- Build day-by-day schedule (the core context for the AI) ----
+        const workoutsByDate = {};
+        periodWorkouts.forEach(w => {
+            const key = w.date.slice(0, 10);
+            if (!workoutsByDate[key]) workoutsByDate[key] = [];
+            workoutsByDate[key].push(w);
+        });
+        const plansByDate = {};
+        periodPlans.forEach(p => {
+            if (!plansByDate[p.date]) plansByDate[p.date] = [];
+            plansByDate[p.date].push(p);
+        });
+
+        // For each day in the window, classify it and build a line for the prompt
+        const scheduleRows   = [];
+        const trainingDayISOs = new Set(); // dates that count as training days (logged OR planned gym)
+        const restDayISOs     = new Set();
+        let hasAnyPrediction  = false;    // true if any day is plan-based (not logged)
+
+        for (let d = new Date(start); d <= end; d = new Date(d.getTime() + MS)) {
+            const iso      = d.toISOString().slice(0, 10);
+            const dayLogs  = workoutsByDate[iso] || [];
+            const dayPlans = plansByDate[iso]    || [];
+            const isDayFuture = d > now;
+            const isDayToday  = d.toDateString() === now.toDateString();
+
+            if (dayLogs.length > 0) {
+                // LOGGED — actual data
+                const sets = dayLogs.reduce((s, w) => s + w.sets.length, 0);
+                const vol  = dayLogs.reduce((s, w) => s + w.sets.reduce((sv, st) => sv + st.weight * st.reps, 0), 0);
+                const cats = [...new Set(dayLogs.map(w => w.category))].join(', ');
+                const exercises_detail = dayLogs.map(w => {
+                    const best = w.sets.reduce((b, s) => s.weight > b.weight ? s : b, w.sets[0]);
+                    return `${w.exercise}(${w.sets.length}×${formatWeight(best.weight)})`;
+                }).join(', ');
+                scheduleRows.push(`${iso} [LOGGED] ${cats}: ${sets} sets, ${vol > 0 ? vol.toLocaleString() + 'kg vol' : 'bodyweight'} | ${exercises_detail}`);
+                trainingDayISOs.add(iso);
+            } else if (dayPlans.length > 0) {
+                // PLAN ONLY — no gym log for this day
+                hasAnyPrediction = true;
+                dayPlans.forEach(p => {
+                    const activity = p.note || p.workoutType || 'Workout';
+                    const exList   = (p.exercises || []).map(ex => ex.name).join(', ') || 'TBD';
+                    const timeNote = p.startTime ? ` ${p.startTime}${p.endTime ? '–' + p.endTime : ''}` : '';
+                    let tag;
+                    if (isDayFuture)     tag = '[PLANNED-FUTURE]';
+                    else if (isDayToday) tag = '[PLANNED-TODAY-NOT-LOGGED-YET]';
+                    else                 tag = '[PLANNED-NOT-DONE]';
+                    scheduleRows.push(`${iso} ${tag} ${activity}${timeNote}: ${exList}`);
+                    // Count as training day if it looks like a gym/cardio session (not just "rest")
+                    const lowerAct = activity.toLowerCase();
+                    if (!lowerAct.includes('rest') && !lowerAct.includes('off')) trainingDayISOs.add(iso);
+                });
+            } else if (!isDayFuture) {
+                scheduleRows.push(`${iso} [REST DAY]`);
+                restDayISOs.add(iso);
+            }
+        }
+
+        // ---- Aggregate stats (logged only) ----
         const totalSets       = periodWorkouts.reduce((s, w) => s + w.sets.length, 0);
         const totalVolume     = periodWorkouts.reduce((s, w) => s + w.sets.reduce((sv, set) => sv + set.weight * set.reps, 0), 0);
-        const uniqueDays      = new Set(periodWorkouts.map(w => new Date(w.date).toDateString())).size;
+        const uniqueDays      = new Set(periodWorkouts.map(w => w.date.slice(0, 10))).size;
         const uniqueExercises = new Set(periodWorkouts.map(w => w.exercise)).size;
         const catVolume       = {};
         periodWorkouts.forEach(w => { catVolume[w.category] = (catVolume[w.category] || 0) + w.sets.length; });
-        const sortedCats  = Object.entries(catVolume).sort((a, b) => b[1] - a[1]);
+        const sortedCats    = Object.entries(catVolume).sort((a, b) => b[1] - a[1]);
         const categoryStats = sortedCats.map(([c, s]) => `${c}: ${s} sets`).join(', ') || '—';
 
         const histVol  = historicWorkouts.reduce((s, w) => s + w.sets.reduce((sv, set) => sv + set.weight * set.reps, 0), 0);
         const histDays = new Set(historicWorkouts.map(w => new Date(w.date).toDateString())).size;
-        const volTrend = (histVol > 0 && !isFuture) ? ` (prev 4-wk avg: ${Math.round(histVol / 4).toLocaleString()}kg/wk)` : '';
-
-        const workoutSummary = periodWorkouts
-            .sort((a, b) => new Date(a.date) - new Date(b.date))
-            .map(w => {
-                const best = w.sets.reduce((b, s) => s.weight > b.weight ? s : b, w.sets[0]);
-                const vol  = w.sets.reduce((sv, s) => sv + s.weight * s.reps, 0);
-                return `${new Date(w.date).toLocaleDateString()} | ${w.exercise} (${w.category}): ${w.sets.length} sets, best ${formatWeight(best.weight)}×${best.reps}${vol > 0 ? `, vol ${vol}kg` : ''}`;
-            }).join('\n') || '(none)';
-
-        const planSummary = periodPlans.length > 0
-            ? periodPlans.map(p => {
-                const exNames = (p.exercises || []).map(ex => ex.name).join(', ') || 'TBD';
-                return `${p.date}: ${p.note || p.workoutType || 'Workout'} — ${exNames}`;
-              }).join('\n')
-            : '(none)';
+        const volTrend = histVol > 0 ? ` (prev-4wk avg: ${Math.round(histVol / 4).toLocaleString()}kg/wk)` : '';
 
         // ---- User profile ----
         const userProfile    = getUserProfile(currentUser);
@@ -4753,9 +4799,19 @@ function generateCombinedAnalysis() {
             const weeksInPeriod = analysisViewType === 'week' ? 1 : 4;
             const targetTotal = target * weeksInPeriod;
             frequencyNote = uniqueDays >= targetTotal
-                ? `✅ Hit training target: ${uniqueDays}/${targetTotal} days.`
-                : `⚠️ Below target: ${uniqueDays}/${targetTotal} days (goal: ${userProfile.frequency}×/week).`;
+                ? `✅ Hit training target: ${uniqueDays}/${targetTotal} logged days.`
+                : `⚠️ Below target: ${uniqueDays}/${targetTotal} logged days (goal: ${userProfile.frequency}×/week).`;
         }
+
+        // ---- Determine score basis ----
+        const allLogged      = !hasAnyPrediction && hasPastData;
+        const mixedLogged    = hasPastData && hasAnyPrediction;
+        const onlyPrediction = !hasPastData && hasFuturePlans;
+        const scoreBasis = allLogged
+            ? 'Based entirely on logged data.'
+            : mixedLogged
+            ? 'Partially based on logged data; remaining days are plan-based estimates — mention this in the score rationale.'
+            : 'Entirely based on scheduled plans — no sessions logged yet. Score is a PREDICTION. State this clearly.';
 
         let feedback = `<h4>📊 ${periodName}</h4>`;
 
@@ -4764,62 +4820,80 @@ function generateCombinedAnalysis() {
             feedback += `<div class="loading-spinner"></div><p>AI is analysing…</p>`;
             resultBox.innerHTML = feedback;
 
-            const nutritionSection = userProfile ? `
+            // Build the nutrition section instructions
+            // Explicitly list training vs rest days so the AI gives per-day-type advice
+            const trainingDates = [...trainingDayISOs].sort().join(', ') || 'none';
+            const restDates     = [...restDayISOs].sort().join(', ')     || 'none identified';
 
-NUTRITION (always include — separate clearly labelled section):
-Based on body stats, goal, and training load for this period, estimate:
-- TDEE on training days (kcal) and rest days (kcal)
-- Daily protein target (g) with brief reasoning
-- Daily carbohydrates target (g)
-- Daily fat target (g)
-- Best pre-workout meal (timing before training + macro focus)
-- Best post-workout meal (timing after + protein focus)
-- Hydration recommendation (L/day)
-Format this as a visually distinct HTML block inside a light-green div with emoji bullets.` : '';
+            const nutritionInstruction = userProfile ? `
 
-            const prompt = `You are an expert personal trainer AND sports nutritionist. Analyse ${currentUser}'s training data.
+NUTRITION GUIDANCE (mandatory section — always include):
+The schedule above tells you EXACTLY which days are training days vs rest days.
+Training days identified: ${trainingDates}
+Rest days identified: ${restDates}
+Unscheduled future days are assumed rest unless a plan exists above.
+
+For any non-gym activity in the schedule (e.g. swimming, running, cycling, football) that has a time/duration:
+- Estimate the calorie burn for that activity based on the user's body weight
+- Add this to the training day TDEE
+
+For EACH day type (training day / rest day), provide:
+• Estimated TDEE (kcal) — be specific, not generic
+• Protein target (g)
+• Carbohydrates target (g)
+• Fat target (g)
+• Pre-workout timing & meal suggestion (training days only)
+• Post-workout timing & protein-focus meal (training days only)
+• Hydration (L/day, higher on training days)
+
+If any day is plan-based (not yet logged), mark those nutrition estimates with ⚠️ Prediction.
+Format as a clearly styled HTML block (light green background div).` : '';
+
+            const prompt = `You are an expert personal trainer AND sports nutritionist. Analyse ${currentUser}'s activity data for ${periodName}.
 
 ${profileContext}
 ${goalGuidance ? `🎯 GOAL: ${goalGuidance}` : ''}
-${frequencyNote ? `📅 FREQUENCY: ${frequencyNote}` : ''}
-ANALYSIS PERIOD: ${periodName}
+${frequencyNote ? `📅 FREQUENCY CHECK: ${frequencyNote}` : ''}
 
-GYM WORKOUTS (actual logged sessions):
-${workoutSummary}
+DAY-BY-DAY SCHEDULE (this is the primary data source):
+${scheduleRows.join('\n')}
 
-CALENDAR PLANS & ACTIVITIES this period (includes cardio, sport, any non-gym activity):
-${planSummary}
+Legend:
+- [LOGGED] = actual gym session recorded — use this as ground truth
+- [PLANNED-FUTURE] / [PLANNED-TODAY-NOT-LOGGED-YET] / [PLANNED-NOT-DONE] = calendar plan, NOT yet logged — score/nutrition for these days are PREDICTIONS
+- [REST DAY] = no activity recorded or planned
 
-TREND (previous 4 weeks): ${histDays} training days, ${Math.round(histVol).toLocaleString()}kg total volume${volTrend}
+AGGREGATE STATS (logged sessions only):
+- Logged training days: ${uniqueDays} | Exercises: ${uniqueExercises} | Sets: ${totalSets} | Volume: ${totalVolume.toLocaleString()}kg${totalVolume === 0 ? ' (bodyweight/cardio sessions)' : ''}
+- Muscle group distribution: ${categoryStats || 'n/a'}
+- Trend context: ${histDays} training days / ${Math.round(histVol).toLocaleString()}kg vol in prev 4 weeks${volTrend}
 
-STATS:
-- Training days: ${uniqueDays} | Exercises: ${uniqueExercises} | Sets: ${totalSets} | Volume: ${totalVolume.toLocaleString()}kg
-- Muscle group distribution: ${categoryStats}
-${isFuture ? '\n⚠️ This period is IN THE FUTURE — evaluate the plans, give preparation advice, no retroactive score.' : ''}
+SCORE BASIS: ${scoreBasis}
+${onlyPrediction ? '⚠️ ALL DATA IS PLAN-BASED — no sessions have been logged yet. Be clear that everything is a prediction/projection.' : ''}
 
-Respond EXACTLY in this format (no markdown code blocks):
-SCORE: ${isFuture ? 'N/A' : '[1-10]'}
+Respond EXACTLY in this format (no markdown code blocks, no triple backticks):
+SCORE: ${onlyPrediction ? 'N/A' : '[1-10]'}
 ---
-[HTML body — use <p>, <strong>, <ul><li> only — covering these sections:]
-<strong>🏆 Overview${isFuture ? ' & Plan Quality' : ' & Score Rationale'}</strong>
+[HTML body using <p>, <strong>, <ul><li> — include these sections:]
+<strong>🏆 ${onlyPrediction ? 'Plan Preview & Preparation' : allLogged ? 'Score & Overview' : 'Score & Overview (⚠️ Partial Prediction)'}</strong>
 <strong>🎯 Goal Progress</strong>
 <strong>💪 Volume & Intensity</strong>
 <strong>⚖️ Muscle Balance</strong>
-<strong>📋 Calendar & Activities</strong> (comment on non-gym activities, cardio, rest days and how they integrate with gym work)
-<strong>✅ Top 3 Recommendations</strong>${nutritionSection}`;
+<strong>📋 Activities Analysis</strong> — for each non-gym activity (swimming, running, etc.) with duration, estimate calorie burn and impact on the day
+<strong>✅ Top 3 Recommendations</strong>${nutritionInstruction}`;
 
             const aiText = await Promise.race([
-                callGeminiAI(prompt, null, true, 1600),
+                callGeminiAI(prompt, null, true, 1800),
                 new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout after 50s')), 50000))
             ]);
             if (!aiText) throw new Error('No AI response');
 
-            const scoreMatch = aiText.match(/^SCORE:\s*(\d+|N\/A)/im);
-            const scoreRaw   = scoreMatch ? scoreMatch[1] : null;
-            const score      = scoreRaw && scoreRaw !== 'N/A' ? Math.min(10, Math.max(1, parseInt(scoreRaw))) : null;
-            const scoreColor = score === null ? '#667eea' : score >= 8 ? '#27ae60' : score >= 6 ? '#e67e22' : '#e74c3c';
-            const scoreLabel = score === null ? (isFuture ? '📅' : '—') : `${score}/10`;
-            const scoreDesc  = score === null ? (isFuture ? 'Upcoming Period' : '') : score >= 9 ? 'Excellent' : score >= 7 ? 'Great' : score >= 5 ? 'Good' : score >= 3 ? 'Average' : 'Needs Work';
+            const scoreMatch  = aiText.match(/^SCORE:\s*(\d+|N\/A)/im);
+            const scoreRaw    = scoreMatch ? scoreMatch[1] : null;
+            const score       = scoreRaw && scoreRaw !== 'N/A' ? Math.min(10, Math.max(1, parseInt(scoreRaw))) : null;
+            const scoreColor  = score === null ? '#667eea' : score >= 8 ? '#27ae60' : score >= 6 ? '#e67e22' : '#e74c3c';
+            const scoreLabel  = score === null ? (onlyPrediction ? '📅' : '—') : `${score}/10`;
+            const scoreDesc   = score === null ? (onlyPrediction ? 'Predicted' : '') : score >= 9 ? 'Excellent' : score >= 7 ? 'Great' : score >= 5 ? 'Good' : score >= 3 ? 'Average' : 'Needs Work';
 
             const bodyHTML = aiText
                 .replace(/^SCORE:\s*[\S]+\s*/im, '')
@@ -4828,7 +4902,11 @@ SCORE: ${isFuture ? 'N/A' : '[1-10]'}
                 .trim();
 
             feedback = `<h4>📊 ${periodName}</h4>`;
-            feedback += `<div style="display:flex;align-items:center;gap:12px;margin:10px 0 14px;padding:10px 14px;background:white;border-radius:10px;border:2px solid ${scoreColor};">`;
+            // Prediction badge if any data is estimate
+            if (hasAnyPrediction) {
+                feedback += `<div style="font-size:0.78em;background:#fff3e0;border:1px solid #ffcc80;border-radius:5px;padding:4px 10px;margin:0 0 8px;color:#e65100;display:inline-block;">⚠️ ${onlyPrediction ? 'All values are predictions based on plans' : 'Some days are predictions (not yet logged)'}</div>`;
+            }
+            feedback += `<div style="display:flex;align-items:center;gap:12px;margin:8px 0 12px;padding:10px 14px;background:white;border-radius:10px;border:2px solid ${scoreColor};">`;
             feedback += `<div style="font-size:2.2em;font-weight:bold;color:${scoreColor};line-height:1;">${scoreLabel}</div>`;
             feedback += `<div><div style="font-weight:700;color:${scoreColor};font-size:1.05em;">${scoreDesc}</div>`;
             if (frequencyNote) feedback += `<div style="font-size:0.8em;color:#666;margin-top:2px;">${frequencyNote}</div>`;
@@ -4847,7 +4925,7 @@ SCORE: ${isFuture ? 'N/A' : '[1-10]'}
             }
         }
 
-        // Fun fact
+        // Fun fact (logged data only)
         try {
             if (hasPastData) {
                 const funFact = await generateFunFact(totalVolume, totalSets, analysisViewType, periodName, uniqueDays, uniqueExercises, sortedCats);
@@ -4855,10 +4933,13 @@ SCORE: ${isFuture ? 'N/A' : '[1-10]'}
             }
         } catch (e) { /* silent */ }
 
-        // AI follow-up questions
-        if (useRealAI && hasPastData) {
+        // AI follow-up questions (based on what's available)
+        if (useRealAI && (hasPastData || hasFuturePlans)) {
             try {
-                const qPrompt = `Based on ${currentUser}'s ${periodName}: ${uniqueDays} training days, ${uniqueExercises} exercises, ${totalSets} sets, top muscles: ${sortedCats.slice(0,3).map(([c]) => c).join(', ')}. Generate 3-4 specific follow-up questions. JSON array only: ["Q1?","Q2?","Q3?"]`;
+                const qBase = hasPastData
+                    ? `${uniqueDays} training days, ${uniqueExercises} exercises, ${totalSets} sets, top muscles: ${sortedCats.slice(0,3).map(([c]) => c).join(', ')}`
+                    : `upcoming plans: ${periodPlans.slice(0,3).map(p => p.note || p.workoutType || 'Workout').join(', ')}`;
+                const qPrompt = `Based on ${currentUser}'s ${periodName} (${qBase}). Generate 3 specific follow-up questions. JSON array only: ["Q1?","Q2?","Q3?"]`;
                 const qText = await callGeminiAI(qPrompt, null, false);
                 if (qText) {
                     const m = qText.match(/\[[\s\S]*\]/);

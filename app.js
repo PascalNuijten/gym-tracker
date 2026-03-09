@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.42'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.43'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4797,17 +4797,28 @@ function generateCombinedAnalysis() {
                 }).join(' | ');
                 scheduleRows.push(`${iso} [LOGGED] ${cats}: ${sets}sets, ${vol > 0 ? vol.toLocaleString() + 'kg vol' : 'bodyweight'} | ${exercises_detail}`);
                 trainingDayISOs.add(iso);
-                // Push a SEPARATE row for each same-day planned activity (e.g. swim invite on gym day)
+                // Only add a separate row for plans that are GENUINELY a different activity (not the same gym session)
+                // Keywords that identify a clearly different type of activity from a gym weight session
+                const altActivityWords = ['swim', 'run', 'cycl', 'bike', 'row', 'yoga', 'pilates', 'sport', 'tennis', 'football', 'soccer', 'climb', 'hike', 'box', 'martial', 'dance', 'basketball', 'volleyball'];
                 const sameDayPlans = dayPlans.filter(p => {
                     const loggedNames = new Set(dayLogs.map(w => w.exercise.toLowerCase()));
-                    const planExs = (p.exercises || []).map(e => e.name.toLowerCase());
-                    return planExs.length === 0 || planExs.some(n => !loggedNames.has(n));
+                    const planExs     = (p.exercises || []).map(e => e.name.toLowerCase());
+                    const planType    = (p.workoutType || p.note || '').toLowerCase();
+                    if (planExs.length > 0) {
+                        // Plan has listed exercises — skip if ≥50% already in the logged session (same session)
+                        const overlap = planExs.filter(n => loggedNames.has(n)).length;
+                        return overlap < Math.ceil(planExs.length / 2);
+                    } else {
+                        // No exercises listed — only include if it's clearly a different type of activity
+                        return altActivityWords.some(k => planType.includes(k));
+                    }
                 });
                 sameDayPlans.forEach(p => {
                     const activity = p.note || p.workoutType || 'Activity';
-                    const sdExDetail = (p.exercises || []).filter(ex =>
+                    const unloggedExs = (p.exercises || []).filter(ex =>
                         !dayLogs.some(w => w.exercise.toLowerCase() === ex.name.toLowerCase())
-                    ).map(ex => {
+                    );
+                    const sdExDetail = unloggedExs.map(ex => {
                         const exRef  = exercises.find(e => e.name === ex.name || e.id === ex.id);
                         const muscle = exRef?.muscle || ex.category || '';
                         const wt = ex.perUserWeights?.[currentUser] ?? ex.plannedWeight ?? 0;
@@ -4815,7 +4826,7 @@ function generateCombinedAnalysis() {
                         const st = ex.plannedSets ?? 0;
                         const detail = [muscle, st ? `${st}sets` : '', wt ? `${formatWeight(wt)}` : '', rp ? `${rp}reps` : ''].filter(Boolean).join(', ');
                         return `${ex.name}(${detail})`;
-                    }).join(' | ') || 'TBD';
+                    }).join(' | ') || activity; // fall back to activity name so AI knows what it is
                     let sdDur = '';
                     if (p.startTime && p.endTime) {
                         const [sh, sm] = p.startTime.split(':').map(Number);
@@ -4849,7 +4860,7 @@ function generateCombinedAnalysis() {
                             rp ? `${rp}reps` : ''
                         ].filter(Boolean).join(', ');
                         return `${ex.name}(${detail})`;
-                    }).join(' | ') || 'TBD';
+                    }).join(' | ') || activity; // activity name as fallback so AI knows the type
                     // Duration hint from start/end time
                     let durationNote = '';
                     if (p.startTime && p.endTime) {
@@ -4936,23 +4947,10 @@ function generateCombinedAnalysis() {
             const trainingDates = [...trainingDayISOs].sort().join(', ') || 'none';
             const restDates     = [...restDayISOs].sort().join(', ')     || 'none identified';
 
-            // Compute anchor values so the AI nutrition stays consistent and realistic
-            let bmrAnchor = 0, tdeeSedentary = 0, tdeeTraining = 0;
-            if (userProfile?.weight && userProfile?.height) {
-                const w = userProfile.weight, h = userProfile.height, a = userProfile.age || 30;
-                const genderAdd = (userProfile.gender || '').toLowerCase() === 'female' ? -161 : 5;
-                bmrAnchor       = Math.round(10 * w + 6.25 * h - 5 * a + genderAdd);
-                tdeeSedentary   = Math.round(bmrAnchor * 1.2);   // rest day
-                tdeeTraining    = Math.round(bmrAnchor * 1.55);  // baseline on a training day before adding exercise calories
-            }
-            const nutritionAnchor = bmrAnchor > 0
-                ? `\nNUTRITION ANCHOR (use these as your starting point — do NOT go below):\n- BMR: ~${bmrAnchor} kcal\n- Rest day TDEE: ~${tdeeSedentary} kcal  (BMR × 1.2)\n- Training day baseline TDEE: ~${tdeeTraining} kcal (BMR × 1.55) BEFORE adding exercise burn\n- ADD on top of baseline: strength training ~${Math.round(userProfile.weight * 8.5)}-${Math.round(userProfile.weight * 10)} kcal/hour | swimming ~${Math.round(userProfile.weight * 10)}-${Math.round(userProfile.weight * 12)} kcal/hour | cycling ~${Math.round(userProfile.weight * 7)}-${Math.round(userProfile.weight * 9)} kcal/hour | running ~${Math.round(userProfile.weight * 10)}-${Math.round(userProfile.weight * 12)} kcal/hour\n- Goal modifier: muscle building +300-500 kcal above TDEE | weight loss -300-500 kcal | other: at TDEE\n`
-                : '';
-
             const nutritionInstruction = userProfile ? `
 
 🍽️ NUTRITION (mandatory — always include):
-You are a sports nutritionist. ${nutritionAnchor}${
+You are a sports nutritionist. The user's physical stats are in USER CONTEXT above (weight, height, age, gender). Use those stats with the Mifflin-St Jeor BMR formula, then apply activity multipliers and MET-based exercise calorie additions from the schedule. Always use the same formula so output is deterministic across views. ${
     analysisViewType === 'day'
     ? `There is only ONE day being evaluated. Output a SINGLE nutrition card for that day — no other days.`
     : analysisViewType === 'month'

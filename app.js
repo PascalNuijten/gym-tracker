@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.45'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.46'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4778,15 +4778,31 @@ function generateCombinedAnalysis() {
         const restDayISOs     = new Set();
         let hasAnyPrediction  = false;    // true if any day is plan-based (not logged)
 
-        // Pre-compute ONLY the user's BMR (fixed from profile — never changes) for the AI to use as base
+        // Nutrition pre-computation — all arithmetic done in JS so values are exact and deterministic
         const _np = getUserProfile(currentUser);
-        const _nw = _np?.weight || 0;
-        const _bmrComputed = (_np?.height && _np?.weight)
-            ? Math.round(10 * _np.weight + 6.25 * _np.height - 5 * (_np.age || 30) + ((_np.gender || '').toLowerCase() === 'female' ? -161 : 5))
+        const _nw = _np?.weight || 75;
+        const _bmr = (_np?.height && _np?.weight)
+            ? Math.round(10 * _np.weight + 6.25 * _np.height - 5 * (_np.age || 30)
+                + ((_np.gender || '').toLowerCase() === 'female' ? -161 : 5))
             : 0;
-        const _goalKcalMod = _np?.goal === 'muscle' ? '+300 (muscle gain surplus)' : _np?.goal === 'weight_loss' ? '-300 (deficit)' : '+0';
-        const _proteinTarget = _np?.weight ? Math.round(_np.weight * (_np?.goal === 'muscle' ? 2.2 : 1.8)) : 0;
-        // Per-day activity context: type + duration — AI uses these to compute kcal per day
+        const _goalMod = _np?.goal === 'muscle' ? 400 : _np?.goal === 'weight_loss' ? -400 : 0;
+        const _protG   = _np?.weight ? Math.round(_np.weight * (_np?.goal === 'muscle' ? 2.2 : 1.8)) : 0;
+        const _metFor  = t => /swim|water/i.test(t) ? 7.5 : /run|jog/i.test(t) ? 9.5
+            : /cycl|bike/i.test(t) ? 8.5 : /row/i.test(t) ? 7.0
+            : /yoga|pilat|stretch/i.test(t) ? 3.0 : /box|martial|kick|wrestl/i.test(t) ? 10.0
+            : /sport|tennis|basket|foot|soccer|volley|climb|hike/i.test(t) ? 8.0 : 5.5;
+        // _nutForDay(activities): compute kcal/protein/carbs/fat for one day
+        const _nutForDay = (activities) => {
+            const base = _bmr > 0 ? (_bmr * (activities.length > 0 ? 1.55 : 1.2)) : 0;
+            const exBurn = activities.reduce((s, a) => {
+                const met = _metFor(a.type);
+                return s + Math.round(met * _nw * (a.mins / 60));
+            }, 0);
+            const kcal = Math.round(base + exBurn + _goalMod);
+            const fat  = Math.round(kcal * 0.27 / 9);
+            const carb = Math.max(50, Math.round((kcal - _protG * 4 - fat * 9) / 4));
+            return { kcal, prot: _protG, carb, fat };
+        };
         const dayActivityMap = {}; // iso → [{type, mins, isLogged}]
 
         for (let d = new Date(start); d <= end; d = new Date(d.getTime() + MS)) {
@@ -4969,45 +4985,58 @@ function generateCombinedAnalysis() {
             feedback += `<div class="loading-spinner"></div><p>AI is analysing…</p>`;
             resultBox.innerHTML = feedback;
 
-            // Build per-day activity context for the AI to compute nutrition from
-            const _activityContext = Object.keys(dayActivityMap).sort().map(iso => {
-                const acts = dayActivityMap[iso];
-                if (!acts || acts.length === 0) return `${iso}: REST`;
-                return `${iso}: ${acts.map(a => `${a.type} ${a.mins}min${a.isLogged ? ' [logged]' : ' [planned]'}`).join(' + ')}`;
-            }).join('\n') || 'none';
+            // Build per-day pre-computed nutrition cards — AI only adds the 1-sentence food tip
+            const _nutCards = (() => {
+                if (_bmr === 0 && _protG === 0) return [];
+                if (analysisViewType === 'month') {
+                    const tActs = Object.keys(dayActivityMap).filter(i => trainingDayISOs.has(i));
+                    const rActs = Object.keys(dayActivityMap).filter(i => restDayISOs.has(i));
+                    // Average activity durations across training days
+                    const avgTrainActs = tActs.length > 0
+                        ? (() => {
+                            const merged = {};
+                            tActs.forEach(i => (dayActivityMap[i] || []).forEach(a => {
+                                merged[a.type] = (merged[a.type] || 0) + a.mins;
+                            }));
+                            return Object.entries(merged).map(([type, totalMins]) => ({ type, mins: Math.round(totalMins / tActs.length) }));
+                        })()
+                        : [{ type: 'strength training', mins: 60 }];
+                    const tNut = _nutForDay(avgTrainActs);
+                    const rNut = _nutForDay([]);
+                    return [
+                        { iso: null, label: 'Typical training week day', acts: avgTrainActs, ...tNut, predicted: hasAnyPrediction },
+                        { iso: null, label: 'Typical rest/recovery day',  acts: [],          ...rNut, predicted: false }
+                    ];
+                }
+                return Object.keys(dayActivityMap).sort().map(iso => {
+                    const acts = dayActivityMap[iso] || [];
+                    const nut  = _nutForDay(acts);
+                    return { iso, label: iso, acts, ...nut, predicted: !workoutsByDate[iso] };
+                });
+            })();
 
-            const nutritionInstruction = (_bmrComputed > 0 && userProfile) ? `
+            const _nutCardHTML = _nutCards.map(c => {
+                const actLabel = c.acts.length > 0
+                    ? c.acts.map(a => `${a.type}${a.mins ? ' ' + a.mins + 'min' : ''}`).join(' + ')
+                    : 'rest/recovery';
+                const predBadge = c.predicted ? ' ⚠️' : '';
+                return `<NUTCARD label="${c.label}${predBadge}" activity="${actLabel}" kcal="${c.kcal}" protein="${c.prot}g" carbs="${c.carb}g" fat="${c.fat}g">`;
+            }).join('\n');
 
-🍽️ NUTRITION (mandatory — always include this section):
-Compute nutrition for each day using ONLY these locked inputs — do not use any other values:
-- User BMR (Mifflin-St Jeor, already calculated): ${_bmrComputed} kcal
-- Body weight: ${_nw}kg
-- Goal modifier: ${_goalKcalMod}
-- Protein target: ${_proteinTarget > 0 ? _proteinTarget + 'g/day' : `bodyweight × 1.8g`}
-- MET values to use (fixed): strength/gym=5.5 | swimming=7.5 | running=9.5 | cycling=8.5 | rowing=7.0 | yoga/pilates=3.0 | combat sports=10.0 | team sports=8.0
+            const nutritionInstruction = _nutCards.length > 0 ? `
 
-FORMULA (apply identically every time):
-  Rest day   → TDEE = BMR × 1.2  + goal_modifier
-  Active day → TDEE = BMR × 1.55 + Σ(MET_i × ${_nw} × hours_i) + goal_modifier
-  Fat  = TDEE × 0.27 / 9  (rounded to nearest 1g)
-  Carbs = (TDEE − protein×4 − fat×9) / 4  (minimum 50g)
+🍽️ NUTRITION (mandatory — always include):
+For each NUTCARD tag below, output exactly one HTML card — copy the kcal/protein/carbs/fat values VERBATIM from the tag attributes (do NOT change them), and write only a 1-sentence specific food tip:
 
-ACTIVITY DATA PER DAY (use these exact types and durations — do not invent other values):
-${_activityContext}
+${_nutCardHTML}
 
-${
-  analysisViewType === 'month'
-  ? 'Output TWO cards: one for the average training day (compute average kcal across training days using formula), one for the average rest day.'
-  : 'Output ONE card per day from the activity data above.'
-}
-
-For each card output exactly this HTML block:
+For each card produce this HTML:
 <div style="border-left:3px solid #667eea;padding:8px 12px;margin:6px 0;background:#f8f9fa;border-radius:0 6px 6px 0;">
-<strong>[DATE or day label] — [activities that day in 1 line]</strong><br>
-📊 kcal: <strong>X</strong> &nbsp;|&nbsp; 🥩 protein: <strong>Xg</strong> &nbsp;|&nbsp; 🍚 carbs: <strong>Xg</strong> &nbsp;|&nbsp; 🥑 fat: <strong>Xg</strong><br>
-<small style="color:#888;">[1 sentence: specific food tip for that day's activity]</small>
+<strong>[label] — [activity]</strong><br>
+📊 kcal: <strong>[kcal]</strong> &nbsp;|&nbsp; 🥩 protein: <strong>[protein]</strong> &nbsp;|&nbsp; 🍚 carbs: <strong>[carbs]</strong> &nbsp;|&nbsp; 🥑 fat: <strong>[fat]</strong><br>
+<small style="color:#888;">[Your 1-sentence food tip specific to that day's activity]</small>
 </div>
-After all cards: ONE paragraph (2-3 sentences) on pre-workout timing + post-workout recovery for the hardest day.` : '';
+After all cards: ONE paragraph (2-3 sentences) on best pre-workout food/timing for the hardest day + post-workout recovery.` : '';
 
             const prompt = `You are an expert personal trainer AND sports nutritionist. Analyse ${currentUser}'s activity data for ${periodName}.
 
@@ -5061,6 +5090,7 @@ SCORE: [1-10]
                 .replace(/^SCORE:\s*[\S]+\s*/im, '')
                 .replace(/^---\s*/m, '')
                 .replace(/```html/g, '').replace(/```/g, '')
+                .replace(/<NUTCARD[^>]*>/g, '') // strip processing tags if AI echoes them
                 .trim();
 
             feedback = `<h4>📊 ${periodName}</h4>`;

@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.49'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.50'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -2164,7 +2164,8 @@ function saveWorkout() {
     // Auto-update the matching calendar plan's endTime for today
     (function autoSetPlanEndTime() {
         try {
-            const todayISO = now.toISOString().slice(0, 10);
+            const _td = now; // local today
+            const todayISO = `${_td.getFullYear()}-${String(_td.getMonth()+1).padStart(2,'0')}-${String(_td.getDate()).padStart(2,'0')}`;
             const nowTime  = session.startTime; // reuse same HH:MM
             const todayPlans = plannedWorkouts.filter(p => {
                 const isOwn      = p.createdBy === currentUser;
@@ -4779,7 +4780,7 @@ function generateCombinedAnalysis() {
         let hasAnyPrediction  = false;    // true if any day is plan-based (not logged)
 
         for (let d = new Date(start); d <= end; d = new Date(d.getTime() + MS)) {
-            const iso      = d.toISOString().slice(0, 10);
+            const iso      = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
             const dayLogs  = workoutsByDate[iso] || [];
             const dayPlans = plansByDate[iso]    || [];
             const isDayFuture = d > now;
@@ -5193,7 +5194,7 @@ async function askAIQuestion(question) {
 
         const scheduleRows = [];
         for (let d = new Date(start); d <= end; d = new Date(d.getTime() + MS)) {
-            const iso = d.toISOString().slice(0,10);
+            const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
             const logs = workoutsByDate[iso] || [];
             const plans = plansByDate[iso] || [];
             const isFuture = d > now;

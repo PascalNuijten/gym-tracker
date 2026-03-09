@@ -1595,6 +1595,11 @@ textarea {
     border: 2px solid #667eea;
     opacity: 0.75;
 }
+.dot-pending-invite {
+    background: transparent;
+    border: 2px dashed #f39c12;
+    opacity: 0.85;
+}
 
 .calendar-day-detail {
     background: #f8f9fa;

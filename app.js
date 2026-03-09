@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.28'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.29'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -377,6 +377,8 @@ let setCounter = 1;
 let currentChart = null;
 let users = ['Fran', 'Pascal', 'Cicci']; // Track all users
 let plannedWorkouts = []; // Workout plans stored in Firebase
+let acceptedInvites = []; // planIds this user has explicitly accepted (persisted to Firebase inviteAccepted/<user>)
+let hiddenInvites   = []; // accepted planIds this user removed from their calendar (persisted to Firebase inviteHidden/<user>)
 let isNewlyAddedFromCamera = false; // Track if exercise was just added from camera
 let userProfiles = JSON.parse(localStorage.getItem('gymTrackerUserProfiles') || '{}'); // Store personal data per user
 
@@ -7325,18 +7327,34 @@ function deletePlanByDate(dateISO) {
 
 function checkPendingInvites() {
     if (!currentUser) return;
-    // Load acks from Firebase (plus localStorage as fallback)
-    const ackKey = `inviteAck_${currentUser}`;
-    const localAcked = JSON.parse(localStorage.getItem(ackKey) || '[]');
-    
+    // Load acks, accepted, and hidden from Firebase (+ localStorage as fallback)
+    const ackKey      = `inviteAck_${currentUser}`;
+    const acceptedKey = `inviteAccepted_${currentUser}`;
+    const hiddenKey   = `inviteHidden_${currentUser}`;
+    const localAcked    = JSON.parse(localStorage.getItem(ackKey)      || '[]');
+    const localAccepted = JSON.parse(localStorage.getItem(acceptedKey) || '[]');
+    const localHidden   = JSON.parse(localStorage.getItem(hiddenKey)   || '[]');
+
     if (database) {
-        database.ref(`inviteAcks/${currentUser}`).once('value', snap => {
-            const fbAcked = snap.val() || [];
-            // Merge local + Firebase acks
+        Promise.all([
+            database.ref(`inviteAcks/${currentUser}`).once('value'),
+            database.ref(`inviteAccepted/${currentUser}`).once('value'),
+            database.ref(`inviteHidden/${currentUser}`).once('value')
+        ]).then(([ackSnap, acceptedSnap, hiddenSnap]) => {
+            const fbAcked    = ackSnap.val()      || [];
+            const fbAccepted = acceptedSnap.val() || [];
+            const fbHidden   = hiddenSnap.val()   || [];
+            // Merge local + Firebase
             const acked = Array.from(new Set([...localAcked, ...fbAcked].map(String)));
+            acceptedInvites = Array.from(new Set([...localAccepted, ...fbAccepted].map(String)));
+            hiddenInvites   = Array.from(new Set([...localHidden,   ...fbHidden].map(String)));
+            localStorage.setItem(acceptedKey, JSON.stringify(acceptedInvites));
+            localStorage.setItem(hiddenKey,   JSON.stringify(hiddenInvites));
             _runInviteCheck(acked);
         });
     } else {
+        acceptedInvites = localAccepted;
+        hiddenInvites   = localHidden;
         _runInviteCheck(localAcked);
     }
 }
@@ -7375,6 +7393,51 @@ function showInviteModal(pendingPlans) {
     modal.style.display = 'flex';
 }
 
+// ---- Invite accept / hide state helpers ----
+
+function isInviteAccepted(planId) {
+    return acceptedInvites.includes(String(planId));
+}
+
+function isInviteHidden(planId) {
+    return hiddenInvites.includes(String(planId));
+}
+
+// Persist that the current user has accepted this plan invite
+function _acceptInviteState(planId) {
+    const acceptedKey = `inviteAccepted_${currentUser}`;
+    if (!acceptedInvites.includes(String(planId))) acceptedInvites.push(String(planId));
+    localStorage.setItem(acceptedKey, JSON.stringify(acceptedInvites));
+    if (database && currentUser) {
+        database.ref(`inviteAccepted/${currentUser}`).set(acceptedInvites);
+    }
+}
+
+// Remove an accepted invited plan from the current user's calendar (moves it back to "pending")
+function hideInvitedPlan(planId) {
+    const hiddenKey = `inviteHidden_${currentUser}`;
+    if (!hiddenInvites.includes(String(planId))) hiddenInvites.push(String(planId));
+    localStorage.setItem(hiddenKey, JSON.stringify(hiddenInvites));
+    if (database && currentUser) {
+        database.ref(`inviteHidden/${currentUser}`).set(hiddenInvites);
+    }
+    renderCalendar();
+    // Re-show the day so the pending card is visible
+    if (selectedCalendarDay) showCalendarDay(selectedCalendarDay);
+}
+
+// Re-accept a plan that was previously hidden from the calendar
+function unhideInvitedPlan(planId) {
+    const hiddenKey = `inviteHidden_${currentUser}`;
+    hiddenInvites = hiddenInvites.filter(id => id !== String(planId));
+    localStorage.setItem(hiddenKey, JSON.stringify(hiddenInvites));
+    if (database && currentUser) {
+        database.ref(`inviteHidden/${currentUser}`).set(hiddenInvites);
+    }
+    renderCalendar();
+    if (selectedCalendarDay) showCalendarDay(selectedCalendarDay);
+}
+
 function dismissInvite(planId) {
     const ackKey = `inviteAck_${currentUser}`;
     const acked = JSON.parse(localStorage.getItem(ackKey) || '[]');
@@ -7395,7 +7458,10 @@ function dismissInvite(planId) {
 }
 
 function acceptInvite(planId, dateISO) {
-    dismissInvite(planId); // ack it first
+    dismissInvite(planId);         // ack it (stops the invite modal)
+    _acceptInviteState(planId);    // mark as fully accepted → shows as official plan in calendar
+    // If it was previously hidden, un-hide it
+    if (isInviteHidden(planId)) unhideInvitedPlan(planId);
     // Navigate to the calendar and open that day
     const [y, m, d] = dateISO.split('-').map(Number);
     calendarYear  = y;
@@ -8067,15 +8133,25 @@ function renderCalendar() {
         });
     });
 
-    // --- Build plan-day map (all plans involving current user, multiple per day supported) ---
-    const planDays = {}; // dayKey → array of plans
+    // --- Build plan-day map (own plans + accepted invited plans; pending invites tracked separately) ---
+    const planDays = {}; // dayKey → array of official plans (own + accepted-invited, not hidden)
+    const pendingInviteDays = {}; // dayKey → true when there is a pending (not-yet-accepted or re-hidden) invite
     plannedWorkouts.forEach(plan => {
-        if (plan.createdBy !== currentUser && !(plan.invitedUsers || []).includes(currentUser)) return;
+        const isOwn     = plan.createdBy === currentUser;
+        const isInvited = (plan.invitedUsers || []).includes(currentUser);
+        if (!isOwn && !isInvited) return;
         const d = new Date(plan.date + 'T00:00:00');
-        if (d.getFullYear() === calendarYear && d.getMonth() === calendarMonth) {
-            const dayKey = d.getDate();
+        if (d.getFullYear() !== calendarYear || d.getMonth() !== calendarMonth) return;
+        const dayKey = d.getDate();
+        if (isOwn || (isInvited && isInviteAccepted(plan.id) && !isInviteHidden(plan.id))) {
             if (!planDays[dayKey]) planDays[dayKey] = [];
             planDays[dayKey].push(plan);
+        } else if (isInvited && !isInviteHidden(plan.id) && !isInviteAccepted(plan.id)) {
+            // Not yet accepted and not dismissed → show as pending indicator
+            pendingInviteDays[dayKey] = true;
+        } else if (isInvited && isInviteHidden(plan.id)) {
+            // Was accepted but user removed it from calendar → show pending again so they can re-accept
+            pendingInviteDays[dayKey] = true;
         }
     });
 
@@ -8114,12 +8190,20 @@ function renderCalendar() {
             dots += `<div class="cal-dot dot-planned" title="Planned"></div>`;
         }
 
+        // Pending invite dot (invited but not yet accepted, or was hidden)
+        const hasPendingInvite = !!pendingInviteDays[day];
+        if (hasPendingInvite) {
+            dots += `<div class="cal-dot dot-pending-invite" title="Pending invite 📬"></div>`;
+        }
+
         // Short plan label — show emoji only, full note on hover
         let planLabel = '';
         if (hasPlan && !hasWorkout) {
             const planTitle = dayPlans.map(p => p.note || p.workoutType || 'Workout').join(' + ');
             const countBadge = dayPlans.length > 1 ? ` ×${dayPlans.length}` : '';
             planLabel = `<div class="cal-plan-indicator" title="${planTitle.replace(/"/g,'&quot;')}">📋${countBadge}</div>`;
+        } else if (hasPendingInvite && !hasPlan && !hasWorkout) {
+            planLabel = `<div class="cal-plan-indicator" title="Pending invite — tap to view">📬</div>`;
         }
 
         const classes = [
@@ -8131,8 +8215,8 @@ function renderCalendar() {
             isSelected ? 'selected' : ''
         ].filter(Boolean).join(' ');
 
-        // All days are clickable
-        const onClick = (hasWorkout || hasPlan)
+        // All days are clickable; pending-invite days also open the day detail
+        const onClick = (hasWorkout || hasPlan || hasPendingInvite)
             ? `onclick="showCalendarDay(${day})"`
             : `onclick="planCalendarDay(${day})"`;
 
@@ -8196,16 +8280,27 @@ function showCalendarDay(day) {
         });
     });
 
-    // --- Find all plans for this day (own + invited) ---
-    const plansForDay = plannedWorkouts.filter(p =>
-        p.date === dateISO &&
-        (p.createdBy === currentUser || (p.invitedUsers || []).includes(currentUser))
-    );
-    // Own plans first in the list
+    // --- Find all plans for this day ---
+    // Official plans = own plans + invited plans that were explicitly accepted (and not hidden)
+    const plansForDay = plannedWorkouts.filter(p => {
+        if (p.date !== dateISO) return false;
+        if (p.createdBy === currentUser) return true;
+        if (!(p.invitedUsers || []).includes(currentUser)) return false;
+        return isInviteAccepted(p.id) && !isInviteHidden(p.id);
+    });
+    // Pending invited plans = invited but not accepted yet, OR accepted then hidden by the user
+    const pendingInvitePlans = plannedWorkouts.filter(p => {
+        if (p.date !== dateISO) return false;
+        if (p.createdBy === currentUser) return false;
+        if (!(p.invitedUsers || []).includes(currentUser)) return false;
+        return !isInviteAccepted(p.id) || isInviteHidden(p.id);
+    });
+    // Own plans first
     plansForDay.sort((a, b) => (b.createdBy === currentUser ? 1 : 0) - (a.createdBy === currentUser ? 1 : 0));
-    const hasPlan = plansForDay.length > 0;
+    const hasPlan    = plansForDay.length > 0;
+    const hasPending = pendingInvitePlans.length > 0;
 
-    if (!workouts.length && !hasPlan) {
+    if (!workouts.length && !hasPlan && !hasPending) {
         planCalendarDay(day);
         return;
     }
@@ -8302,9 +8397,39 @@ function showCalendarDay(day) {
         if (plan.createdBy === currentUser) {
             html += `<button onclick="planCalendarDay(${day}, false, ${plan.id})" style="font-size:0.82em;background:none;border:none;color:#667eea;cursor:pointer;padding:0;">✏️ Edit</button>`;
             html += `<button onclick="deletePlanById(${plan.id})" style="font-size:0.82em;background:none;border:none;color:#e74c3c;cursor:pointer;padding:0;">🗑️ Delete</button>`;
+        } else {
+            // Invited plan — allow user to remove it from their own calendar (moves back to pending)
+            html += `<button onclick="hideInvitedPlan(${plan.id})" style="font-size:0.82em;background:none;border:none;color:#e67e22;cursor:pointer;padding:0;" title="Remove from your calendar (you can re-accept from the pending card)">🚪 Remove from my calendar</button>`;
         }
         html += `</div></div>`;
     });
+
+    // --- Pending invite cards ---
+    if (hasPending) {
+        const MONTH_NAMES_P = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        pendingInvitePlans.forEach(plan => {
+            const planTypeLabel = plan.note || (plan.workoutType && plan.workoutType !== 'custom' ? plan.workoutType : 'Workout');
+            const planExs = (Array.isArray(plan.exercises)
+                ? plan.exercises
+                : (plan.exercises && typeof plan.exercises === 'object' ? Object.values(plan.exercises) : [])
+            ).filter(ex => ex && ex.name);
+            const wasHidden = isInviteHidden(plan.id);
+            const statusLabel = wasHidden ? '(removed from your calendar)' : '';
+            html += `<div style="margin-top:12px;padding:10px 12px;background:rgba(243,156,18,0.07);border-radius:8px;border:1.5px dashed #f39c12;">`;
+            html += `<strong>📬 Pending invite: ${planTypeLabel}</strong>`;
+            html += ` <span style="color:#888;font-size:0.85em;">by ${plan.createdBy}</span>`;
+            if (statusLabel) html += ` <span style="color:#f39c12;font-size:0.8em;">${statusLabel}</span>`;
+            if (planExs.length) {
+                html += `<div style="margin:5px 0 6px;font-size:0.84em;color:#666;">${planExs.map(ex => ex.name).join(' · ')}</div>`;
+            }
+            html += `<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">`;
+            html += `<button onclick="acceptInvite(${plan.id}, '${plan.date}')" style="font-size:0.82em;background:linear-gradient(135deg,var(--btn-gradient-start),var(--btn-gradient-end));color:white;border:none;border-radius:5px;padding:4px 12px;cursor:pointer;font-weight:600;">✅ Accept</button>`;
+            if (!wasHidden) {
+                html += `<button onclick="dismissInvite(${plan.id})" style="font-size:0.82em;background:none;border:1px solid #ccc;color:#888;border-radius:5px;padding:4px 10px;cursor:pointer;">✖ Dismiss</button>`;
+            }
+            html += `</div></div>`;
+        });
+    }
 
     // Always show an "Add plan" button so multiple plans can be created for the same day
     html += `<div style="margin-top:10px;">`;

@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.40'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.41'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4786,27 +4786,60 @@ function generateCombinedAnalysis() {
             const isDayToday  = d.toDateString() === now.toDateString();
 
             if (dayLogs.length > 0) {
-                // LOGGED — actual data
+                // LOGGED — actual data, enriched with any same-day plan info
                 const sets = dayLogs.reduce((s, w) => s + w.sets.length, 0);
                 const vol  = dayLogs.reduce((s, w) => s + w.sets.reduce((sv, st) => sv + st.weight * st.reps, 0), 0);
                 const cats = [...new Set(dayLogs.map(w => w.category))].join(', ');
                 const exercises_detail = dayLogs.map(w => {
                     const best = w.sets.reduce((b, s) => s.weight > b.weight ? s : b, w.sets[0]);
-                    return `${w.exercise}(${w.sets.length}×${formatWeight(best.weight)})`;
-                }).join(', ');
-                scheduleRows.push(`${iso} [LOGGED] ${cats}: ${sets} sets, ${vol > 0 ? vol.toLocaleString() + 'kg vol' : 'bodyweight'} | ${exercises_detail}`);
+                    const vol1 = w.sets.reduce((sv, s) => sv + s.weight * s.reps, 0);
+                    return `${w.exercise}(${w.muscle||w.category}, ${w.sets.length}sets×${formatWeight(best.weight)}, vol:${vol1}kg)`;
+                }).join(' | ');
+                // Also include any planned activities for this day (e.g. swim invite alongside gym)
+                const sameDayPlans = dayPlans.filter(p => {
+                    const loggedNames = new Set(dayLogs.map(w => w.exercise.toLowerCase()));
+                    const planExs = (p.exercises || []).map(e => e.name.toLowerCase());
+                    // Include the plan if it contains exercises NOT already logged (it's a separate activity)
+                    return planExs.length === 0 || planExs.some(n => !loggedNames.has(n));
+                });
+                const extraActivities = sameDayPlans.map(p => {
+                    const act = p.note || p.workoutType || 'Activity';
+                    const exs = (p.exercises || []).filter(ex => {
+                        return !dayLogs.some(w => w.exercise.toLowerCase() === ex.name.toLowerCase());
+                    }).map(ex => {
+                        const wt = ex.perUserWeights?.[currentUser] ?? ex.plannedWeight ?? 0;
+                        const rp = ex.perUserReps?.[currentUser]    ?? ex.plannedReps    ?? 0;
+                        const st = ex.plannedSets ?? 0;
+                        const exRef = exercises.find(e => e.name === ex.name || e.id === ex.id);
+                        const muscle = exRef?.muscle || ex.category || '';
+                        return `${ex.name}(${muscle}${st ? ', ' + st + 'sets' : ''}${wt ? '×' + formatWeight(wt) : ''}${rp ? '×' + rp + 'reps' : ''})`;
+                    }).join(' | ');
+                    const timeNote = p.startTime ? ` @${p.startTime}${p.endTime ? '–' + p.endTime : ''}` : '';
+                    return `+ ${act}${timeNote}${exs ? ': ' + exs : ''}`;
+                }).join(' ');
+                scheduleRows.push(`${iso} [LOGGED] ${cats}: ${sets}sets, ${vol > 0 ? vol.toLocaleString() + 'kg vol' : 'bodyweight'} | ${exercises_detail}${extraActivities ? ' ' + extraActivities : ''}`);
                 trainingDayISOs.add(iso);
             } else if (dayPlans.length > 0) {
                 // PLAN ONLY — no gym log for this day
                 hasAnyPrediction = true;
                 dayPlans.forEach(p => {
                     const activity = p.note || p.workoutType || 'Workout';
-                    // Build exercise detail: name + muscle group
+                    // Build exercise detail: name + muscle + planned sets/reps/weight (per-user if available)
                     const exDetail = (p.exercises || []).map(ex => {
-                        const exRef = exercises.find(e => e.name === ex.name || e.id === ex.id);
-                        const muscle = exRef ? `${exRef.muscle}` : '';
-                        return muscle ? `${ex.name}(${muscle})` : ex.name;
-                    }).join(', ') || 'TBD';
+                        const exRef  = exercises.find(e => e.name === ex.name || e.id === ex.id);
+                        const muscle = exRef?.muscle || ex.category || '';
+                        // Prefer per-user personalised values, fall back to plan defaults
+                        const wt = ex.perUserWeights?.[currentUser] ?? ex.plannedWeight ?? 0;
+                        const rp = ex.perUserReps?.[currentUser]    ?? ex.plannedReps    ?? 0;
+                        const st = ex.plannedSets ?? 0;
+                        const detail = [
+                            muscle,
+                            st ? `${st}sets` : '',
+                            wt ? `${formatWeight(wt)}` : '',
+                            rp ? `${rp}reps` : ''
+                        ].filter(Boolean).join(', ');
+                        return `${ex.name}(${detail})`;
+                    }).join(' | ') || 'TBD';
                     // Duration hint from start/end time
                     let durationNote = '';
                     if (p.startTime && p.endTime) {
@@ -4930,9 +4963,11 @@ DAY-BY-DAY SCHEDULE (this is the primary data source):
 ${scheduleRows.join('\n')}
 
 Legend:
-- [LOGGED] = actual gym session recorded — use this as ground truth
-- [PLANNED-FUTURE] / [PLANNED-TODAY-NOT-LOGGED-YET] / [PLANNED-NOT-DONE] = calendar plan, NOT yet logged — treat these as confirmed upcoming activities for scoring purposes
+- [LOGGED] = actual gym session — ground truth. Format: ExerciseName(muscle, sets×weight, vol)
+- [PLANNED-FUTURE] / [PLANNED-TODAY-NOT-LOGGED-YET] / [PLANNED-NOT-DONE] = calendar plan not yet logged. Format: ExerciseName(muscle, sets, weight, reps). These contain FULL exercise detail — analyse them exactly as you would logged data, just mark as ⚠️ predicted.
 - [REST DAY] = no activity recorded or planned
+
+IMPORTANT: All [PLANNED] days already contain the specific exercises, muscle groups, sets, reps and weights from the calendar. Do NOT say there is a lack of detail — analyse the planned data as if it were executed.
 
 AGGREGATE STATS (logged sessions only):
 - Logged training days: ${uniqueDays} | Exercises: ${uniqueExercises} | Sets: ${totalSets} | Volume: ${totalVolume.toLocaleString()}kg${totalVolume === 0 ? ' (bodyweight/cardio sessions)' : ''}

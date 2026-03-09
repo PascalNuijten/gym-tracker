@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.44'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.45'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4778,29 +4778,16 @@ function generateCombinedAnalysis() {
         const restDayISOs     = new Set();
         let hasAnyPrediction  = false;    // true if any day is plan-based (not logged)
 
-        // Pre-compute calorie constants ONCE before the loop — same values used for every day → deterministic output
+        // Pre-compute ONLY the user's BMR (fixed from profile — never changes) for the AI to use as base
         const _np = getUserProfile(currentUser);
-        const _nw = _np?.weight || 75;
-        const _bmrDay = (_np?.height && _np?.weight)
+        const _nw = _np?.weight || 0;
+        const _bmrComputed = (_np?.height && _np?.weight)
             ? Math.round(10 * _np.weight + 6.25 * _np.height - 5 * (_np.age || 30) + ((_np.gender || '').toLowerCase() === 'female' ? -161 : 5))
             : 0;
-        const _restDayKcal   = _bmrDay > 0 ? Math.round(_bmrDay * 1.2)  : 0; // BMR × 1.2 sedentary
-        const _trainBaseKcal = _bmrDay > 0 ? Math.round(_bmrDay * 1.55) : 0; // BMR × 1.55 active baseline
-        const _goalKcalMod   = _np?.goal === 'muscle' ? 300 : _np?.goal === 'weight_loss' ? -300 : 0;
-        const _protG         = _np?.weight ? Math.round(_np.weight * (_np?.goal === 'muscle' ? 2.2 : 1.8)) : 0;
-        const _actKcal = (typeStr, mins) => {
-            if (!mins || mins <= 0) mins = 60;
-            const met = /swim|water/i.test(typeStr) ? 7.5
-                      : /run|jog/i.test(typeStr) ? 9.5
-                      : /cycl|bike/i.test(typeStr) ? 8.5
-                      : /row/i.test(typeStr) ? 7.0
-                      : /yoga|pilat|stretch/i.test(typeStr) ? 3.0
-                      : /box|martial|kick|wrestl/i.test(typeStr) ? 10.0
-                      : /sport|tennis|basket|football|soccer|volley|climb|hike/i.test(typeStr) ? 8.0
-                      : 5.5; // strength/gym default
-            return Math.round(met * _nw * mins / 60);
-        };
-        const dayKcalMap = {}; // iso → pre-computed total day kcal (used to generate nutrition cards)
+        const _goalKcalMod = _np?.goal === 'muscle' ? '+300 (muscle gain surplus)' : _np?.goal === 'weight_loss' ? '-300 (deficit)' : '+0';
+        const _proteinTarget = _np?.weight ? Math.round(_np.weight * (_np?.goal === 'muscle' ? 2.2 : 1.8)) : 0;
+        // Per-day activity context: type + duration — AI uses these to compute kcal per day
+        const dayActivityMap = {}; // iso → [{type, mins, isLogged}]
 
         for (let d = new Date(start); d <= end; d = new Date(d.getTime() + MS)) {
             const iso      = d.toISOString().slice(0, 10);
@@ -4819,18 +4806,18 @@ function generateCombinedAnalysis() {
                     const vol1 = w.sets.reduce((sv, s) => sv + s.weight * s.reps, 0);
                     return `${w.exercise}(${w.muscle||w.category}, ${w.sets.length}sets×${formatWeight(best.weight)}, vol:${vol1}kg)`;
                 }).join(' | ');
-                // Estimate gym session duration from a matching plan's times, or from set count
-                let _gymMins = 60;
+                // Estimate gym session duration from matching plan's times, or from set count
+                let _gymMins = 0;
                 const _timePlan = dayPlans.find(p => p.startTime && p.endTime);
                 if (_timePlan) {
                     const [_sh, _sm] = _timePlan.startTime.split(':').map(Number);
                     const [_eh, _em] = _timePlan.endTime.split(':').map(Number);
                     const _tm = (_eh * 60 + _em) - (_sh * 60 + _sm);
                     if (_tm > 0) _gymMins = _tm;
-                } else {
-                    _gymMins = Math.max(30, Math.min(120, sets * 3));
                 }
-                dayKcalMap[iso] = (_trainBaseKcal || 0) + _actKcal('strength', _gymMins) + _goalKcalMod;
+                if (!_gymMins) _gymMins = Math.max(30, Math.min(120, sets * 3));
+                if (!dayActivityMap[iso]) dayActivityMap[iso] = [];
+                dayActivityMap[iso].push({ type: 'strength training', mins: _gymMins, isLogged: true });
                 scheduleRows.push(`${iso} [LOGGED] ${cats}: ${sets}sets, ${vol > 0 ? vol.toLocaleString() + 'kg vol' : 'bodyweight'} | ${exercises_detail}`);
                 trainingDayISOs.add(iso);
                 // Add a separate row only for plans that are a DIFFERENT activity from the logged session
@@ -4839,14 +4826,11 @@ function generateCombinedAnalysis() {
                     const planExs     = (p.exercises || []).map(e => e.name.toLowerCase());
                     const isInvited   = p.createdBy !== currentUser;
                     if (planExs.length > 0) {
-                        // Has listed exercises: skip only if ≥50% match what was already logged (same session)
                         const overlap = planExs.filter(n => loggedNames.has(n)).length;
                         return overlap < Math.ceil(planExs.length / 2);
                     } else if (isInvited) {
-                        // Invited plan with no exercises → always a separate activity (different programme)
                         return true;
                     } else {
-                        // Own plan with no exercises → include only if clearly a different type
                         const planType = (p.workoutType || p.note || '').toLowerCase();
                         return /swim|run|jog|cycl|bike|row|yoga|pilat|sport|tennis|foot|soccer|basket|volley|climb|hike|box|martial|dance/i.test(planType);
                     }
@@ -4864,7 +4848,7 @@ function generateCombinedAnalysis() {
                         const st = ex.plannedSets ?? 0;
                         const detail = [muscle, st ? `${st}sets` : '', wt ? `${formatWeight(wt)}` : '', rp ? `${rp}reps` : ''].filter(Boolean).join(', ');
                         return `${ex.name}(${detail})`;
-                    }).join(' | ') || activity; // activity name as fallback
+                    }).join(' | ') || activity;
                     let _sdMins = 60, sdDur = '';
                     if (p.startTime && p.endTime) {
                         const [sh, sm] = p.startTime.split(':').map(Number);
@@ -4874,8 +4858,7 @@ function generateCombinedAnalysis() {
                     }
                     const sdTime = p.startTime ? ` at ${p.startTime}${p.endTime ? '–' + p.endTime : ''}${sdDur}` : '';
                     const sdTag  = isDayFuture ? '[PLANNED-FUTURE]' : isDayToday ? '[PLANNED-TODAY-NOT-LOGGED-YET]' : '[PLANNED-NOT-DONE]';
-                    // Accumulate extra activity kcal for this day
-                    dayKcalMap[iso] = (dayKcalMap[iso] || _trainBaseKcal || 0) + _actKcal(activity, _sdMins);
+                    dayActivityMap[iso].push({ type: activity, mins: _sdMins, isLogged: false });
                     scheduleRows.push(`${iso} ${sdTag} ${activity}${sdTime}: ${sdExDetail}`);
                     trainingDayISOs.add(iso);
                     hasAnyPrediction = true;
@@ -4915,17 +4898,17 @@ function generateCombinedAnalysis() {
                     else if (isDayToday) tag = '[PLANNED-TODAY-NOT-LOGGED-YET]';
                     else                 tag = '[PLANNED-NOT-DONE]';
                     scheduleRows.push(`${iso} ${tag} ${activity}${timeNote}: ${exDetail}`);
-                    // Count as training day and accumulate kcal
                     const lowerAct = activity.toLowerCase();
                     if (!lowerAct.includes('rest') && !lowerAct.includes('off')) {
                         trainingDayISOs.add(iso);
-                        dayKcalMap[iso] = (dayKcalMap[iso] || _trainBaseKcal || 0) + _actKcal(activity, _planMins) + _goalKcalMod;
+                        if (!dayActivityMap[iso]) dayActivityMap[iso] = [];
+                        dayActivityMap[iso].push({ type: activity, mins: _planMins, isLogged: false });
                     }
                 });
             } else if (!isDayFuture) {
                 scheduleRows.push(`${iso} [REST DAY]`);
                 restDayISOs.add(iso);
-                if (_restDayKcal > 0) dayKcalMap[iso] = _restDayKcal;
+                dayActivityMap[iso] = []; // no activity
             }
         }
 
@@ -4986,48 +4969,45 @@ function generateCombinedAnalysis() {
             feedback += `<div class="loading-spinner"></div><p>AI is analysing…</p>`;
             resultBox.innerHTML = feedback;
 
-            // Build pre-computed nutrition cards from dayKcalMap — deterministic, no AI drift
-            const _buildNutriCards = () => {
-                if (_bmrDay === 0 || Object.keys(dayKcalMap).length === 0) return [];
-                if (analysisViewType === 'month') {
-                    const tISOs = Object.keys(dayKcalMap).filter(i => trainingDayISOs.has(i));
-                    const rISOs = Object.keys(dayKcalMap).filter(i => restDayISOs.has(i));
-                    const avgT  = tISOs.length > 0 ? Math.round(tISOs.reduce((s, i) => s + dayKcalMap[i], 0) / tISOs.length) : (_trainBaseKcal + 400 + _goalKcalMod);
-                    const avgR  = rISOs.length  > 0 ? Math.round(rISOs.reduce((s,  i) => s + dayKcalMap[i], 0) / rISOs.length)  : _restDayKcal;
-                    return [
-                        { label: 'Typical training day (avg)', kcal: avgT, isRest: false, prediction: hasAnyPrediction },
-                        { label: 'Typical rest/recovery day (avg)', kcal: avgR, isRest: true, prediction: false }
-                    ];
-                }
-                // day or week: one card per entry in dayKcalMap, sorted
-                const isos = Object.keys(dayKcalMap).sort();
-                return isos.map(iso => ({
-                    label:      iso,
-                    kcal:       dayKcalMap[iso],
-                    isRest:     restDayISOs.has(iso),
-                    prediction: !workoutsByDate[iso]
-                }));
-            };
-            const _nutCards = _buildNutriCards();
-            const _nutriTable = _nutCards.map(c => {
-                const fat  = Math.round(c.kcal * 0.27 / 9);
-                const carb = Math.max(50, Math.round((c.kcal - (_protG || 0) * 4 - fat * 9) / 4));
-                const pStr = _protG > 0 ? `${_protG}g` : 'per-kg×1.8g';
-                return `${c.label}: kcal=${c.kcal} | protein=${pStr} | carbs=${carb}g | fat=${fat}g [${c.isRest ? 'REST' : 'TRAINING'}]${c.prediction ? ' ⚠️' : ''}`;
-            }).join('\n');
+            // Build per-day activity context for the AI to compute nutrition from
+            const _activityContext = Object.keys(dayActivityMap).sort().map(iso => {
+                const acts = dayActivityMap[iso];
+                if (!acts || acts.length === 0) return `${iso}: REST`;
+                return `${iso}: ${acts.map(a => `${a.type} ${a.mins}min${a.isLogged ? ' [logged]' : ' [planned]'}`).join(' + ')}`;
+            }).join('\n') || 'none';
 
-            const nutritionInstruction = (userProfile && _nutriTable) ? `
+            const nutritionInstruction = (_bmrComputed > 0 && userProfile) ? `
 
-🍽️ NUTRITION — USE THESE EXACT PRE-COMPUTED VALUES (calculated from user stats using Mifflin-St Jeor; do NOT recalculate or change kcal/protein/carbs/fat):
-${_nutriTable}
+🍽️ NUTRITION (mandatory — always include this section):
+Compute nutrition for each day using ONLY these locked inputs — do not use any other values:
+- User BMR (Mifflin-St Jeor, already calculated): ${_bmrComputed} kcal
+- Body weight: ${_nw}kg
+- Goal modifier: ${_goalKcalMod}
+- Protein target: ${_proteinTarget > 0 ? _proteinTarget + 'g/day' : `bodyweight × 1.8g`}
+- MET values to use (fixed): strength/gym=5.5 | swimming=7.5 | running=9.5 | cycling=8.5 | rowing=7.0 | yoga/pilates=3.0 | combat sports=10.0 | team sports=8.0
 
-For EACH line above output exactly this HTML card — copy the numbers verbatim:
+FORMULA (apply identically every time):
+  Rest day   → TDEE = BMR × 1.2  + goal_modifier
+  Active day → TDEE = BMR × 1.55 + Σ(MET_i × ${_nw} × hours_i) + goal_modifier
+  Fat  = TDEE × 0.27 / 9  (rounded to nearest 1g)
+  Carbs = (TDEE − protein×4 − fat×9) / 4  (minimum 50g)
+
+ACTIVITY DATA PER DAY (use these exact types and durations — do not invent other values):
+${_activityContext}
+
+${
+  analysisViewType === 'month'
+  ? 'Output TWO cards: one for the average training day (compute average kcal across training days using formula), one for the average rest day.'
+  : 'Output ONE card per day from the activity data above.'
+}
+
+For each card output exactly this HTML block:
 <div style="border-left:3px solid #667eea;padding:8px 12px;margin:6px 0;background:#f8f9fa;border-radius:0 6px 6px 0;">
-<strong>[DATE or PERIOD LABEL] — [activity in 1 short line]</strong><br>
+<strong>[DATE or day label] — [activities that day in 1 line]</strong><br>
 📊 kcal: <strong>X</strong> &nbsp;|&nbsp; 🥩 protein: <strong>Xg</strong> &nbsp;|&nbsp; 🍚 carbs: <strong>Xg</strong> &nbsp;|&nbsp; 🥑 fat: <strong>Xg</strong><br>
-<small style="color:#888;">[1 sentence: what to eat that day and why — specific to that day's activity]</small>
+<small style="color:#888;">[1 sentence: specific food tip for that day's activity]</small>
 </div>
-After all cards, add ONE paragraph (2-3 sentences): best pre-workout food/timing for the hardest day + post-workout recovery meal.` : '';
+After all cards: ONE paragraph (2-3 sentences) on pre-workout timing + post-workout recovery for the hardest day.` : '';
 
             const prompt = `You are an expert personal trainer AND sports nutritionist. Analyse ${currentUser}'s activity data for ${periodName}.
 

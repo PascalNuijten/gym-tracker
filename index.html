@@ -319,16 +319,18 @@
                     <div id="aiAnalysisResult" class="ai-result-box"></div>
                     
                     <div class="ai-question-section">
-                        <h4>💬 Ask Follow-up Questions</h4>
+                        <h4>💬 Ask Your Coach</h4>
                         <div class="question-suggestions">
-                            <p>Common questions:</p>
-                            <button class="suggestion-btn" data-question="Why am I not progressing on my exercises?">Why am I not progressing?</button>
-                            <button class="suggestion-btn" data-question="Am I training enough?">Am I training enough?</button>
-                            <button class="suggestion-btn" data-question="What should I focus on next?">What should I focus on next?</button>
-                            <button class="suggestion-btn" data-question="How do I compare to others?">How do I compare to others?</button>
+                            <button class="suggestion-btn" data-question="What would happen if I added one extra training day this week?">What if I train one more day?</button>
+                            <button class="suggestion-btn" data-question="What are realistic gains I can expect in the next 4 weeks given my current training?">What can I gain in 4 weeks?</button>
+                            <button class="suggestion-btn" data-question="Which muscle group am I neglecting most and what exercises should I add?">What am I neglecting?</button>
+                            <button class="suggestion-btn" data-question="What is the best meal to eat 1 hour before my next workout based on my plans?">Best pre-workout meal?</button>
+                            <button class="suggestion-btn" data-question="Am I at risk of overtraining or injury given my recent schedule?">Am I overtraining?</button>
                         </div>
-                        <textarea id="aiAnalysisQuestionInput" class="ai-input" placeholder="Or type your own question..."></textarea>
-                        <button id="askAnalysisQuestionBtn" class="primary-btn">Ask Coach</button>
+                        <div style="display:flex;gap:8px;margin-top:10px;">
+                            <input type="text" id="aiAnalysisQuestionInput" class="ai-input" placeholder="Ask anything about your training or nutrition…" style="flex:1;margin:0;">
+                            <button id="askAnalysisQuestionBtn" class="primary-btn" style="white-space:nowrap;">Ask</button>
+                        </div>
                         <div id="aiAnalysisQuestionResult" class="ai-result-box"></div>
                     </div>
                 </div>
@@ -685,6 +687,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <!-- Chart.js for progress visualization -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=23.3.50"></script>
+    <script src="app.js?v=23.3.51"></script>
 </body>
 </html>

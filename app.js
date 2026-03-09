@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.50'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.51'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4498,18 +4498,18 @@ function setupAIEventListeners() {
     document.getElementById('stopCameraBtn').addEventListener('click', stopCamera);
     document.getElementById('captureBtn').addEventListener('click', captureAndAnalyze);
     
-    // Question mode in analysis
+    // Question section suggestion buttons → AI-powered
     document.querySelectorAll('.suggestion-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.getElementById('aiAnalysisQuestionInput').value = btn.dataset.question;
-            answerAnalysisQuestion(btn.dataset.question);
+            askAIQuestion(btn.dataset.question);
         });
     });
-    
+
     document.getElementById('askAnalysisQuestionBtn').addEventListener('click', () => {
         const question = document.getElementById('aiAnalysisQuestionInput').value;
         if (question.trim()) {
-            answerAnalysisQuestion(question);
+            askAIQuestion(question);
         }
     });
     
@@ -4636,7 +4636,7 @@ function updateSuggestionButtons() {
             // Re-bind click to use the full question text
             btn.onclick = () => {
                 document.getElementById('aiAnalysisQuestionInput').value = q.full;
-                answerAnalysisQuestion(q.full);
+                askAIQuestion(q.full);
             };
         }
     });
@@ -5001,12 +5001,12 @@ function generateCombinedAnalysis() {
 You are a sports nutritionist. For EACH day card below, predict the optimal daily kcal, protein, fat and carbs.
 
 Rules:
+- Evaluate each day card COMPLETELY INDEPENDENTLY — do not average, scale, or adjust numbers based on other days. The predicted kcal for a given day must be identical regardless of whether other days appear in this list.
 - Assume the person is averagely active during the day (walking, standing, light work) BESIDES the listed trainings.
 - For gym sessions: account for exercise type, total sets, weight and rep ranges to estimate intensity and duration.
 - For cardio (swimming, running, cycling etc.): use the listed duration and the person's body weight.
 - Apply the stated goal (muscle / weight loss / etc.) to adjust total kcal and macro split accordingly.
 - Treat ALL activities — whether [LOGGED], [PLANNED], or from invited plans — as actually performed.
-- Each day card already contains the complete picture; do not guess or invent extra sessions.
 
 DAY CARDS:
 ${_nutCards}
@@ -5104,30 +5104,6 @@ SCORE: [1-10]
                 feedback += funFact;
             }
         } catch (e) { /* silent */ }
-
-        // AI follow-up questions (based on what's available)
-        if (useRealAI && (hasPastData || hasFuturePlans)) {
-            try {
-                const qBase = hasPastData
-                    ? `${uniqueDays} training days, ${uniqueExercises} exercises, ${totalSets} sets, top muscles: ${sortedCats.slice(0,3).map(([c]) => c).join(', ')}`
-                    : `upcoming plans: ${periodPlans.slice(0,3).map(p => p.note || p.workoutType || 'Workout').join(', ')}`;
-                const qPrompt = `Based on ${currentUser}'s ${periodName} (${qBase}). Generate 3 specific follow-up questions. JSON array only: ["Q1?","Q2?","Q3?"]`;
-                const qText = await callGeminiAI(qPrompt, null, false);
-                if (qText) {
-                    const m = qText.match(/\[[\s\S]*\]/);
-                    if (m) {
-                        const qs = JSON.parse(m[0]);
-                        feedback += `<div style="margin-top:18px;padding:14px;background:linear-gradient(135deg,rgba(102,126,234,0.1),rgba(118,75,162,0.1));border-radius:8px;border-left:3px solid #667eea;">`;
-                        feedback += `<h4 style="margin:0 0 8px;">💬 Questions to explore</h4><div style="display:flex;gap:5px;flex-wrap:wrap;">`;
-                        qs.forEach(q => {
-                            const short = q.length > 45 ? q.slice(0,45) + '…' : q;
-                            feedback += `<button onclick="askAIQuestion('${q.replace(/'/g,"\\'")}')" class="secondary-btn" style="font-size:0.82em;" title="${q.replace(/"/g,'&quot;')}">${short}</button>`;
-                        });
-                        feedback += `</div></div>`;
-                    }
-                }
-            } catch (e) { /* silent */ }
-        }
 
         resultBox.innerHTML = feedback;
     }, 800);

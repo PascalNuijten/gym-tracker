@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.38'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.39'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4875,7 +4875,13 @@ function generateCombinedAnalysis() {
             const nutritionInstruction = userProfile ? `
 
 🍽️ NUTRITION (mandatory — always include):
-You are a sports nutritionist. For EACH day listed in the schedule above, output a short nutrition card.
+You are a sports nutritionist. ${
+    analysisViewType === 'day'
+    ? `There is only ONE day being evaluated. Output a SINGLE nutrition card for that day — no other days.`
+    : analysisViewType === 'month'
+    ? `This is a MONTH view. Do NOT list every day. Instead output ONE average weekly nutrition summary card for a typical training week in this month, followed by ONE card for a typical rest week.`
+    : `For EACH day listed in the schedule, output one nutrition card.`
+}
 CRITICAL RULES:
 - A day marked [LOGGED], [PLANNED-FUTURE], [PLANNED-TODAY-NOT-LOGGED-YET], or [PLANNED-NOT-DONE] is an ACTIVE day — NEVER treat it as a rest day.
 - Only a day explicitly marked [REST DAY] gets rest-day calories.
@@ -4884,14 +4890,14 @@ CRITICAL RULES:
 - Adjust to the user's goal: ${userProfile.goal || 'general fitness'}.
 - Mark predicted days (any PLANNED tag) with ⚠️.
 
-FORMAT — for each day produce exactly this HTML block (no table, no long paragraphs):
+FORMAT — for each card produce exactly this HTML block:
 <div style="border-left:3px solid #667eea;padding:8px 12px;margin:6px 0;background:#f8f9fa;border-radius:0 6px 6px 0;">
-<strong>[DATE] — [activity in 1 short line]</strong><br>
+<strong>[DATE or PERIOD LABEL] — [activity in 1 short line]</strong><br>
 📊 kcal: <strong>X</strong> &nbsp;|&nbsp; 🥩 protein: <strong>Xg</strong> &nbsp;|&nbsp; 🍚 carbs: <strong>Xg</strong> &nbsp;|&nbsp; 🥑 fat: <strong>Xg</strong><br>
 <small style="color:#888;">[1 sentence: why these numbers / key tip for that day]</small>
 </div>
 
-After all day-cards, add ONE short paragraph (2-3 sentences max) with: best pre-workout meal timing + food for the hardest training day, and best post-workout recovery food.` : '';
+After all cards, add ONE short paragraph (2-3 sentences max): best pre-workout meal timing + food for the hardest training day, and best post-workout recovery food.` : '';
 
             const prompt = `You are an expert personal trainer AND sports nutritionist. Analyse ${currentUser}'s activity data for ${periodName}.
 

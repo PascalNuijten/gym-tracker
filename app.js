@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.36'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.37'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4780,13 +4780,26 @@ function generateCombinedAnalysis() {
                 hasAnyPrediction = true;
                 dayPlans.forEach(p => {
                     const activity = p.note || p.workoutType || 'Workout';
-                    const exList   = (p.exercises || []).map(ex => ex.name).join(', ') || 'TBD';
-                    const timeNote = p.startTime ? ` ${p.startTime}${p.endTime ? '–' + p.endTime : ''}` : '';
+                    // Build exercise detail: name + muscle group
+                    const exDetail = (p.exercises || []).map(ex => {
+                        const exRef = exercises.find(e => e.name === ex.name || e.id === ex.id);
+                        const muscle = exRef ? `${exRef.muscle}` : '';
+                        return muscle ? `${ex.name}(${muscle})` : ex.name;
+                    }).join(', ') || 'TBD';
+                    // Duration hint from start/end time
+                    let durationNote = '';
+                    if (p.startTime && p.endTime) {
+                        const [sh, sm] = p.startTime.split(':').map(Number);
+                        const [eh, em] = p.endTime.split(':').map(Number);
+                        const mins = (eh * 60 + em) - (sh * 60 + sm);
+                        if (mins > 0) durationNote = ` (~${mins}min)`;
+                    }
+                    const timeNote = p.startTime ? ` at ${p.startTime}${p.endTime ? '–' + p.endTime : ''}${durationNote}` : '';
                     let tag;
                     if (isDayFuture)     tag = '[PLANNED-FUTURE]';
                     else if (isDayToday) tag = '[PLANNED-TODAY-NOT-LOGGED-YET]';
                     else                 tag = '[PLANNED-NOT-DONE]';
-                    scheduleRows.push(`${iso} ${tag} ${activity}${timeNote}: ${exList}`);
+                    scheduleRows.push(`${iso} ${tag} ${activity}${timeNote}: ${exDetail}`);
                     // Count as training day if it looks like a gym/cardio session (not just "rest")
                     const lowerAct = activity.toLowerCase();
                     if (!lowerAct.includes('rest') && !lowerAct.includes('off')) trainingDayISOs.add(iso);
@@ -4861,31 +4874,31 @@ function generateCombinedAnalysis() {
 
             const nutritionInstruction = userProfile ? `
 
-NUTRITION — PER-DAY TABLE (mandatory — always include, formatted as an HTML <table>):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🍽️ NUTRITION ANALYSIS (mandatory — always include in full)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Using the day-by-day schedule above as the ONLY data source, produce a nutrition table: one row per day that appears in the schedule.
-The user's body weight and goal are in the profile above.
+You are a certified sports nutritionist. Based on the user profile and the SPECIFIC activities listed in the day-by-day schedule above, produce a personalised nutrition plan for this ${analysisViewType}.
 
-Columns required (render as <table> with a header row and light alternating row shading):
-Date | Day type & activity | Exercise kcal burn* | Total TDEE | Protein g | Carbs g | Fat g | Key note
+Instructions:
+- Use your own expert knowledge to estimate calorie expenditure for each activity type (do NOT reference or show formulas)
+- For each day, reason from what was actually done or is planned. Do NOT fall back to generic "training day vs rest day" — every day is different
+- Consider the user's specific goal (${userProfile.goal || 'general fitness'}), body composition, and experience level
+- For swimming events: consider stroke, distance, intensity (competition vs casual swim), and the user's weight
+- For gym days: consider muscle groups trained, volume, and intensity (sets/weight from the schedule)
+- For combination days (swim + gym): account for the total energy demand of both
+- Mark any day based on plans (not yet logged) with ⚠️ Predicted
 
-*Exercise kcal burn estimation rules:
-- Gym session [LOGGED]: estimate intensity from set count + volume. Light (<15 sets, <3000kg) ~200kcal, moderate ~300kcal, heavy (>25 sets or >6000kg) ~400-500kcal.
-- Gym session [PLANNED]: same method from exercises listed. Mark cell with ⚠️.
-- Non-gym activity with duration (swimming, running, cycling, walking, yoga, HIIT, football, etc.):
-  Use MET × body_weight_kg × duration_hours. MET values: swimming=7, running=9.5, cycling=7, walking=3.5, yoga=3, HIIT=8, football=8.
-  If only km is given, estimate duration (running ~6min/km, cycling ~3min/km).
-- REST day: 0 extra kcal burn.
-- Day with both gym + cardio: add both burns together.
+OUTPUT FORMAT — produce two things:
 
-Total TDEE = BMR × activity_multiplier + exercise_kcal_burn for that day.
-Protein/Carbs/Fat: adjust to goal (muscle: high protein+carbs on training days; weight_loss: slight deficit on rest days; strength: prioritise protein).
-Mark any [PLANNED] or [PLANNED-NOT-DONE] day cells with ⚠️.
+1. An HTML <table> with one row per day in the schedule. Style: border-collapse:collapse, alternating row background #f9f9f9 / white, header row with dark background. Columns:
+   | Date | Activities | Estimated kcal burned | Daily TDEE | Protein (g) | Carbs (g) | Fat (g) | Notes |
 
-After the table, add a short paragraph (3-4 sentences) with:
-• Best pre-workout meal for this period (timing relative to session start, specific foods)
-• Best post-workout recovery meal (timing, protein+carb focus)
-• One weekly nutrition tip based on the schedule pattern above` : '';
+2. After the table, a <div> with personalised advice (4-6 sentences):
+   • Pre-workout nutrition strategy for the heaviest training day(s) in this period — specific foods + timing relative to session start time if known from schedule
+   • Post-workout recovery recommendation — specific foods + timing
+   • Hydration target (higher on swim/cardio days)
+   • One specific tip based on the user's goal and this week's activity pattern` : '';
 
             const prompt = `You are an expert personal trainer AND sports nutritionist. Analyse ${currentUser}'s activity data for ${periodName}.
 
@@ -4921,7 +4934,7 @@ SCORE: [1-10]
 <strong>✅ Top 3 Recommendations</strong>${nutritionInstruction}`;
 
             const aiText = await Promise.race([
-                callGeminiAI(prompt, null, true, 1800),
+                callGeminiAI(prompt, null, true, 2400),
                 new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout after 50s')), 50000))
             ]);
             if (!aiText) throw new Error('No AI response');

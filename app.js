@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.33'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.34'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -4961,112 +4961,124 @@ SCORE: [1-10]
 
 // AI-powered question answering
 async function askAIQuestion(question) {
-    const resultBox = document.getElementById('aiAnalysisQuestionResult');
-    if (!resultBox) {
-        // Create result box if it doesn't exist
+    if (!question || !question.trim()) return;
+
+    let box = document.getElementById('aiAnalysisQuestionResult');
+    if (!box) {
         const analysisSection = document.querySelector('.ai-section');
         if (analysisSection) {
-            const newBox = document.createElement('div');
-            newBox.id = 'aiAnalysisQuestionResult';
-            newBox.className = 'ai-result-box';
-            analysisSection.appendChild(newBox);
+            box = document.createElement('div');
+            box.id = 'aiAnalysisQuestionResult';
+            box.className = 'ai-result-box';
+            analysisSection.appendChild(box);
         }
     }
-    
-    const box = document.getElementById('aiAnalysisQuestionResult');
+    if (!box) return;
     box.classList.add('show');
-    box.innerHTML = `<div class="loading-spinner"></div> Analyzing: "${question}"`;
-    
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    box.innerHTML = `<div class="loading-spinner"></div> Thinking about: "<em>${question}</em>"`;
+
     setTimeout(async () => {
         const userExercises = exercises.filter(ex => ex.users && ex.users[currentUser]);
-        
-        // Prepare workout summary for AI
-        const workoutSummary = userExercises.slice(0, 10).map(ex => {
+
+        // ---- Full exercise history summary (all exercises, last 10 sessions each) ----
+        const exerciseSummary = userExercises.map(ex => {
             const history = ex.users[currentUser]?.history || [];
             if (history.length === 0) return null;
-            
-            const recent = history.slice(-3);
-            const avgWeight = recent.reduce((sum, s) => sum + s.sets.reduce((s2, set) => s2 + set.weight, 0) / s.sets.length, 0) / recent.length;
-            const avgReps = recent.reduce((sum, s) => sum + s.sets.reduce((s2, set) => s2 + set.reps, 0) / s.sets.length, 0) / recent.length;
-            
-            return `${ex.name} (${ex.muscle}): ${avgWeight.toFixed(1)}kg × ${avgReps.toFixed(0)} reps, ${history.length} sessions`;
-        }).filter(Boolean).join('; ');
-        
-        let answer = '';
-        
-        if (useRealAI && workoutSummary) {
-            // Get comprehensive workout statistics
-            const totalWorkouts = userExercises.reduce((sum, ex) => sum + (ex.users[currentUser]?.history?.length || 0), 0);
-            const last7Days = userExercises.flatMap(ex => {
-                const history = ex.users[currentUser]?.history || [];
-                const recentDate = new Date();
-                recentDate.setDate(recentDate.getDate() - 7);
-                return history.filter(h => new Date(h.date) >= recentDate)
-                    .map(h => ({
-                        exercise: ex.name,
-                        date: h.date,
-                        sets: h.sets
-                    }));
+            const recent = history.slice(-10);
+            const allSets = recent.flatMap(h => h.sets);
+            const best = allSets.reduce((b, s) => s.weight > b.weight ? s : b, allSets[0] || { weight: 0, reps: 0 });
+            const lastSession = recent[recent.length - 1];
+            const lastVol = lastSession.sets.reduce((s, st) => s + st.weight * st.reps, 0);
+            return `${ex.name} (${ex.category}/${ex.muscle}): ${history.length} sessions total | best ${formatWeight(best.weight)}×${best.reps} | last session ${lastSession.date}: ${lastSession.sets.length} sets, ${lastVol > 0 ? lastVol + 'kg vol' : 'bodyweight'}`;
+        }).filter(Boolean).join('\n');
+
+        // ---- Current period context (same as main analysis) ----
+        const { start, end, label: periodName } = getAnalysisPeriodRange(analysisViewType, analysisViewOffset);
+        const MS = 24 * 60 * 60 * 1000;
+        const now = new Date();
+
+        const periodWorkouts = [];
+        userExercises.forEach(ex => {
+            (ex.users[currentUser]?.history || []).forEach(h => {
+                const d = new Date(h.date);
+                if (d >= start && d <= end) periodWorkouts.push({ exercise: ex.name, category: ex.category, date: h.date, sets: h.sets });
             });
-            
-            const weeklyVolume = last7Days.reduce((sum, w) => {
-                return sum + w.sets.reduce((s, set) => s + (set.weight * set.reps), 0);
-            }, 0);
-            
-            // Get user profile for personalized coaching
-            const userProfile = getUserProfile(currentUser);
-            const profileContext = userProfile ? getUserContext(currentUser) : '';
-            
-            const prompt = `You are an expert personal trainer analyzing workout data for ${currentUser}.
+        });
+        const periodPlans = plannedWorkouts.filter(p => {
+            const isOwn = p.createdBy === currentUser;
+            const isInvited = (p.invitedUsers || []).includes(currentUser);
+            if (!isOwn && !(isInvited && isInviteAccepted(p.id))) return false;
+            const d = new Date(p.date + 'T00:00:00');
+            return d >= start && d <= end;
+        });
 
-${profileContext ? `USER PROFILE:
-${profileContext}
+        const workoutsByDate = {};
+        periodWorkouts.forEach(w => { const k = w.date.slice(0,10); (workoutsByDate[k] = workoutsByDate[k] || []).push(w); });
+        const plansByDate = {};
+        periodPlans.forEach(p => { (plansByDate[p.date] = plansByDate[p.date] || []).push(p); });
 
-` : ''}Question: "${question}"
-
-RECENT TRAINING DATA:
-- Last 7 days: ${last7Days.length} workouts, ${weeklyVolume.toLocaleString()}kg total volume
-- Total sessions all-time: ${totalWorkouts}
-- Recent exercises (avg of last 3 sessions):
-${workoutSummary}
-
-Provide a specific, actionable answer (100-150 words):
-- Reference actual exercises and numbers from their data
-- Give concrete recommendations based on their training history
-- CRITICALLY IMPORTANT: Tailor advice to their experience level, goals, and physical profile
-${userProfile?.injuries ? `- Account for their injuries/limitations: ${userProfile.injuries}
-` : ''}- Be encouraging but honest
-- Use fitness expertise
-
-Format as HTML with <strong> tags for emphasis.`;
-
-            const aiResponse = await callGeminiAI(prompt); // includeUserContext=true by default
-            
-            if (aiResponse) {
-                answer = aiResponse.replace(/```html/g, '').replace(/```/g, '').trim();
-                console.log('✅ AI answered question with full context');
+        const scheduleRows = [];
+        for (let d = new Date(start); d <= end; d = new Date(d.getTime() + MS)) {
+            const iso = d.toISOString().slice(0,10);
+            const logs = workoutsByDate[iso] || [];
+            const plans = plansByDate[iso] || [];
+            const isFuture = d > now;
+            if (logs.length > 0) {
+                const detail = logs.map(w => `${w.exercise}(${w.sets.length}sets)`).join(', ');
+                scheduleRows.push(`${iso} [LOGGED] ${detail}`);
+            } else if (plans.length > 0) {
+                plans.forEach(p => scheduleRows.push(`${iso} [${isFuture ? 'PLANNED' : 'PLANNED-NOT-DONE'}] ${p.note || p.workoutType || 'Workout'}: ${(p.exercises||[]).map(e=>e.name).join(', ')||'TBD'}`));
+            } else if (!isFuture) {
+                scheduleRows.push(`${iso} [REST DAY]`);
             }
         }
-        
-        // Fallback if AI fails
-        if (!answer) {
-            answer = answerAnalysisQuestion(question);
+
+        const userProfile = getUserProfile(currentUser);
+        const profileContext = userProfile ? getUserContext(currentUser) : '';
+
+        let answer = '';
+
+        if (useRealAI) {
+            try {
+                const prompt = `You are an expert personal trainer and sports nutritionist coaching ${currentUser}.
+
+${profileContext ? `USER PROFILE:\n${profileContext}\n` : ''}
+
+QUESTION: "${question}"
+
+CURRENT PERIOD (${periodName}) — day-by-day:
+${scheduleRows.join('\n') || '(no data for this period)'}
+
+COMPLETE EXERCISE HISTORY (all tracked exercises):
+${exerciseSummary || '(no exercises logged yet)'}
+
+Answer the question in 100-200 words. Be specific and reference actual data from above.
+- If asked about a specific exercise, look it up in the history above and quote real numbers.
+- If no data exists for something, say so clearly and give general advice instead.
+- Tailor to their goal, body stats, and injuries if set in their profile.
+- Format as clean HTML using <p>, <strong>, <ul><li> — no markdown, no code blocks.`;
+
+                const aiResponse = await callGeminiAI(prompt, null, false, 800);
+                if (aiResponse) answer = aiResponse.replace(/```html/g, '').replace(/```/g, '').trim();
+            } catch (e) {
+                console.error('askAIQuestion AI failed:', e);
+            }
         }
-        
+
+        if (!answer) {
+            answer = `<p>AI is currently unavailable. Here's a summary of your data:</p>
+<ul><li>${exerciseSummary.split('\n').slice(0,5).join('</li><li>')}</li></ul>`;
+        }
+
         box.innerHTML = `
-            <h4>💬 AI Answer</h4>
-            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0;">
-                <p style="margin: 0; font-style: italic; color: #666; font-size: 0.9em;">"${question}"</p>
-            </div>
-            <div style="padding: 15px; background: white; border-radius: 8px; border: 1px solid #e0e0e0;">
-                ${answer}
-            </div>
-            <div style="margin-top: 15px;">
-                <input type="text" id="customAIQuestion" placeholder="Ask your own question..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
-                <button onclick="askAIQuestion(document.getElementById('customAIQuestion').value)" class="primary-btn" style="margin-top: 10px; width: 100%;">Ask Coach</button>
-            </div>
-        `;
-    }, 1000);
+            <div style="background:#f0f4ff;padding:10px 14px;border-radius:7px;margin:0 0 10px;font-style:italic;color:#555;font-size:0.9em;">💬 "${question}"</div>
+            <div style="padding:14px;background:white;border-radius:8px;border:1px solid #e0e0e0;word-wrap:break-word;">${answer}</div>
+            <div style="margin-top:12px;display:flex;gap:8px;">
+                <input type="text" id="customAIQuestion" placeholder="Ask a follow-up…" style="flex:1;padding:9px 12px;border:1px solid #ddd;border-radius:6px;font-size:0.9em;">
+                <button onclick="askAIQuestion(document.getElementById('customAIQuestion').value)" class="primary-btn" style="white-space:nowrap;">Ask</button>
+            </div>`;
+    }, 400);
 }
 
 // Answer questions based on user data

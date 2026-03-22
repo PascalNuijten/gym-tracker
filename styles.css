@@ -1597,8 +1597,9 @@ textarea {
 
 .cal-day.today {
     border-color: var(--accent-color);
-    border-width: 2px;
-    background: rgba(102, 126, 234, 0.06);
+    border-width: 2.5px;
+    background: rgba(102, 126, 234, 0.13);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.22), inset 0 0 0 1px rgba(102,126,234,0.15);
 }
 
 .cal-day.selected {
@@ -1615,7 +1616,15 @@ textarea {
 }
 
 .cal-day.today .cal-day-number {
-    color: var(--accent-color);
+    color: white;
+    background: var(--accent-color);
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
 }
 
 .cal-day-dots {

@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.51'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.52'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -2123,29 +2123,47 @@ function saveWorkout() {
     
     const history = exercise.users[currentUser].history;
     if (history && history.length > 0) {
-        // Calculate new session's total volume
-        const newVolume = sets.reduce((sum, set) => sum + (set.reps * set.weight), 0);
-        const newMaxWeight = Math.max(...sets.map(s => s.weight));
-        
-        // Calculate historical best volume
-        let bestVolume = 0;
-        let bestMaxWeight = 0;
-        history.forEach(s => {
-            const sessionVolume = s.sets.reduce((sum, set) => sum + (set.reps * set.weight), 0);
-            const sessionMaxWeight = Math.max(...s.sets.map(set => set.weight));
-            if (sessionVolume > bestVolume) bestVolume = sessionVolume;
-            if (sessionMaxWeight > bestMaxWeight) bestMaxWeight = sessionMaxWeight;
-        });
-        
-        // Check if new record
-        if (newVolume > bestVolume && bestVolume > 0) {
-            isNewRecord = true;
-            recordIncrease = Math.round(((newVolume - bestVolume) / bestVolume) * 100 * 10) / 10;
-            recordType = 'Total Volume';
-        } else if (newMaxWeight > bestMaxWeight && bestMaxWeight > 0) {
-            isNewRecord = true;
-            recordIncrease = Math.round(((newMaxWeight - bestMaxWeight) / bestMaxWeight) * 100 * 10) / 10;
-            recordType = 'Max Weight';
+        // Detect bodyweight exercise: all sets have weight == 0
+        const isBodyweight = sets.every(s => s.weight === 0);
+
+        if (isBodyweight) {
+            // Track improvement by total reps
+            const newTotalReps = sets.reduce((sum, s) => sum + s.reps, 0);
+            let bestTotalReps = 0;
+            history.forEach(session => {
+                const sessionReps = session.sets.reduce((sum, s) => sum + s.reps, 0);
+                if (sessionReps > bestTotalReps) bestTotalReps = sessionReps;
+            });
+            if (newTotalReps > bestTotalReps && bestTotalReps > 0) {
+                isNewRecord = true;
+                recordIncrease = Math.round(((newTotalReps - bestTotalReps) / bestTotalReps) * 100 * 10) / 10;
+                recordType = 'Total Reps (bodyweight)';
+            }
+        } else {
+            // Calculate new session's total volume
+            const newVolume = sets.reduce((sum, set) => sum + (set.reps * set.weight), 0);
+            const newMaxWeight = Math.max(...sets.map(s => s.weight));
+            
+            // Calculate historical best volume
+            let bestVolume = 0;
+            let bestMaxWeight = 0;
+            history.forEach(s => {
+                const sessionVolume = s.sets.reduce((sum, set) => sum + (set.reps * set.weight), 0);
+                const sessionMaxWeight = Math.max(...s.sets.map(set => set.weight));
+                if (sessionVolume > bestVolume) bestVolume = sessionVolume;
+                if (sessionMaxWeight > bestMaxWeight) bestMaxWeight = sessionMaxWeight;
+            });
+            
+            // Check if new record
+            if (newVolume > bestVolume && bestVolume > 0) {
+                isNewRecord = true;
+                recordIncrease = Math.round(((newVolume - bestVolume) / bestVolume) * 100 * 10) / 10;
+                recordType = 'Total Volume';
+            } else if (newMaxWeight > bestMaxWeight && bestMaxWeight > 0) {
+                isNewRecord = true;
+                recordIncrease = Math.round(((newMaxWeight - bestMaxWeight) / bestMaxWeight) * 100 * 10) / 10;
+                recordType = 'Max Weight';
+            }
         }
     }
     
@@ -2201,24 +2219,6 @@ function saveWorkout() {
 
     if (isNewRecord) {
         showRecordCelebration(exercise.name, recordType, recordIncrease);
-    } else {
-        // Show progress vs last session even when not a record
-        const history = exercise.users[currentUser].history;
-        if (history.length >= 2) {
-            const prev = history[history.length - 2];
-            const prevVol = prev.sets.reduce((s, x) => s + x.reps * x.weight, 0);
-            const newVol  = sets.reduce((s, x) => s + x.reps * x.weight, 0);
-            if (prevVol > 0) {
-                const diff = Math.round(((newVol - prevVol) / prevVol) * 100 * 10) / 10;
-                const emoji = diff > 0 ? '📈' : diff < 0 ? '📉' : '➡️';
-                const msg   = diff > 0 ? `+${diff}% vs last session — great progress!`
-                            : diff < 0 ? `${diff}% vs last session — keep pushing!`
-                            : 'Same volume as last session — stay consistent!';
-                alert(`✅ Workout logged!\n\n${emoji} ${msg}`);
-                return;
-            }
-        }
-        alert('✅ Workout logged successfully!');
     }
     isNewlyAddedFromCamera = false; // Reset flag
     workoutForm.reset();
@@ -4695,8 +4695,8 @@ function updateAnalysisPeriodLabel() {
     const el      = document.getElementById('analysisPeriodLabel');
     const nextBtn = document.getElementById('analysisNextBtn');
     if (el) el.textContent = label;
-    // Disable Next arrow once the user is back at the current period
-    if (nextBtn) nextBtn.disabled = analysisViewOffset >= 0;
+    // Allow navigation up to 4 periods into the future (plans can be analysed too)
+    if (nextBtn) nextBtn.disabled = analysisViewOffset >= 4;
 }
 
 // ==================== COMBINED ANALYSIS MODE ====================
@@ -5044,7 +5044,7 @@ SCORE BASIS: ${scoreBasis}
 ${onlyPrediction ? '⚠️ ALL DATA IS PLAN-BASED — no sessions logged yet. Score based on planned activities. Evaluate the plan quality and give a score.' : ''}
 
 Respond EXACTLY in this format (no markdown code blocks, no triple backticks):
-SCORE: [1-10]
+SCORE: [X.X on a scale of 1.0–10.0, use one decimal place, be critical and precise — do NOT default to 8.0]
 ---
 [HTML body using <p>, <strong>, <ul><li> — include these sections:]
 <strong>🏆 ${onlyPrediction ? 'Plan Preview & Score' : allLogged ? 'Score & Overview' : 'Score & Overview (⚠️ Partial Prediction)'}</strong>
@@ -5060,11 +5060,11 @@ SCORE: [1-10]
             ]);
             if (!aiText) throw new Error('No AI response');
 
-            const scoreMatch  = aiText.match(/^SCORE:\s*(\d+|N\/A)/im);
+            const scoreMatch  = aiText.match(/^SCORE:\s*([\d.]+|N\/A)/im);
             const scoreRaw    = scoreMatch ? scoreMatch[1] : null;
-            const score       = scoreRaw && scoreRaw !== 'N/A' ? Math.min(10, Math.max(1, parseInt(scoreRaw))) : null;
+            const score       = scoreRaw && scoreRaw !== 'N/A' ? Math.min(10, Math.max(1, parseFloat(scoreRaw))) : null;
             const scoreColor  = score === null ? '#667eea' : score >= 8 ? '#27ae60' : score >= 6 ? '#e67e22' : '#e74c3c';
-            const scoreLabel  = score === null ? '—' : `${score}/10`;
+            const scoreLabel  = score === null ? '—' : `${score.toFixed(1)}/10`;
             const scoreDesc   = score === null ? '' : score >= 9 ? 'Excellent' : score >= 7 ? 'Great' : score >= 5 ? 'Good' : score >= 3 ? 'Average' : 'Needs Work';
 
             const bodyHTML = aiText
@@ -7771,6 +7771,7 @@ async function aiGeneratePlan() {
     const workoutType = typeSelect ? typeSelect.value : 'custom';
     const typeLabel = typeSelect ? (typeSelect.options[typeSelect.selectedIndex]?.text || '') : '';
     const customNote = document.getElementById('planWorkoutNote').value.trim();
+    const aiComments = (document.getElementById('planAIComments')?.value || '').trim();
     // Combine type + custom note for the AI
     const trainingName = workoutType && workoutType !== 'custom'
         ? typeLabel + (customNote ? ` (${customNote})` : '')
@@ -7846,6 +7847,7 @@ async function aiGeneratePlan() {
     const prompt = `You are an expert strength coach specializing in hypertrophy and evidence-based programming. Create a ${numExercises}-exercise workout plan.
 
 TRAINING TYPE: "${trainingName}"
+${aiComments ? `\n⚠️ USER NOTE (factor this into exercise selection, load and intensity): "${aiComments}"\n` : ''}
 
 ⛔ TRAINING TYPE BOUNDARY — ABSOLUTE RULE:
 EVERY exercise MUST directly target the primary muscle groups of "${trainingName}".

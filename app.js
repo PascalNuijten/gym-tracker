@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.52'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.53'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -7876,7 +7876,7 @@ ${allParticipants.length > 1 ? '(You MUST generate INDIVIDUAL weights & reps for
 6. EXERCISE ORDER: Compound multi-joint first, then accessory compound, then isolation last.
 7. NO REDUNDANCY: Never include two exercises targeting the same primary muscle head.
 8. Consider body metrics (height/weight/experience) and notes from history for exercise selection and load.
-9. Add a short "reason" for each exercise — explain the specific progression strategy chosen for this user.
+9. Add a short "reason" (1 sentence) for each exercise — explain WHY this exercise fits the training type and targets the right muscles. Do NOT mention history, records, past sessions, or the user by name.
 
 COMPLETE TRAINING HISTORY + PERSONAL DATA:
 ${usersContext}
@@ -7925,7 +7925,16 @@ Respond ONLY with a valid JSON array (no other text, no code fences):
             }
         });
 
-        currentPlanExercises = planData.map(ex => ({
+        // Deduplicate: keep only the first occurrence of each exercise name
+        const seenPlanNames = new Set();
+        const dedupedPlanData = planData.filter(ex => {
+            const key = normalise(ex.name || '');
+            if (seenPlanNames.has(key)) return false;
+            seenPlanNames.add(key);
+            return true;
+        });
+
+        currentPlanExercises = dedupedPlanData.map(ex => ({
             name: ex.name || 'Unknown',
             category: ex.category || '',
             muscle: ex.muscle || '',

@@ -141,7 +141,7 @@ function isUsableImage(url) {
 
 // Clear cache on version update (to remove old fallback responses)
 function clearOldCache() {
-    const cacheVersion = 'v23.3.53'; // Update this when making cache-breaking changes
+    const cacheVersion = 'v23.3.54'; // Update this when making cache-breaking changes
     const currentVersion = localStorage.getItem('gymTrackerCacheVersion');
     
     if (currentVersion !== cacheVersion) {
@@ -7802,11 +7802,18 @@ async function aiGeneratePlan() {
         const profileStr = profile
             ? `${profile.height || '?'}cm, ${profile.weight || '?'}kg, ${profile.gender || ''}, ${profile.experience || ''} level, goal: ${profile.goal || 'general'}, frequency target: ${profile.frequency || '?'} days/week`
             : 'No profile set';
-        // Include ALL exercises with history for this user (full breadth)
-        const withHistory = exercises.filter(ex => (ex.users?.[username]?.history?.length || 0) > 0);
+        // Include exercises with history, sorted by most recent session, capped at 20 to stay within token limits
+        const withHistory = exercises
+            .filter(ex => (ex.users?.[username]?.history?.length || 0) > 0)
+            .sort((a, b) => {
+                const aLast = a.users[username].history[a.users[username].history.length - 1]?.date || '';
+                const bLast = b.users[username].history[b.users[username].history.length - 1]?.date || '';
+                return bLast.localeCompare(aLast);
+            })
+            .slice(0, 20);
         const allHistory = withHistory
             .map(ex => {
-                const sessions = ex.users[username].history.slice(-5);
+                const sessions = ex.users[username].history.slice(-3);
                 const maxW = Math.max(0, ...sessions.flatMap(s => s.sets.map(s2 => s2.weight)));
                 const lastSession = sessions[sessions.length - 1];
                 const firstSession = sessions[0];
@@ -7874,7 +7881,7 @@ ${allParticipants.length > 1 ? '(You MUST generate INDIVIDUAL weights & reps for
 4. PRIORITIZE exercises from the user's history — use their EXACT exercise names verbatim from KNOWN EXERCISES.
 5. Fill remaining slots to cover all sub-muscles of "${trainingName}". Set isNew:true only if genuinely absent from history.
 6. EXERCISE ORDER: Compound multi-joint first, then accessory compound, then isolation last.
-7. NO REDUNDANCY: Never include two exercises targeting the same primary muscle head.
+7. UNIQUE EXERCISES ONLY: Every exercise in the JSON array must have a DIFFERENT name — never repeat the same exercise twice. Also avoid two exercises targeting the same primary muscle head.
 8. Consider body metrics (height/weight/experience) and notes from history for exercise selection and load.
 9. Add a short "reason" (1 sentence) for each exercise — explain WHY this exercise fits the training type and targets the right muscles. Do NOT mention history, records, past sessions, or the user by name.
 
